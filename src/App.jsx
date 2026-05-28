@@ -1,57 +1,72 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect } from "react";
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell } from "recharts";
-import { dbLoad, dbSave } from "./supabase.js";
-
-// ── CONTRASEÑA ────────────────────────────────────────────────────────────────
-const APP_PASSWORD = import.meta.env.VITE_APP_PASSWORD || "msp2024";
-
+import { createClient } from "@supabase/supabase-js";
+ 
+// ── SUPABASE ──────────────────────────────────────────────────────────────────
+const _supabase = createClient(
+  "https://frsvrgojdttnajxdakxv.supabase.co",
+  "sb_publishable_glqqufYmNPaPVrt3Ar23-A_nUXAh-Gr"
+);
+ 
+async function dbLoad(key, def) {
+  try {
+    const { data, error } = await _supabase
+      .from("msp_store").select("value").eq("key", key).single();
+    if (error || !data) return def;
+    return JSON.parse(data.value);
+  } catch { return def; }
+}
+ 
+async function dbSave(key, value) {
+  try {
+    await _supabase.from("msp_store")
+      .upsert({ key, value: JSON.stringify(value) }, { onConflict: "key" });
+  } catch(e) { console.error("dbSave:", e); }
+}
+ 
+// ── LOGIN ─────────────────────────────────────────────────────────────────────
+const APP_PWD = import.meta.env.VITE_APP_PASSWORD || "msp2024";
+ 
 function LoginScreen({ onLogin }) {
   const [pass, setPass] = useState("");
-  const [err, setErr]   = useState("");
+  const [err, setErr] = useState("");
   const check = () => {
-    if (pass === APP_PASSWORD) { onLogin(); }
+    if (pass === APP_PWD) onLogin();
     else { setErr("Contraseña incorrecta"); setPass(""); }
   };
   return (
     <div style={{minHeight:"100vh",display:"flex",alignItems:"center",justifyContent:"center",background:"#FDFCF9"}}>
       <div style={{background:"#fff",borderRadius:16,padding:"40px 36px",border:"1px solid rgba(196,150,42,0.25)",width:"100%",maxWidth:380,textAlign:"center",boxShadow:"0 4px 30px rgba(196,150,42,0.1)"}}>
-        <div style={{marginBottom:20}}>
-          <Logo size={52}/>
-        </div>
-        <p style={{margin:"0 0 4px",fontWeight:700,fontSize:18,color:"#1C1A16",letterSpacing:"0.05em"}}>MY SECRET PASSION MX</p>
+        <p style={{margin:"0 0 4px",fontWeight:700,fontSize:20,color:"#1C1A16",letterSpacing:"0.05em"}}>MY SECRET PASSION MX</p>
         <p style={{margin:"0 0 28px",fontSize:12,color:"#ADA394"}}>Dashboard de control</p>
-        <input
-          type="password"
-          value={pass}
+        <input type="password" value={pass}
           onChange={e=>setPass(e.target.value)}
           onKeyDown={e=>e.key==="Enter"&&check()}
           placeholder="Contraseña de acceso"
-          style={{width:"100%",marginBottom:10,padding:"10px 14px",fontSize:14,textAlign:"center"}}
-          autoFocus
-        />
-        {err && <p style={{color:"#C04040",fontSize:12,marginBottom:8}}>{err}</p>}
-        <button onClick={check} style={{width:"100%",background:"#C4962A",color:"#fff",border:"none",borderRadius:8,padding:"11px",fontSize:14,fontWeight:600,cursor:"pointer"}}>
+          style={{width:"100%",marginBottom:10,padding:"10px 14px",fontSize:14,textAlign:"center",borderRadius:8,border:"1px solid rgba(196,150,42,0.3)",outline:"none"}}
+          autoFocus/>
+        {err&&<p style={{color:"#C04040",fontSize:12,marginBottom:8}}>{err}</p>}
+        <button onClick={check} style={{width:"100%",background:"#C4962A",color:"#fff",border:"none",borderRadius:8,padding:11,fontSize:14,fontWeight:600,cursor:"pointer"}}>
           Entrar
         </button>
       </div>
     </div>
   );
 }
-
-import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell } from "recharts";
-
-// ── STORAGE KEYS ──────────────────────────────────────────────────────────────
+ 
+ 
+// ── STORAGE ──────────────────────────────────────────────────────────────────
 const SK = { p:"msp-p4",pk:"msp-pk4",c:"msp-c4",s:"msp-s4",e:"msp-e4",sm:"msp-sm4",ex:"msp-ex4" };
 const load = dbLoad;
 const save = dbSave;
-
+ 
 // ── UTILS ─────────────────────────────────────────────────────────────────────
 const $m = n => "$"+Number(n).toLocaleString("es-MX",{minimumFractionDigits:2,maximumFractionDigits:2});
 const pct = n => Number(n).toFixed(1)+"%";
 const uid = () => Date.now().toString(36)+Math.random().toString(36).slice(2,5);
 const today = () => new Date().toISOString().slice(0,10);
 const SOBRE_COST = 10;
-
+ 
 // ── TIERS ─────────────────────────────────────────────────────────────────────
 const TA=[{m:1,p:1199},{m:3,p:699},{m:5,p:650},{m:10,p:530},{m:20,p:500},{m:50,p:470},{m:100,p:450}];
 const TB=[{m:1,p:999},{m:3,p:450},{m:5,p:400},{m:10,p:380},{m:20,p:350},{m:50,p:320},{m:100,p:290}];
@@ -60,7 +75,7 @@ const TD=[{m:1,p:400},{m:3,p:260},{m:5,p:240},{m:10,p:220},{m:20,p:200},{m:50,p:
 function tierPrice(tiers,qty){let p=tiers[0].p;for(const t of tiers)if(qty>=t.m)p=t.p;return p;}
 function clientPrice(cl,pid,tiers,qty){if(cl?.prices?.[pid]!=null)return+cl.prices[pid];return tierPrice(tiers,qty);}
 function pkgPrice(cl,pkgId,std){if(cl?.pkgPrices?.[pkgId]!=null)return+cl.pkgPrices[pkgId];return std;}
-
+ 
 // ── CATALOG ───────────────────────────────────────────────────────────────────
 const COSTS={"bh":225,"rhv":220,"hs":235,"rh":125,"rhp":170,"pp24":220,"pp12":195,"vf":340,"sob":10,"gom":130,"rchv":290,"rhch":290};
 const INIT_PRODS=[
@@ -99,7 +114,7 @@ const EXP_CATS=["Gasolina","Repartidores","Importación","Transporte","Almacén"
 const PAY_METHODS=["Efectivo","SPIN Marcel","SPIN Gustavo","Tercero"];
 const PAY_METHODS_LABEL={"Efectivo":"💵 Efectivo","SPIN Marcel":"📱 SPIN Marcel","SPIN Gustavo":"📱 SPIN Gustavo","Tercero":"🤝 Tercero"};
 const PAY_CLR={"Efectivo":{bg:"rgba(26,140,90,0.12)",c:"#1A8C5A"},"SPIN Marcel":{bg:"rgba(196,150,42,0.12)",c:"#8B6716"},"SPIN Gustavo":{bg:"rgba(112,56,208,0.12)",c:"#7038D0"},"Tercero":{bg:"rgba(40,96,176,0.12)",c:"#2860B0"}};
-
+ 
 // ── THEME ─────────────────────────────────────────────────────────────────────
 const T={
   gold:"#C4962A",goldBright:"#E8B84B",goldText:"#6B4E0A",goldBg:"rgba(196,150,42,0.07)",goldBorder:"rgba(196,150,42,0.22)",
@@ -107,7 +122,7 @@ const T={
   border:"rgba(196,150,42,0.16)",text:"#1C1A16",textSub:"#7A7060",textMuted:"#ADA394",
   revenue:"#C4962A",profit:"#1A8C5A",expense:"#C04040",client:"#2860B0",pkg:"#7038D0",cost:"#9A6020",
 };
-
+ 
 // ── LOGO ──────────────────────────────────────────────────────────────────────
 function Logo({size=36}){
   const r=6.5,W=r*Math.sqrt(3),H=2*r,vs=H*0.75;
@@ -116,7 +131,7 @@ function Logo({size=36}){
   const vw=W*2+2,vh=r+vs*2+r+1,sc=size/Math.max(vw,vh);
   return <svg width={vw*sc} height={vh*sc} viewBox={`-0.5 -0.5 ${vw+1} ${vh+1}`}>{hs.map((h,i)=><path key={i} d={hex(h.cx,h.cy)} fill={h.f} stroke="#8B6716" strokeWidth="0.4"/>)}</svg>;
 }
-
+ 
 // ── UI ATOMS ──────────────────────────────────────────────────────────────────
 function F({label,children,style}){return <div style={{display:"flex",flexDirection:"column",gap:4,...style}}><label style={{fontSize:11,fontWeight:600,color:T.textSub,letterSpacing:"0.04em"}}>{label}</label>{children}</div>;}
 function Card({children,style}){return <div style={{background:T.bgCard,border:`0.5px solid ${T.goldBorder}`,borderRadius:12,padding:"1rem 1.25rem",...style}}>{children}</div>;}
@@ -128,17 +143,17 @@ function Empty({icon,text}){return <div style={{textAlign:"center",padding:"2rem
 function GoldBtn({children,onClick,style}){return <button onClick={onClick} style={{background:T.gold,color:"#fff",border:"none",borderRadius:8,padding:"7px 18px",fontSize:12,fontWeight:600,cursor:"pointer",...style}}>{children}</button>;}
 function OutBtn({children,onClick,danger,style}){return <button onClick={onClick} style={{background:"transparent",color:danger?T.expense:T.textSub,border:`1px solid ${danger?"rgba(192,64,64,0.3)":T.border}`,borderRadius:8,padding:"6px 14px",fontSize:12,cursor:"pointer",...style}}>{children}</button>;}
 function ErrMsg({msg}){if(!msg)return null;return <div style={{background:"rgba(192,64,64,0.1)",border:"1px solid rgba(192,64,64,0.3)",borderRadius:8,padding:"8px 14px",fontSize:12,color:T.expense,display:"flex",alignItems:"center",gap:8,marginTop:6}}><i className="ti ti-alert-circle" style={{fontSize:15}}/>{msg}</div>;}
-
+ 
 function pkgCost(pkg,prods){return pkg.items.reduce((s,it)=>{const p=prods.find(x=>x.id===it.pid);return s+(p?p.cost*it.qty:0);},0);}
 function pkgDesc(pkg,prods){return pkg.items.map(it=>{const p=prods.find(x=>x.id===it.pid);return it.qty+"× "+(p?p.name:it.pid);}).join(" · ");}
-
+ 
 // ── DASHBOARD ─────────────────────────────────────────────────────────────────
 function Dashboard({prods,pkgs,clients,sales,expenses}){
   const now      = new Date();
   const todayStr = now.toISOString().slice(0,10);
   const curMonth = todayStr.slice(0,7);
   const curYear  = todayStr.slice(0,4);
-
+ 
   // KPI helpers
   const calcPeriod=(start,end)=>{
     const ss=sales.filter(s=>s.date>=start&&s.date<=(end||todayStr));
@@ -150,7 +165,7 @@ function Dashboard({prods,pkgs,clients,sales,expenses}){
   const mesData  = calcPeriod(curMonth+"-01");
   const totalData= calcPeriod(curYear+"-01-01");
   const gastosMes= expenses.filter(e=>e.date>=curMonth+"-01"&&e.date<=todayStr).reduce((a,e)=>a+e.amount,0);
-
+ 
   // Monthly chart — all 12 months of current year
   const MONTHS=["Ene","Feb","Mar","Abr","May","Jun","Jul","Ago","Sep","Oct","Nov","Dic"];
   const byMonth=MONTHS.map((m,i)=>{
@@ -162,15 +177,15 @@ function Dashboard({prods,pkgs,clients,sales,expenses}){
     const cst=ss.reduce((a,s)=>a+s.cost,0);
     return{name:m,util:+(rev-cst).toFixed(0),rev:+rev.toFixed(0)};
   });
-
+ 
   // Recent sales
   const recent=[...sales].sort((a,b)=>b.date.localeCompare(a.date)).slice(0,6);
-
+ 
   const nomMes=now.toLocaleDateString("es-MX",{month:"long"}).replace(/^\w/,c=>c.toUpperCase());
-
+ 
   return(
     <div style={{display:"flex",flexDirection:"column",gap:"1.25rem"}}>
-
+ 
       {/* ── KPI CARDS ── */}
       <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(160px,1fr))",gap:12}}>
         <div style={{background:T.bgCard,borderRadius:12,padding:"16px 18px",border:`0.5px solid ${T.goldBorder}`,borderTop:`3px solid ${T.gold}`}}>
@@ -194,7 +209,7 @@ function Dashboard({prods,pkgs,clients,sales,expenses}){
           <p style={{margin:0,fontSize:12,color:T.textMuted}}>Mes actual</p>
         </div>
       </div>
-
+ 
       {/* ── CHART + RECIENTES ── */}
       <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}>
         {/* Gráfica mensual */}
@@ -223,7 +238,7 @@ function Dashboard({prods,pkgs,clients,sales,expenses}){
             </ResponsiveContainer>
           </div>
         </Card>
-
+ 
         {/* Ventas recientes */}
         <Card>
           <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:16}}>
@@ -250,7 +265,7 @@ function Dashboard({prods,pkgs,clients,sales,expenses}){
           )}
         </Card>
       </div>
-
+ 
       {/* ── TABLA MENSUAL + ANUAL ── */}
       {(()=>{
         const anioData=calcPeriod(curYear+"-01-01");
@@ -291,7 +306,7 @@ function Dashboard({prods,pkgs,clients,sales,expenses}){
     </div>
   );
 }
-
+ 
 // ── PRODUCTOS ─────────────────────────────────────────────────────────────────
 function Productos({prods,setProds}){
   const[editMode,setEditMode]=useState(false);
@@ -338,7 +353,7 @@ function Productos({prods,setProds}){
     </div>
   );
 }
-
+ 
 // ── PAQUETES ──────────────────────────────────────────────────────────────────
 function Paquetes({pkgs,setPkgs,prods}){
   const[editing,setEditing]=useState(null);
@@ -408,7 +423,7 @@ function Paquetes({pkgs,setPkgs,prods}){
     </div>
   );
 }
-
+ 
 // ── CLIENTES ──────────────────────────────────────────────────────────────────
 function Clientes({clients,setClients,prods,pkgs}){
   const blank={name:"",type:"Menudeo",phone:"",notes:"",prices:{},pkgPrices:{}};
@@ -497,8 +512,8 @@ function Clientes({clients,setClients,prods,pkgs}){
     </div>
   );
 }
-
-
+ 
+ 
 // ── SEARCHABLE PRODUCT DROPDOWN ───────────────────────────────────────────────
 function ProdSearch({prods,value,onChange}){
   const[q,setQ]=useState("");
@@ -565,7 +580,7 @@ function ProdSearch({prods,value,onChange}){
     </div>
   );
 }
-
+ 
 // ── NUEVA VENTA ───────────────────────────────────────────────────────────────
 function NuevaVenta({prods,setProds,pkgs,clients,setClients,sales,setSales}){
   const[date,setDate]=useState(today());
@@ -582,7 +597,7 @@ function NuevaVenta({prods,setProds,pkgs,clients,setClients,sales,setSales}){
   const[note,setNote]=useState("");
   const[err,setErr]=useState("");
   const[newCl,setNewCl]=useState(null);
-
+ 
   const cl=clients.find(c=>c.id===clientId);
   const selPkg=pkgs.find(p=>p.id===pkgId);
   const pSalePrice=selPkg?pkgPrice(cl,pkgId,selPkg.price):0;
@@ -590,13 +605,13 @@ function NuevaVenta({prods,setProds,pkgs,clients,setClients,sales,setSales}){
   const pkgCostU=selPkg?pkgCost(selPkg,prods):0;
   const pkgTotal=effPkgPrice*pkgQty;
   const pkgCostT=pkgCostU*pkgQty;
-
+ 
   const getLP=l=>{if(l.price)return+l.price;if(!l.pid)return 0;const p=prods.find(x=>x.id===l.pid);if(!p)return 0;return clientPrice(cl,l.pid,p.tiers,+l.qty||1);};
   const lineTotal=lines.reduce((s,l)=>s+getLP(l)*(+l.qty||1),0);
   const lineCost=lines.reduce((s,l)=>{const p=prods.find(x=>x.id===l.pid);if(!p)return s;return s+(l.su==="sobre"?p.cost*(+l.qty||1):p.cost*p.spc*(+l.qty||1)/p.spc*(+l.qty||1));},0);
   // simpler lineCost
   const lineCostCalc=lines.reduce((s,l)=>{const p=prods.find(x=>x.id===l.pid);if(!p)return s;const qty=+l.qty||1;return s+p.cost*qty;},0);
-
+ 
   const register=()=>{
     if(!clientId){setErr("Selecciona un cliente");return;}
     let total,cost,desc,items;
@@ -629,13 +644,13 @@ function NuevaVenta({prods,setProds,pkgs,clients,setClients,sales,setSales}){
     setEnvio("");setEnvioTipo("ninguno");setEnvioDesc("");setNote("");
     setPayMethod("Efectivo");setCuenta("");
   };
-
+ 
   const updLine=(i,k,v)=>{
     const ls=[...lines];ls[i]={...ls[i],[k]:v};
     if(k==="pid"&&!ls[i].price){const p=prods.find(x=>x.id===v);if(p)ls[i].price=String(clientPrice(cl,v,p.tiers,+ls[i].qty||1));}
     setLines(ls);
   };
-
+ 
   return(
     <div style={{display:"flex",flexDirection:"column",gap:"1.25rem"}}>
       <Card>
@@ -653,7 +668,7 @@ function NuevaVenta({prods,setProds,pkgs,clients,setClients,sales,setSales}){
             </div>
           </F>
         </div>
-
+ 
         {/* CLIENTE */}
         <div style={{marginBottom:12}}>
           {clientId && !newCl ? (
@@ -672,7 +687,7 @@ function NuevaVenta({prods,setProds,pkgs,clients,setClients,sales,setSales}){
               </select>
             </F>
           ) : null}
-
+ 
           {/* NUEVO CLIENTE RÁPIDO */}
           {newCl && (
             <div style={{background:T.goldBg,border:`1px solid ${T.goldBorder}`,borderRadius:10,padding:"14px"}}>
@@ -697,7 +712,7 @@ function NuevaVenta({prods,setProds,pkgs,clients,setClients,sales,setSales}){
             </div>
           )}
         </div>
-
+ 
         {/* PAQUETE */}
         {mode==="paquete" && (
           <div style={{background:T.bgAlt,borderRadius:10,padding:"12px",marginBottom:12,border:`0.5px solid ${T.goldBorder}`}}>
@@ -721,7 +736,7 @@ function NuevaVenta({prods,setProds,pkgs,clients,setClients,sales,setSales}){
             )}
           </div>
         )}
-
+ 
         {/* PRODUCTOS INDIVIDUALES */}
         {mode==="custom" && (
           <div style={{background:T.bgAlt,borderRadius:10,padding:"12px",marginBottom:12,border:`0.5px solid ${T.goldBorder}`}}>
@@ -766,7 +781,7 @@ function NuevaVenta({prods,setProds,pkgs,clients,setClients,sales,setSales}){
             )}
           </div>
         )}
-
+ 
         {/* PAGO Y ENVÍO */}
         <div style={{borderTop:`1px solid ${T.goldBorder}`,paddingTop:12,marginTop:4,display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(140px,1fr))",gap:12}}>
           <F label="¿Cómo pagó?">
@@ -774,7 +789,7 @@ function NuevaVenta({prods,setProds,pkgs,clients,setClients,sales,setSales}){
               {PAY_METHODS.map(m=><option key={m} value={m}>{PAY_METHODS_LABEL[m]||m}</option>)}
             </select>
           </F>
-
+ 
           <F label="Cobro de envío ($)">
             <input type="number" min="0" value={envio} onChange={e=>setEnvio(e.target.value)} placeholder="0 = sin envío"/>
           </F>
@@ -793,7 +808,7 @@ function NuevaVenta({prods,setProds,pkgs,clients,setClients,sales,setSales}){
             </F>
           )}
         </div>
-
+ 
         <div style={{display:"flex",gap:12,alignItems:"flex-end",marginTop:12}}>
           <F label="Nota interna (opcional)" style={{flex:1}}>
             <input value={note} onChange={e=>setNote(e.target.value)} placeholder="Observaciones…"/>
@@ -804,7 +819,7 @@ function NuevaVenta({prods,setProds,pkgs,clients,setClients,sales,setSales}){
         </div>
         <ErrMsg msg={err}/>
       </Card>
-
+ 
       {/* HISTORIAL */}
       <Card>
         <STitle>Historial de ventas ({sales.length})</STitle>
@@ -842,7 +857,7 @@ function NuevaVenta({prods,setProds,pkgs,clients,setClients,sales,setSales}){
     </div>
   );
 }
-
+ 
 // ── GASTOS ────────────────────────────────────────────────────────────────────
 function Gastos({expenses,setExpenses}){
   const blank={date:today(),cat:"Importación",amount:"",desc:""};
@@ -900,7 +915,7 @@ function Gastos({expenses,setExpenses}){
     </div>
   );
 }
-
+ 
 // ── INVENTARIO ────────────────────────────────────────────────────────────────
 function Inventario({prods,setProds,sales,stockMoves,setStockMoves}){
   const[entForm,setEntForm]=useState({date:today(),pid:"",cajas:"",note:""});
@@ -910,7 +925,7 @@ function Inventario({prods,setProds,sales,stockMoves,setStockMoves}){
   const[physSobres,setPhysSobres]=useState({});
   const mielProds=prods.filter(p=>p.cat==="Miel"&&(p.spc||1)>1);
   const otherProds=prods.filter(p=>p.cat!=="Miel"||(p.spc||1)===1);
-
+ 
   const addEntrada=()=>{
     if(!entForm.pid||!entForm.cajas||+entForm.cajas<=0)return;
     const qty=+entForm.cajas;
@@ -918,7 +933,7 @@ function Inventario({prods,setProds,sales,stockMoves,setStockMoves}){
     setStockMoves([...stockMoves,{id:uid(),date:entForm.date,pid:entForm.pid,type:"entrada",cajas:qty,note:entForm.note||"+"+qty+" cajas"}]);
     setEntForm({date:today(),pid:"",cajas:"",note:""});
   };
-
+ 
   const abrirCaja=()=>{
     const prod=prods.find(p=>p.id===abrirForm.pid);
     if(!prod||!abrirForm.cajas||+abrirForm.cajas<=0)return;
@@ -929,11 +944,11 @@ function Inventario({prods,setProds,sales,stockMoves,setStockMoves}){
     setStockMoves([...stockMoves,{id:uid(),date:today(),pid:abrirForm.pid,type:"apertura",cajas:qty,sobres:nuevos,note:"Apertura menudeo: "+qty+" caja"+(qty>1?"s":"")+" → "+nuevos+" sobres"}]);
     setInvErr("");setAbrirForm({pid:"",cajas:1});
   };
-
+ 
   const[bulkMap,setBulkMap]=useState({});
   const[showBulk,setShowBulk]=useState(true);
   const[confirmReset,setConfirmReset]=useState(false);
-
+ 
   const saveBulk=()=>{
     const entries=Object.entries(bulkMap).filter(([,v])=>+v>0);
     if(entries.length===0)return;
@@ -946,16 +961,16 @@ function Inventario({prods,setProds,sales,stockMoves,setStockMoves}){
     setStockMoves([...stockMoves,...newMoves]);
     setBulkMap({});
   };
-
+ 
   const resetStock=()=>{
     setProds(prods.map(p=>({...p,stockCajas:0,stockSobres:0})));
     setStockMoves([]);
     setConfirmReset(false);
   };
-
+ 
   return(
     <div style={{display:"flex",flexDirection:"column",gap:"1.25rem"}}>
-
+ 
       {/* ── STOCK EN MASA ── */}
       <Card style={{borderColor:T.gold,borderWidth:1}}>
         <STitle right={
@@ -1001,7 +1016,7 @@ function Inventario({prods,setProds,sales,stockMoves,setStockMoves}){
           </>
         )}
       </Card>
-
+ 
       <Card>
         <STitle right={<span style={{fontSize:11,color:T.textMuted}}>🛡️ Conteo físico activa el control anti-robo</span>}>Inventario en cajas</STitle>
         <div style={{overflowX:"auto"}}>
@@ -1048,7 +1063,7 @@ function Inventario({prods,setProds,sales,stockMoves,setStockMoves}){
           </table>
         </div>
       </Card>
-
+ 
       <Card>
         <STitle>Abrir caja para menudeo</STitle>
         <p style={{margin:"0 0 12px",fontSize:12,color:T.textSub}}>Descuenta cajas selladas y agrega los sobres al stock de menudeo.</p>
@@ -1069,7 +1084,7 @@ function Inventario({prods,setProds,sales,stockMoves,setStockMoves}){
         </div>
         <ErrMsg msg={invErr}/>
       </Card>
-
+ 
       <Card>
         <STitle>Registrar entrada de mercancía</STitle>
         <div style={{display:"grid",gridTemplateColumns:"2fr 1fr 1fr 2fr",gap:12,alignItems:"flex-end"}}>
@@ -1086,7 +1101,7 @@ function Inventario({prods,setProds,sales,stockMoves,setStockMoves}){
         {entForm.pid&&+entForm.cajas>0&&(()=>{const prod=prods.find(p=>p.id===entForm.pid);return <div style={{marginTop:8,padding:"8px 12px",background:T.goldBg,borderRadius:8,fontSize:12,color:T.goldText}}>Stock actual: <strong>{prod?.stockCajas||0}</strong> → Nuevo total: <strong style={{color:T.profit}}>{(prod?.stockCajas||0)+(+entForm.cajas||0)} cajas</strong></div>;})()}
         <GoldBtn onClick={addEntrada} style={{marginTop:12}}>📦 Registrar entrada</GoldBtn>
       </Card>
-
+ 
       {stockMoves.length>0 && (
         <Card>
           <STitle>Historial de movimientos ({stockMoves.length})</STitle>
@@ -1120,7 +1135,7 @@ function Inventario({prods,setProds,sales,stockMoves,setStockMoves}){
     </div>
   );
 }
-
+ 
 // ── CORTE DE CAJA ─────────────────────────────────────────────────────────────
 function CorteCaja({sales,expenses,extras=[],setExtras}){
   const[period,setPeriod]=useState("semana");
@@ -1201,7 +1216,7 @@ function CorteCaja({sales,expenses,extras=[],setExtras}){
           </table>
         </Card>
       )}
-
+ 
       {/* ── UTILIDAD EXTRA ── */}
       <Card>
         <STitle>Utilidad extra / negocios externos</STitle>
@@ -1232,7 +1247,7 @@ function CorteCaja({sales,expenses,extras=[],setExtras}){
           if(setExtras)setExtras([...(extras||[]),{...exForm,id:uid(),amount:+exForm.amount}]);
           setExForm({date:today(),amount:"",desc:"",socio:"Marcel",tipo:"utilidad"});
         }}>+ Registrar utilidad extra</GoldBtn>
-
+ 
         {(extras||[]).length>0&&(()=>{
           const fExtras=(extras||[]).filter(x=>x.date>=range.start&&x.date<=range.end);
           const totalExtra=fExtras.reduce((s,x)=>s+x.amount,0);
@@ -1265,7 +1280,7 @@ function CorteCaja({sales,expenses,extras=[],setExtras}){
     </div>
   );
 }
-
+ 
 // ── TABS ──────────────────────────────────────────────────────────────────────
 const TABS=[
   {k:"dash", l:"Dashboard",    icon:"ti-chart-bar",    color:T.revenue},
@@ -1277,7 +1292,7 @@ const TABS=[
   {k:"inv",  l:"Inventario",   icon:"ti-package",      color:T.client},
   {k:"corte",l:"Corte de caja",icon:"ti-report-money", color:T.profit},
 ];
-
+ 
 // ── APP ───────────────────────────────────────────────────────────────────────
 function Dashboard_App(){
   const[tab,setTab]=useState("dash");
@@ -1289,7 +1304,7 @@ function Dashboard_App(){
   const[stockMoves,setStockMoves]=useState([]);
   const[extras,setExtras]=useState([]);
   const[ready,setReady]=useState(false);
-
+ 
   useEffect(()=>{
     (async()=>{
       let[p,pk,c,s,e,sm,ex]=await Promise.all([load(SK.p,INIT_PRODS),load(SK.pk,INIT_PKGS),load(SK.c,[]),load(SK.s,[]),load(SK.e,[]),load(SK.sm,[]),load(SK.ex,[])]);
@@ -1307,7 +1322,7 @@ function Dashboard_App(){
       setReady(true);
     })();
   },[]);
-
+ 
   useEffect(()=>{if(ready)save(SK.p,prods);},[prods,ready]);
   useEffect(()=>{if(ready)save(SK.pk,pkgs);},[pkgs,ready]);
   useEffect(()=>{if(ready)save(SK.c,clients);},[clients,ready]);
@@ -1315,17 +1330,17 @@ function Dashboard_App(){
   useEffect(()=>{if(ready)save(SK.e,expenses);},[expenses,ready]);
   useEffect(()=>{if(ready)save(SK.sm,stockMoves);},[stockMoves,ready]);
   useEffect(()=>{if(ready)save(SK.ex,extras);},[extras,ready]);
-
+ 
   if(!ready)return(
     <div style={{display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",padding:"3rem",gap:12,color:T.textSub}}>
       <Logo size={48}/>
       <p style={{margin:0,fontSize:13}}>Cargando tu dashboard…</p>
     </div>
   );
-
+ 
   const props={prods,setProds,pkgs,setPkgs,clients,setClients,sales,setSales,expenses,setExpenses,stockMoves,setStockMoves,extras,setExtras};
   const warn=prods.some(p=>p.cost===0);
-
+ 
   return(
     <div style={{fontFamily:"-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif",background:T.bg}}>
       <div style={{borderBottom:`2px solid ${T.goldBorder}`,marginBottom:"1.25rem"}}>
@@ -1361,15 +1376,10 @@ function Dashboard_App(){
     </div>
   );
 }
-
+ 
+ 
 export default function App() {
-  const [authed, setAuthed] = useState(() => {
-    return sessionStorage.getItem("msp_auth") === "1";
-  });
-  const handleLogin = () => {
-    sessionStorage.setItem("msp_auth", "1");
-    setAuthed(true);
-  };
-  if (!authed) return <LoginScreen onLogin={handleLogin}/>;
+  const [authed, setAuthed] = useState(()=>sessionStorage.getItem("msp_auth")==="1");
+  if (!authed) return <LoginScreen onLogin={()=>{ sessionStorage.setItem("msp_auth","1"); setAuthed(true); }}/>;
   return <Dashboard_App/>;
 }
