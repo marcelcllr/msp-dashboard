@@ -946,26 +946,34 @@ function Inventario({prods,setProds,sales,stockMoves,setStockMoves}){
   };
 
   const[bulkMap,setBulkMap]=useState({});
+  const[bulkMapSobres,setBulkMapSobres]=useState({});
   const[showBulk,setShowBulk]=useState(true);
   const[confirmReset,setConfirmReset]=useState(false);
 
   const saveBulk=()=>{
-    const entries=Object.entries(bulkMap).filter(([,v])=>+v>0);
-    if(entries.length===0)return;
+    const entriesCajas=Object.entries(bulkMap).filter(([,v])=>+v>0);
+    const entriesSobres=Object.entries(bulkMapSobres).filter(([,v])=>+v>0);
+    if(entriesCajas.length===0&&entriesSobres.length===0)return;
     const newMoves=[];
     setProds(prods.map(p=>{
-      const v=+bulkMap[p.id]||0;
-      if(v>0)newMoves.push({id:uid(),date:today(),pid:p.id,type:"entrada",cajas:v,note:"Carga de stock"});
-      return v>0?{...p,stockCajas:(p.stockCajas||0)+v}:p;
+      const cajas=+bulkMap[p.id]||0;
+      const sobres=+bulkMapSobres[p.id]||0;
+      if(cajas>0)newMoves.push({id:uid(),date:today(),pid:p.id,type:"entrada",cajas,note:"Carga de stock: "+cajas+" cajas"});
+      if(sobres>0)newMoves.push({id:uid(),date:today(),pid:p.id,type:"apertura",cajas:0,sobres,note:"Carga de sobres sueltos: "+sobres});
+      return {...p,
+        stockCajas:(p.stockCajas||0)+cajas,
+        stockSobres:(p.stockSobres||0)+sobres
+      };
     }));
     setStockMoves([...stockMoves,...newMoves]);
     setBulkMap({});
+    setBulkMapSobres({});
   };
 
   const resetStock=()=>{
     setProds(prods.map(p=>({...p,stockCajas:0,stockSobres:0})));
     setStockMoves([]);
-    setConfirmReset(false);
+    setConfirmReset(false);setBulkMapSobres({});
   };
 
   return(
@@ -994,22 +1002,50 @@ function Inventario({prods,setProds,sales,stockMoves,setStockMoves}){
             <p style={{margin:"0 0 12px",fontSize:12,color:T.textSub}}>
               Escribe cuántas cajas quieres <strong>agregar</strong> a cada producto. El número se suma al stock actual.
             </p>
-            <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(150px,1fr))",gap:10,marginBottom:14}}>
+            <p style={{margin:"0 0 4px",fontSize:11,color:T.textMuted}}>
+              📦 <strong>Cajas</strong> = cajas selladas · 🔓 <strong>Sobres</strong> = sobres sueltos que ya tienes abiertos
+            </p>
+            <div style={{display:"flex",flexDirection:"column",gap:10,marginBottom:14}}>
               {prods.filter(p=>p.cat==="Miel").map(p=>(
-                <div key={p.id} style={{background:T.bgAlt,borderRadius:8,padding:"10px 12px",border:`0.5px solid ${T.border}`}}>
-                  <p style={{margin:"0 0 4px",fontSize:12,fontWeight:600,color:T.text,lineHeight:1.3}}>{p.name}</p>
-                  <p style={{margin:"0 0 8px",fontSize:10,color:T.textMuted}}>{p.spc>1?p.spc+" sobres/caja":p.unit}</p>
-                  <div style={{display:"flex",alignItems:"center",gap:8}}>
-                    <input type="number" min="0" step="1" value={bulkMap[p.id]||""} onChange={e=>setBulkMap({...bulkMap,[p.id]:e.target.value})} placeholder="0" style={{width:65,fontSize:14,fontWeight:600,textAlign:"center",padding:"8px",height:44}}/>
-                    <span style={{fontSize:11,color:T.textSub}}>cajas</span>
-                    <Chip label={"Stock: "+(p.stockCajas||0)} bg={(p.stockCajas||0)>0?T.goldBg:"rgba(192,64,64,0.08)"} color={(p.stockCajas||0)>0?T.goldText:T.expense}/>
+                <div key={p.id} style={{background:T.bgAlt,borderRadius:10,padding:"12px 14px",border:`0.5px solid ${T.border}`}}>
+                  <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:10,flexWrap:"wrap",gap:6}}>
+                    <div>
+                      <p style={{margin:"0 0 2px",fontSize:13,fontWeight:600,color:T.text}}>{p.name}</p>
+                      <p style={{margin:0,fontSize:11,color:T.textMuted}}>{p.spc>1?p.spc+" sobres/caja":p.unit}</p>
+                    </div>
+                    <div style={{display:"flex",gap:5,flexWrap:"wrap"}}>
+                      {(p.stockCajas||0)>0&&<Chip label={(p.stockCajas||0)+" cajas"} bg={T.goldBg} color={T.goldText}/>}
+                      {(p.stockSobres||0)>0&&<Chip label={(p.stockSobres||0)+" sobres"} bg="rgba(40,96,176,0.1)" color={T.client}/>}
+                      {(p.stockCajas||0)===0&&(p.stockSobres||0)===0&&<Chip label="Sin stock" bg="rgba(192,64,64,0.08)" color={T.expense}/>}
+                    </div>
+                  </div>
+                  <div style={{display:"grid",gridTemplateColumns:p.spc>1?"1fr 1fr":"1fr",gap:10}}>
+                    <F label={"📦 Cajas"+(p.spc>1?" ("+p.spc+" sobres c/u)":"")}>
+                      <input type="number" min="0" step="1"
+                        value={bulkMap[p.id]||""}
+                        onChange={e=>setBulkMap({...bulkMap,[p.id]:e.target.value})}
+                        placeholder="0"
+                        style={{textAlign:"center",fontWeight:700,fontSize:18}}/>
+                    </F>
+                    {p.spc>1&&(
+                      <F label="🔓 Sobres sueltos">
+                        <input type="number" min="0" step="1"
+                          value={bulkMapSobres[p.id]||""}
+                          onChange={e=>setBulkMapSobres({...bulkMapSobres,[p.id]:e.target.value})}
+                          placeholder="0"
+                          style={{textAlign:"center",fontWeight:700,fontSize:18}}/>
+                      </F>
+                    )}
                   </div>
                 </div>
               ))}
             </div>
-            {Object.values(bulkMap).some(v=>+v>0)&&(
-              <div style={{marginBottom:12,padding:"8px 14px",background:T.goldBg,borderRadius:8,fontSize:12,color:T.goldText}}>
-                Se agregarán: {Object.entries(bulkMap).filter(([,v])=>+v>0).map(([pid,v])=>{const p=prods.find(x=>x.id===pid);return v+"× "+(p?.name||pid);}).join(" · ")}
+            {(Object.values(bulkMap).some(v=>+v>0)||Object.values(bulkMapSobres).some(v=>+v>0))&&(
+              <div style={{marginBottom:12,padding:"10px 14px",background:T.goldBg,borderRadius:8,fontSize:12,color:T.goldText,lineHeight:1.8}}>
+                <strong>Se agregarán:</strong><br/>
+                {[...Object.entries(bulkMap).filter(([,v])=>+v>0).map(([pid,v])=>{const p=prods.find(x=>x.id===pid);return "📦 "+v+" caja"+(+v!==1?"s":"")+" de "+(p?.name||pid);}),
+                  ...Object.entries(bulkMapSobres).filter(([,v])=>+v>0).map(([pid,v])=>{const p=prods.find(x=>x.id===pid);return "🔓 "+v+" sobre"+(+v!==1?"s":"")+" suelto"+(+v!==1?"s":"")+" de "+(p?.name||pid);})
+                ].join(" · ")}
               </div>
             )}
             <GoldBtn onClick={saveBulk} style={{fontSize:13,padding:"9px 24px"}}>📦 Guardar stock</GoldBtn>
