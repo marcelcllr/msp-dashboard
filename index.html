@@ -2,28 +2,76 @@
 <html lang="es">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>My Secret Passion MX — Dashboard</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="default">
+    <title>My Secret Passion MX</title>
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@latest/tabler-icons.min.css"/>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
     <style>
       *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-      body { font-family: 'Inter', -apple-system, sans-serif; background: #FFFFFF; }
-      input, select, button, textarea {
+      html { -webkit-text-size-adjust: 100%; }
+      body { font-family: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; background: #FFFFFF; overflow-x: hidden; }
+      
+      #root { padding: 10px; max-width: 600px; margin: 0 auto; }
+      
+      @media (min-width: 768px) {
+        #root { padding: 16px; max-width: 1200px; }
+      }
+      
+      input, select, textarea {
         font-family: inherit;
-        font-size: 13px;
-        border-radius: 6px;
-        border: 1px solid rgba(196,150,42,0.25);
-        padding: 6px 10px;
+        font-size: 16px; /* Prevents iOS zoom on focus */
+        border-radius: 8px;
+        border: 1px solid rgba(196,150,42,0.3);
+        padding: 10px 12px;
         outline: none;
         background: #fff;
         color: #1C1A16;
+        width: 100%;
+        -webkit-appearance: none;
+        appearance: none;
+        min-height: 44px; /* Touch target */
       }
-      input:focus, select:focus { border-color: #C4962A; box-shadow: 0 0 0 2px rgba(196,150,42,0.15); }
-      button { cursor: pointer; background: transparent; border: 1px solid rgba(196,150,42,0.25); padding: 6px 14px; }
-      button:hover { opacity: 0.85; }
-      #root { padding: 16px; max-width: 1200px; margin: 0 auto; }
+      
+      select {
+        background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%23888' d='M6 8L1 3h10z'/%3E%3C/svg%3E");
+        background-repeat: no-repeat;
+        background-position: right 12px center;
+        padding-right: 32px;
+      }
+      
+      input:focus, select:focus, textarea:focus {
+        border-color: #C4962A;
+        box-shadow: 0 0 0 3px rgba(196,150,42,0.15);
+      }
+      
+      button {
+        font-family: inherit;
+        cursor: pointer;
+        background: transparent;
+        border: 1px solid rgba(196,150,42,0.25);
+        padding: 8px 14px;
+        border-radius: 8px;
+        font-size: 13px;
+        min-height: 36px;
+        -webkit-tap-highlight-color: transparent;
+        touch-action: manipulation;
+      }
+      
+      button:active { opacity: 0.7; }
+      
+      /* Smooth scrolling */
+      * { -webkit-overflow-scrolling: touch; }
+      
+      /* Overlay for ProdSearch */
+      .prod-overlay {
+        position: fixed;
+        inset: 0;
+        background: rgba(0,0,0,0.4);
+        z-index: 9998;
+      }
     </style>
   </head>
   <body>
