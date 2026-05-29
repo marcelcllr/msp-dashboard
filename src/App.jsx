@@ -88,10 +88,10 @@ const INIT_PRODS=[
   {id:"pp12",name:"Pink Pussycat (12 sobres)",          cat:"Miel",    unit:"caja", spc:12, cost:195, list:999, tiers:TB,stockCajas:0,stockSobres:0},
   {id:"vf",  name:"Vitafer-L (16 sobres)",              cat:"Miel",    unit:"caja", spc:16, cost:340, list:1199,tiers:TA,stockCajas:0,stockSobres:0},
   {id:"sob", name:"Sobre individual",                   cat:"Miel",    unit:"sobre",spc:1,  cost:10,  list:150, tiers:[{m:1,p:150},{m:4,p:125},{m:8,p:100}],stockCajas:0,stockSobres:0},
-  {id:"gom_f",name:"Gomitas Bliss Bears (Mujer)",         cat:"Miel",    unit:"caja", spc:1,  cost:130, list:400, tiers:TD,stockCajas:0,stockSobres:0},
-  {id:"gom_m",name:"Gomitas Boner Bears (Hombre)",         cat:"Miel",    unit:"caja", spc:1,  cost:130, list:400, tiers:TD,stockCajas:0,stockSobres:0},
-  {id:"rchv",name:"Royal Choco VIP (12 chocolates)",    cat:"Miel",    unit:"caja", spc:12, cost:290, list:1250,tiers:TC,stockCajas:0,stockSobres:0},
-  {id:"rhch",name:"Rhino Choco (12 sobres)",            cat:"Miel",    unit:"caja", spc:12, cost:290, list:1250,tiers:TC,stockCajas:0,stockSobres:0},
+  {id:"gom_f",name:"Gomitas Bliss Bears — Mujer",         cat:"Miel",    unit:"caja", spc:6,  cost:130, list:400, tiers:TD,spcu:"piezas",stockCajas:0,stockSobres:0},
+  {id:"gom_m",name:"Gomitas Boner Bears — Hombre",         cat:"Miel",    unit:"caja", spc:6,  cost:130, list:400, tiers:TD,spcu:"piezas",stockCajas:0,stockSobres:0},
+  {id:"rchv",name:"Royal Choco VIP",                    cat:"Miel",    unit:"caja", spc:12, cost:290, list:1250,tiers:TC,spcu:"piezas",stockCajas:0,stockSobres:0},
+  {id:"rhch",name:"Rhino Choco",                        cat:"Miel",    unit:"caja", spc:12, cost:290, list:1250,tiers:TC,spcu:"piezas",stockCajas:0,stockSobres:0},
   {id:"cond",name:"Condones + Lubricante",              cat:"SexShop", unit:"kit",  spc:1,  cost:0,   list:55,  tiers:[{m:1,p:55}],stockCajas:0,stockSobres:0},
   {id:"gel", name:"Gel de Masaje Sizzle Lips",          cat:"SexShop", unit:"pieza",spc:1,  cost:0,   list:645, tiers:[{m:1,p:645}],stockCajas:0,stockSobres:0},
   {id:"swn", name:"Swiss Navy Max Size",                cat:"SexShop", unit:"tubo", spc:1,  cost:0,   list:1680,tiers:[{m:1,p:1680}],stockCajas:0,stockSobres:0},
@@ -330,7 +330,7 @@ function Productos({prods,setProds}){
                   return(
                     <tr key={p.id} style={{background:i%2===0?T.bg:T.bgRow,borderBottom:`0.5px solid ${T.border}`}}>
                       <td style={{padding:"8px 10px",fontWeight:600,color:T.text}}>{p.name}</td>
-                      <td style={{padding:"8px 10px",color:T.textSub,fontSize:11}}>{p.spc>1?p.spc+" sobres/caja":p.unit}</td>
+                      <td style={{padding:"8px 10px",color:T.textSub,fontSize:11}}>{p.spc>1?p.spc+" "+(p.spcu||"sobres")+"/caja":p.unit}</td>
                       <td style={{padding:"8px 10px"}}>
                         {editMode ? <input type="number" min="0" step="0.01" value={costMap[p.id]||""} onChange={e=>setCostMap({...costMap,[p.id]:e.target.value})} style={{width:90,fontSize:12}}/> : (p.cost>0?<span style={{color:T.cost,fontWeight:600}}>{$m(p.cost)}</span>:<span style={{color:T.textMuted}}>— pendiente</span>)}
                       </td>
@@ -1014,7 +1014,7 @@ function Inventario({prods,setProds,sales,stockMoves,setStockMoves}){
                   <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:10,flexWrap:"wrap",gap:6}}>
                     <div>
                       <p style={{margin:"0 0 2px",fontSize:13,fontWeight:600,color:T.text}}>{p.name}</p>
-                      <p style={{margin:0,fontSize:11,color:T.textMuted}}>{p.spc>1?p.spc+" sobres/caja":p.unit}</p>
+                      <p style={{margin:0,fontSize:11,color:T.textMuted}}>{p.spc>1?p.spc+" "+(p.spcu||"sobres")+"/caja":p.unit}</p>
                     </div>
                     <div style={{display:"flex",gap:5,flexWrap:"wrap"}}>
                       {(p.stockCajas||0)>0&&<Chip label={(p.stockCajas||0)+" cajas"} bg={T.goldBg} color={T.goldText}/>}
@@ -1023,7 +1023,7 @@ function Inventario({prods,setProds,sales,stockMoves,setStockMoves}){
                     </div>
                   </div>
                   <div style={{display:"grid",gridTemplateColumns:p.spc>1?"1fr 1fr":"1fr",gap:10}}>
-                    <F label={"📦 Cajas"+(p.spc>1?" ("+p.spc+" sobres c/u)":"")}>
+                    <F label={"📦 Cajas"+(p.spc>1?" ("+p.spc+" "+(p.spcu||"sobres")+" c/u)":"")}>
                       <input type="number" min="0" step="1"
                         value={bulkMap[p.id]||""}
                         onChange={e=>setBulkMap({...bulkMap,[p.id]:e.target.value})}
@@ -1078,7 +1078,7 @@ function Inventario({prods,setProds,sales,stockMoves,setStockMoves}){
                   <tr key={p.id} style={{background:hasDiff?"rgba(192,64,64,0.04)":idx%2===0?T.bg:T.bgRow,borderBottom:`0.5px solid ${T.border}`}}>
                     <td style={{padding:"9px 10px",fontWeight:600,color:T.text}}>{p.name}<div style={{fontSize:10,color:T.textMuted,fontWeight:400}}>{spc} sobres/caja</div></td>
                     <td style={{padding:"9px 10px",textAlign:"center"}}><span style={{fontSize:18,fontWeight:700,color:cajas<=0?T.expense:cajas<=2?"#E88020":T.profit}}>{cajas}</span><div style={{fontSize:10,color:T.textMuted}}>cajas</div></td>
-                    <td style={{padding:"9px 10px",textAlign:"center"}}>{sobres>0?<span style={{fontSize:18,fontWeight:700,color:T.client}}>{sobres}<div style={{fontSize:10,color:T.textMuted,fontWeight:400}}>sobres</div></span>:<span style={{color:T.textMuted}}>—</span>}</td>
+                    <td style={{padding:"9px 10px",textAlign:"center"}}>{sobres>0?<span style={{fontSize:18,fontWeight:700,color:T.client}}>{sobres}<div style={{fontSize:10,color:T.textMuted,fontWeight:400}}>{p.spcu||"sobres"}</div></span>:<span style={{color:T.textMuted}}>—</span>}</td>
                     <td style={{padding:"9px 10px",fontSize:11,color:T.textSub}}>{soldC>0&&<div>{soldC} caja{soldC!==1?"s":""}</div>}{soldS>0&&<div style={{color:T.client}}>{soldS} sobre{soldS!==1?"s":""}</div>}{soldC===0&&soldS===0&&"—"}</td>
                     <td style={{padding:"9px 10px"}}>
                       <div style={{display:"flex",gap:4}}>
