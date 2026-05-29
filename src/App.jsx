@@ -77,7 +77,7 @@ function clientPrice(cl,pid,tiers,qty){if(cl?.prices?.[pid]!=null)return+cl.pric
 function pkgPrice(cl,pkgId,std){if(cl?.pkgPrices?.[pkgId]!=null)return+cl.pkgPrices[pkgId];return std;}
 
 // ── CATALOG ───────────────────────────────────────────────────────────────────
-const COSTS={"bh":225,"rhv":220,"hs":235,"rh":125,"rhp":170,"pp24":220,"pp12":195,"vf":340,"sob":10,"gom":130,"rchv":290,"rhch":290};
+const COSTS={"bh":225,"rhv":220,"hs":235,"rh":125,"rhp":170,"pp24":220,"pp12":195,"vf":340,"sob":10,"gom_f":130,"gom_m":130,"rchv":290,"rhch":290};
 const INIT_PRODS=[
   {id:"bh",  name:"Black Horse (24 sobres)",           cat:"Miel",    unit:"caja", spc:24, cost:225, list:1199,tiers:TA,stockCajas:0,stockSobres:0},
   {id:"rhv", name:"Royal Honey VIP (24 sobres)",        cat:"Miel",    unit:"caja", spc:24, cost:220, list:1199,tiers:TA,stockCajas:0,stockSobres:0},
@@ -88,7 +88,8 @@ const INIT_PRODS=[
   {id:"pp12",name:"Pink Pussycat (12 sobres)",          cat:"Miel",    unit:"caja", spc:12, cost:195, list:999, tiers:TB,stockCajas:0,stockSobres:0},
   {id:"vf",  name:"Vitafer-L (16 sobres)",              cat:"Miel",    unit:"caja", spc:16, cost:340, list:1199,tiers:TA,stockCajas:0,stockSobres:0},
   {id:"sob", name:"Sobre individual",                   cat:"Miel",    unit:"sobre",spc:1,  cost:10,  list:150, tiers:[{m:1,p:150},{m:4,p:125},{m:8,p:100}],stockCajas:0,stockSobres:0},
-  {id:"gom", name:"Gomitas (Bliss/Boner Bears)",        cat:"Miel",    unit:"caja", spc:1,  cost:130, list:400, tiers:TD,stockCajas:0,stockSobres:0},
+  {id:"gom_f",name:"Gomitas Bliss Bears (Mujer)",         cat:"Miel",    unit:"caja", spc:1,  cost:130, list:400, tiers:TD,stockCajas:0,stockSobres:0},
+  {id:"gom_m",name:"Gomitas Boner Bears (Hombre)",         cat:"Miel",    unit:"caja", spc:1,  cost:130, list:400, tiers:TD,stockCajas:0,stockSobres:0},
   {id:"rchv",name:"Royal Choco VIP (12 chocolates)",    cat:"Miel",    unit:"caja", spc:12, cost:290, list:1250,tiers:TC,stockCajas:0,stockSobres:0},
   {id:"rhch",name:"Rhino Choco (12 sobres)",            cat:"Miel",    unit:"caja", spc:12, cost:290, list:1250,tiers:TC,stockCajas:0,stockSobres:0},
   {id:"cond",name:"Condones + Lubricante",              cat:"SexShop", unit:"kit",  spc:1,  cost:0,   list:55,  tiers:[{m:1,p:55}],stockCajas:0,stockSobres:0},
@@ -919,6 +920,8 @@ function Gastos({expenses,setExpenses}){
 // ── INVENTARIO ────────────────────────────────────────────────────────────────
 function Inventario({prods,setProds,sales,stockMoves,setStockMoves}){
   const[entForm,setEntForm]=useState({date:today(),pid:"",cajas:"",note:""});
+  const[editingStock,setEditingStock]=useState(null);
+  const[editVals,setEditVals]=useState({cajas:"",sobres:""});
   const[abrirForm,setAbrirForm]=useState({pid:"",cajas:1});
   const[invErr,setInvErr]=useState("");
   const[physCajas,setPhysCajas]=useState({});
@@ -1006,7 +1009,7 @@ function Inventario({prods,setProds,sales,stockMoves,setStockMoves}){
               📦 <strong>Cajas</strong> = cajas selladas · 🔓 <strong>Sobres</strong> = sobres sueltos que ya tienes abiertos
             </p>
             <div style={{display:"flex",flexDirection:"column",gap:10,marginBottom:14}}>
-              {prods.filter(p=>p.cat==="Miel").map(p=>(
+              {prods.filter(p=>p.cat==="Miel"&&p.id!=="sob").map(p=>(
                 <div key={p.id} style={{background:T.bgAlt,borderRadius:10,padding:"12px 14px",border:`0.5px solid ${T.border}`}}>
                   <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:10,flexWrap:"wrap",gap:6}}>
                     <div>
@@ -1057,7 +1060,7 @@ function Inventario({prods,setProds,sales,stockMoves,setStockMoves}){
         <STitle right={<span style={{fontSize:11,color:T.textMuted}}>🛡️ Conteo físico activa el control anti-robo</span>}>Inventario en cajas</STitle>
         <div style={{overflowX:"auto"}}>
           <table style={{width:"100%",borderCollapse:"collapse",minWidth:650,fontSize:12}}>
-            <TH cols={["Producto","Cajas selladas","Sobres menudeo","Vendido","Conteo físico (cajas · sobres)","Diferencia"]}/>
+            <TH cols={["Producto","Cajas selladas","Sobres menudeo","Vendido","Conteo físico (cajas · sobres)","Diferencia",""]}/>
             <tbody>
               {mielProds.map((p,idx)=>{
                 const spc=p.spc||1;
@@ -1146,13 +1149,13 @@ function Inventario({prods,setProds,sales,stockMoves,setStockMoves}){
             <tbody>
               {[...stockMoves].sort((a,b)=>b.date.localeCompare(a.date)).map((m,i)=>{
                 const prod=prods.find(p=>p.id===m.pid);
-                const isE=m.type==="entrada",isA=m.type==="apertura";
+                const isE=m.type==="entrada",isA=m.type==="apertura",isJ=m.type==="ajuste";
                 return(
                   <tr key={m.id} style={{background:i%2===0?T.bg:T.bgRow,borderBottom:`0.5px solid ${T.border}`}}>
                     <td style={{padding:"7px 10px",color:T.textSub,whiteSpace:"nowrap"}}>{m.date}</td>
-                    <td style={{padding:"7px 10px"}}><Chip label={isE?"Entrada":isA?"Apertura menudeo":"Otro"} bg={isE?"rgba(26,140,90,0.1)":isA?"rgba(40,96,176,0.1)":T.goldBg} color={isE?T.profit:isA?T.client:T.gold}/></td>
+                    <td style={{padding:"7px 10px"}}><Chip label={isE?"Entrada":isA?"Apertura menudeo":isJ?"✏️ Ajuste manual":"Otro"} bg={isE?"rgba(26,140,90,0.1)":isA?"rgba(40,96,176,0.1)":T.goldBg} color={isE?T.profit:isA?T.client:isJ?"#E88020":T.gold}/></td>
                     <td style={{padding:"7px 10px",fontWeight:500}}>{prod?.name||m.pid}</td>
-                    <td style={{padding:"7px 10px",color:isE?T.profit:T.client,fontWeight:600}}>{isE?"+"+m.cajas+" caja"+(m.cajas!==1?"s":""):isA?"−"+m.cajas+"c → +"+m.sobres+"s":""}</td>
+                    <td style={{padding:"7px 10px",color:isE?T.profit:T.client,fontWeight:600}}>{isE?"+"+m.cajas+" caja"+(m.cajas!==1?"s":""):isA?"−"+m.cajas+"c → +"+m.sobres+"s":isJ?"Cajas: "+(m.cajas>=0?"+":"")+m.cajas+" · Sobres: "+(m.sobres>=0?"+":"")+m.sobres:""}</td>
                     <td style={{padding:"7px 10px",color:T.textSub,fontSize:11}}>{m.note}</td>
                     <td style={{padding:"7px 10px"}}>
                       <OutBtn onClick={()=>{
@@ -1352,7 +1355,7 @@ function Dashboard_App(){
       // Migrate old stock field
       p=p.map(x=>{if(x.stockCajas!=null)return x;const spc=x.spc||1;const old=x.stock||0;return{...x,stockCajas:Math.floor(old/spc),stockSobres:old%spc,stock:undefined};});
       // Fix categories
-      const fix=new Set(["gom","rchv","rhch"]);
+      const fix=new Set(["gom","gom_f","gom_m","rchv","rhch"]);
       p=p.map(x=>fix.has(x.id)?{...x,cat:"Miel"}:x);
       setProds(p);setPkgs(pk);setClients(c);setSales(s);setExpenses(e);setStockMoves(sm);setExtras(ex);
       setReady(true);
