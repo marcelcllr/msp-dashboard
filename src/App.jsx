@@ -1060,7 +1060,7 @@ function Inventario({prods,setProds,sales,stockMoves,setStockMoves}){
         <STitle right={<span style={{fontSize:11,color:T.textMuted}}>🛡️ Conteo físico activa el control anti-robo</span>}>Inventario en cajas</STitle>
         <div style={{overflowX:"auto"}}>
           <table style={{width:"100%",borderCollapse:"collapse",minWidth:650,fontSize:12}}>
-            <TH cols={["Producto","Cajas selladas","Sobres menudeo","Vendido","Conteo físico (cajas · sobres)","Diferencia",""]}/>
+            <TH cols={["Producto","Cajas","Sobres","Vendido","Conteo físico","Diferencia","Editar"]}/>· sobres)","Diferencia",""]}/>
             <tbody>
               {mielProds.map((p,idx)=>{
                 const spc=p.spc||1;
@@ -1094,6 +1094,36 @@ function Inventario({prods,setProds,sales,stockMoves,setStockMoves}){
                           {hasDiff&&(()=>{const tot=(dC||0)*p.list+(dS||0)*(p.list/(spc||1));return <div style={{fontSize:10,color:tot<0?T.expense:T.client}}>{tot<0?"−":"+"}{$m(Math.abs(tot))} en valor</div>;})()}
                         </div>
                       ):<span style={{color:T.textMuted}}>sin conteo</span>}
+                    </td>
+                    <td style={{padding:"9px 10px"}}>
+                      {editingStock===p.id ? (
+                        <div style={{display:"flex",flexDirection:"column",gap:6}}>
+                          <F label="Cajas">
+                            <input type="number" min="0"
+                              value={editVals.cajas}
+                              onChange={e=>setEditVals({...editVals,cajas:e.target.value})}
+                              style={{textAlign:"center",fontWeight:700,width:70}}/>
+                          </F>
+                          {spc>1&&<F label="Sobres">
+                            <input type="number" min="0"
+                              value={editVals.sobres}
+                              onChange={e=>setEditVals({...editVals,sobres:e.target.value})}
+                              style={{textAlign:"center",fontWeight:700,width:70}}/>
+                          </F>}
+                          <div style={{display:"flex",gap:4}}>
+                            <GoldBtn onClick={()=>{
+                              const nc=editVals.cajas!==""?+editVals.cajas:cajas;
+                              const ns=editVals.sobres!==""?+editVals.sobres:sobres;
+                              setProds(prods.map(x=>x.id===p.id?{...x,stockCajas:nc,stockSobres:ns}:x));
+                              setStockMoves([...stockMoves,{id:uid(),date:today(),pid:p.id,type:"ajuste",cajas:nc-cajas,sobres:ns-sobres,note:"Ajuste manual"}]);
+                              setEditingStock(null);setEditVals({cajas:"",sobres:""});
+                            }} style={{fontSize:11,padding:"5px 10px"}}>✓</GoldBtn>
+                            <OutBtn onClick={()=>{setEditingStock(null);setEditVals({cajas:"",sobres:""}); }} style={{fontSize:11,padding:"5px 10px"}}>✕</OutBtn>
+                          </div>
+                        </div>
+                      ):(
+                        <OutBtn onClick={()=>{setEditingStock(p.id);setEditVals({cajas:String(cajas),sobres:String(sobres)});}} style={{fontSize:11,padding:"6px 12px"}}>✏️ Editar</OutBtn>
+                      )}
                     </td>
                   </tr>
                 );
