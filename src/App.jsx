@@ -12,7 +12,7 @@ async function dbLoad(key, def) {
   try {
     const { data, error } = await _supabase
       .from("msp_store").select("value").eq("key", key).maybeSingle();
-    if (error) { console.error("dbLoad error:", key, error); return def; }
+    if (error) { console.error("dbLoad error:", key, error.message); return def; }
     if (!data) return def;
     return JSON.parse(data.value);
   } catch(e) { console.error("dbLoad catch:", key, e); return def; }
@@ -21,9 +21,9 @@ async function dbLoad(key, def) {
 async function dbSave(key, value) {
   try {
     const { error } = await _supabase.from("msp_store")
-      .upsert({ key, value: JSON.stringify(value), updated_at: new Date().toISOString() }, 
+      .upsert({ key, value: JSON.stringify(value), updated_at: new Date().toISOString() },
                { onConflict: "key" });
-    if (error) console.error("dbSave error:", key, error);
+    if (error) console.error("dbSave error:", key, error.message);
   } catch(e) { console.error("dbSave catch:", key, e); }
 }
 
@@ -80,7 +80,7 @@ function clientPrice(cl,pid,tiers,qty){if(cl?.prices?.[pid]!=null)return+cl.pric
 function pkgPrice(cl,pkgId,std){if(cl?.pkgPrices?.[pkgId]!=null)return+cl.pkgPrices[pkgId];return std;}
 
 // ── CATALOG ───────────────────────────────────────────────────────────────────
-const COSTS={"bh":225,"rhv":220,"hs":235,"rh":125,"rhp":170,"pp24":220,"pp12":195,"vf":340,"sob":10,"gom_f":130,"gom_m":130,"rchv":290,"rhch":290};
+const COSTS={"bh":225,"rhv":220,"hs":235,"rh":125,"rhp":170,"pp24":220,"pp12":195,"vf":340,"sob":10,"gom":130,"rchv":290,"rhch":290};
 const INIT_PRODS=[
   {id:"bh",  name:"Black Horse (24 sobres)",           cat:"Miel",    unit:"caja", spc:24, cost:225, list:1199,tiers:TA,stockCajas:0,stockSobres:0},
   {id:"rhv", name:"Royal Honey VIP (24 sobres)",        cat:"Miel",    unit:"caja", spc:24, cost:220, list:1199,tiers:TA,stockCajas:0,stockSobres:0},
@@ -91,8 +91,8 @@ const INIT_PRODS=[
   {id:"pp12",name:"Pink Pussycat (12 sobres)",          cat:"Miel",    unit:"caja", spc:12, cost:195, list:999, tiers:TB,stockCajas:0,stockSobres:0},
   {id:"vf",  name:"Vitafer-L (16 sobres)",              cat:"Miel",    unit:"caja", spc:16, cost:340, list:1199,tiers:TA,stockCajas:0,stockSobres:0},
   {id:"sob", name:"Sobre individual",                   cat:"Miel",    unit:"sobre",spc:1,  cost:10,  list:150, tiers:[{m:1,p:150},{m:4,p:125},{m:8,p:100}],stockCajas:0,stockSobres:0},
-  {id:"gom_f",name:"Gomitas Bliss Bears — Mujer",         cat:"Miel",    unit:"caja", spc:6,  cost:130, list:400, tiers:TD,spcu:"piezas",stockCajas:0,stockSobres:0},
-  {id:"gom_m",name:"Gomitas Boner Bears — Hombre",         cat:"Miel",    unit:"caja", spc:6,  cost:130, list:400, tiers:TD,spcu:"piezas",stockCajas:0,stockSobres:0},
+  {id:"gom_f",name:"Gomitas Bliss Bears — Mujer",        cat:"Miel",    unit:"caja", spc:6,  cost:130, list:400, tiers:TD,stockCajas:0,stockSobres:0,spcu:"piezas"},
+  {id:"gom_m",name:"Gomitas Boner Bears — Hombre",       cat:"Miel",    unit:"caja", spc:6,  cost:130, list:400, tiers:TD,stockCajas:0,stockSobres:0,spcu:"piezas"},
   {id:"rchv",name:"Royal Choco VIP",                    cat:"Miel",    unit:"caja", spc:12, cost:290, list:1250,tiers:TC,spcu:"piezas",stockCajas:0,stockSobres:0},
   {id:"rhch",name:"Rhino Choco",                        cat:"Miel",    unit:"caja", spc:12, cost:290, list:1250,tiers:TC,spcu:"piezas",stockCajas:0,stockSobres:0},
   {id:"cond",name:"Condones + Lubricante",              cat:"SexShop", unit:"kit",  spc:1,  cost:0,   list:55,  tiers:[{m:1,p:55}],stockCajas:0,stockSobres:0},
@@ -116,6 +116,7 @@ const INIT_PKGS=[
 ];
 const EXP_CATS=["Gasolina","Repartidores","Importación","Transporte","Almacén","Marketing","Gastos generales","Otro"];
 const PAY_METHODS=["Efectivo","SPIN Marcel","SPIN Gustavo","Tercero","Mixto"];
+const PAY_METHODS_LABEL={"Efectivo":"💵 Efectivo","SPIN Marcel":"📱 SPIN Marcel","SPIN Gustavo":"📱 SPIN Gustavo","Tercero":"🤝 Tercero","Mixto":"💳 Mixto"};
 const PAY_METHODS_LABEL={"Efectivo":"💵 Efectivo","SPIN Marcel":"📱 SPIN Marcel","SPIN Gustavo":"📱 SPIN Gustavo","Tercero":"🤝 Tercero"};
 const PAY_CLR={"Efectivo":{bg:"rgba(26,140,90,0.12)",c:"#1A8C5A"},"SPIN Marcel":{bg:"rgba(196,150,42,0.12)",c:"#8B6716"},"SPIN Gustavo":{bg:"rgba(112,56,208,0.12)",c:"#7038D0"},"Tercero":{bg:"rgba(40,96,176,0.12)",c:"#2860B0"},"Mixto":{bg:"rgba(100,100,100,0.1)",c:"#555555"}};
 
@@ -138,7 +139,7 @@ function Logo({size=36}){
 
 // ── UI ATOMS ──────────────────────────────────────────────────────────────────
 function F({label,children,style}){return <div style={{display:"flex",flexDirection:"column",gap:4,...style}}><label style={{fontSize:11,fontWeight:600,color:T.textSub,letterSpacing:"0.04em"}}>{label}</label>{children}</div>;}
-function Card({children,style}){return <div style={{background:T.bgCard,border:`0.5px solid ${T.goldBorder}`,borderRadius:10,padding:"0.875rem 1rem",...style}}>{children}</div>;}
+function Card({children,style}){return <div style={{background:T.bgCard,border:`0.5px solid ${T.goldBorder}`,borderRadius:12,padding:"1rem 1.25rem",...style}}>{children}</div>;}
 function STitle({children,right}){return <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:12}}><p style={{margin:0,fontWeight:600,fontSize:12,color:T.text,letterSpacing:"0.06em",textTransform:"uppercase"}}>{children}</p>{right}</div>;}
 function TH({cols}){return <thead><tr style={{background:T.goldBg}}>{cols.map((c,i)=><th key={i} style={{textAlign:"left",padding:"7px 10px",fontWeight:600,color:T.goldText,fontSize:10,letterSpacing:"0.08em",textTransform:"uppercase",whiteSpace:"nowrap",borderBottom:`1px solid ${T.goldBorder}`}}>{c}</th>)}</tr></thead>;}
 function KCard({label,value,sub,color,icon}){const c=color||T.gold;return <div style={{background:T.bgCard,borderRadius:10,padding:"14px 16px",border:`0.5px solid ${T.goldBorder}`,borderLeft:`3px solid ${c}`}}><div style={{display:"flex",alignItems:"center",gap:6,marginBottom:4}}>{icon&&<i className={"ti "+icon} style={{fontSize:14,color:c}}/>}<p style={{margin:0,fontSize:11,color:T.textSub,fontWeight:500}}>{label}</p></div><p style={{margin:0,fontSize:22,fontWeight:700,color:c}}>{value}</p>{sub&&<p style={{margin:0,fontSize:11,color:T.textMuted,marginTop:2}}>{sub}</p>}</div>;}
@@ -191,7 +192,7 @@ function Dashboard({prods,pkgs,clients,sales,expenses}){
     <div style={{display:"flex",flexDirection:"column",gap:"1.25rem"}}>
 
       {/* ── KPI CARDS ── */}
-      <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(140px,1fr))",gap:10}}>
+      <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(160px,1fr))",gap:12}}>
         <div style={{background:T.bgCard,borderRadius:12,padding:"16px 18px",border:`0.5px solid ${T.goldBorder}`,borderTop:`3px solid ${T.gold}`}}>
           <p style={{margin:"0 0 8px",fontSize:11,fontWeight:600,color:T.textSub,textTransform:"uppercase",letterSpacing:"0.08em"}}>Ganancias del mes</p>
           <p style={{margin:"0 0 4px",fontSize:28,fontWeight:700,color:T.text}}>{$m(mesData.util)}</p>
@@ -220,7 +221,7 @@ function Dashboard({prods,pkgs,clients,sales,expenses}){
       </div>
 
       {/* ── CHART + RECIENTES ── */}
-      <div style={{display:"flex",flexDirection:"column",gap:12}}>
+      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}>
         {/* Gráfica mensual */}
         <Card>
           <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:16}}>
@@ -287,6 +288,7 @@ function Dashboard({prods,pkgs,clients,sales,expenses}){
             <td style={{padding:"10px 12px",color:T.textSub,textAlign:"center"}}>{data.count}</td>
             <td style={{padding:"10px 12px",color:T.revenue,fontWeight:600,textAlign:"right",whiteSpace:"nowrap"}}>{$m(data.rev)}</td>
             <td style={{padding:"10px 12px",fontWeight:700,color:data.util>=0?T.profit:T.expense,textAlign:"right",whiteSpace:"nowrap"}}>{$m(data.util)}</td>
+            <td style={{padding:"10px 12px",fontWeight:700,color:data.net>=0?T.profit:T.expense,textAlign:"right",whiteSpace:"nowrap"}}>{$m(data.net)}</td>
           </tr>
         );
         return(
@@ -294,7 +296,7 @@ function Dashboard({prods,pkgs,clients,sales,expenses}){
             <STitle>Resumen de ganancias</STitle>
             <div style={{overflowX:"auto"}}>
               <table style={{width:"100%",borderCollapse:"collapse",fontSize:13}}>
-                <TH cols={["Período","Ventas","Ingresos","Utilidad"]}/>
+                <TH cols={["Período","Ventas","Ingresos","Utilidad bruta","Utilidad neta"]}/>
                 <tbody>
                   <Row label={"Este mes ("+nomMes+")"} data={mesData}  accent={T.gold}/>
                   <Row label={"Este año ("+curYear+")"}  data={anioData} accent={T.profit}/>
@@ -338,7 +340,7 @@ function Productos({prods,setProds}){
                   return(
                     <tr key={p.id} style={{background:i%2===0?T.bg:T.bgRow,borderBottom:`0.5px solid ${T.border}`}}>
                       <td style={{padding:"8px 10px",fontWeight:600,color:T.text}}>{p.name}</td>
-                      <td style={{padding:"8px 10px",color:T.textSub,fontSize:11}}>{p.spc>1?p.spc+" "+(p.spcu||"sobres")+"/caja":p.unit}</td>
+                      <td style={{padding:"8px 10px",color:T.textSub,fontSize:11}}>{p.spc>1?p.spc+" sobres/caja":p.unit}</td>
                       <td style={{padding:"8px 10px"}}>
                         {editMode ? <input type="number" min="0" step="0.01" value={costMap[p.id]||""} onChange={e=>setCostMap({...costMap,[p.id]:e.target.value})} style={{width:90,fontSize:12}}/> : (p.cost>0?<span style={{color:T.cost,fontWeight:600}}>{$m(p.cost)}</span>:<span style={{color:T.textMuted}}>— pendiente</span>)}
                       </td>
@@ -404,7 +406,7 @@ function Paquetes({pkgs,setPkgs,prods}){
       {editing && (
         <Card style={{borderColor:T.gold,borderWidth:1}}>
           <STitle>{editing==="new"?"Nuevo paquete":"Editar paquete"}</STitle>
-          <div style={{display:"flex",flexDirection:"column",gap:10,marginBottom:12}}>
+          <div style={{display:"grid",gridTemplateColumns:"2fr 1fr",gap:12,marginBottom:12}}>
             <F label="Nombre"><input value={form.name} onChange={e=>setForm({...form,name:e.target.value})} placeholder="Ej. Paquete Emprendedor"/></F>
             <F label="Precio de venta ($)"><input type="number" value={form.price} onChange={e=>setForm({...form,price:e.target.value})} placeholder="0.00"/></F>
           </div>
@@ -452,7 +454,7 @@ function Clientes({clients,setClients,prods,pkgs}){
     <div style={{display:"flex",flexDirection:"column",gap:"1.25rem"}}>
       <Card>
         <STitle>{editing?"Editar cliente":"Agregar cliente"}</STitle>
-        <div style={{display:"flex",flexDirection:"column",gap:10}}>
+        <div style={{display:"grid",gridTemplateColumns:"2fr 1fr 1fr 2fr",gap:12}}>
           <F label="Nombre / empresa"><input value={form.name} onChange={e=>setForm({...form,name:e.target.value})} placeholder="Nombre del cliente"/></F>
           <F label="Tipo"><select value={form.type} onChange={e=>setForm({...form,type:e.target.value})}>{TYPES.map(t=><option key={t}>{t}</option>)}</select></F>
           <F label="Teléfono"><input value={form.phone} onChange={e=>setForm({...form,phone:e.target.value})} placeholder="55 0000 0000"/></F>
@@ -533,58 +535,57 @@ function ProdSearch({prods,value,onChange}){
   const fm=filter(miel);const fs=filter(sex);
   const pick=pid=>{onChange(pid);setQ("");setOpen(false);};
   return(
-    <div>
-      <div onClick={()=>setOpen(!open)}
-        style={{display:"flex",alignItems:"center",gap:8,padding:"10px 12px",border:`1.5px solid ${open?T.gold:T.border}`,borderRadius:8,background:T.bg,cursor:"pointer",minHeight:48}}>
+    <div style={{position:"relative"}}>
+      <div onClick={()=>setOpen(!open)} style={{display:"flex",alignItems:"center",gap:6,padding:"6px 10px",border:`1px solid ${open?T.gold:T.border}`,borderRadius:6,background:T.bg,cursor:"pointer",minHeight:32}}>
         {sel
-          ? <span style={{flex:1,fontSize:14,color:T.text,fontWeight:500}}>{sel.name} <span style={{color:T.textMuted,fontWeight:400,fontSize:12}}>· {$m(sel.list)}</span></span>
-          : <span style={{flex:1,fontSize:14,color:T.textMuted}}>— Selecciona producto —</span>
+          ? <span style={{flex:1,fontSize:12,color:T.text,fontWeight:500,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{sel.name} <span style={{color:T.textMuted,fontWeight:400}}>· {$m(sel.list)}</span></span>
+          : <span style={{flex:1,fontSize:12,color:T.textMuted}}>— Selecciona producto —</span>
         }
-        <i className={"ti ti-chevron-"+(open?"up":"down")} style={{fontSize:14,color:T.textMuted,flexShrink:0}}/>
+        <i className="ti ti-chevron-down" style={{fontSize:12,color:T.textMuted,flexShrink:0}}/>
       </div>
       {open && (
-        <>
-          <div onClick={()=>setOpen(false)} style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.5)",zIndex:9998}}/>
-          <div style={{position:"fixed",bottom:0,left:0,right:0,zIndex:9999,background:T.bg,borderRadius:"16px 16px 0 0",boxShadow:"0 -4px 30px rgba(0,0,0,0.2)",maxHeight:"75vh",display:"flex",flexDirection:"column"}}>
-            <div style={{padding:"12px 16px",borderBottom:`1px solid ${T.border}`,display:"flex",alignItems:"center",gap:10}}>
-              <span style={{fontSize:13,fontWeight:600,color:T.text,flex:1}}>Selecciona producto</span>
-              <button onClick={()=>setOpen(false)} style={{border:"none",background:"none",fontSize:20,color:T.textMuted,padding:"0 4px",minHeight:"auto"}}>✕</button>
-            </div>
-            <div style={{padding:"10px 16px",borderBottom:`1px solid ${T.border}`}}>
-              <input autoFocus value={q} onChange={e=>setQ(e.target.value)}
-                placeholder="Buscar…" style={{fontSize:16}}
-                onClick={e=>e.stopPropagation()}/>
-            </div>
-            <div style={{overflowY:"auto",flex:1,paddingBottom:20}}>
-              {fm.length>0&&(
-                <>
-                  <div style={{padding:"8px 16px 4px",fontSize:10,fontWeight:700,color:T.textMuted,textTransform:"uppercase",letterSpacing:"0.08em",background:T.bgAlt,position:"sticky",top:0}}>Mieles & Chocolates</div>
-                  {fm.map(p=>(
-                    <div key={p.id} onClick={()=>pick(p.id)}
-                      style={{padding:"14px 16px",fontSize:14,cursor:"pointer",background:value===p.id?T.goldBg:"transparent",display:"flex",justifyContent:"space-between",alignItems:"center",borderBottom:`0.5px solid ${T.border}`}}>
-                      <span style={{fontWeight:value===p.id?600:400,color:value===p.id?T.goldText:T.text}}>{p.name}</span>
-                      <span style={{color:T.textMuted,fontSize:12,flexShrink:0,marginLeft:8}}>{$m(p.list)}</span>
-                    </div>
-                  ))}
-                </>
-              )}
-              {fs.length>0&&(
-                <>
-                  <div style={{padding:"8px 16px 4px",fontSize:10,fontWeight:700,color:T.textMuted,textTransform:"uppercase",letterSpacing:"0.08em",background:T.bgAlt,position:"sticky",top:0}}>Sex Shop</div>
-                  {fs.map(p=>(
-                    <div key={p.id} onClick={()=>pick(p.id)}
-                      style={{padding:"14px 16px",fontSize:14,cursor:"pointer",background:value===p.id?T.goldBg:"transparent",display:"flex",justifyContent:"space-between",alignItems:"center",borderBottom:`0.5px solid ${T.border}`}}>
-                      <span style={{fontWeight:value===p.id?600:400,color:value===p.id?T.goldText:T.text}}>{p.name}</span>
-                      <span style={{color:T.textMuted,fontSize:12,flexShrink:0,marginLeft:8}}>{$m(p.list)}</span>
-                    </div>
-                  ))}
-                </>
-              )}
-              {fm.length===0&&fs.length===0&&<div style={{padding:"20px",fontSize:13,color:T.textMuted,textAlign:"center"}}>Sin resultados</div>}
-              {value&&<div onClick={()=>pick("")} style={{padding:"14px 16px",fontSize:13,color:T.expense,cursor:"pointer",textAlign:"center",fontWeight:500}}>✕ Quitar producto</div>}
-            </div>
+        <div style={{position:"absolute",top:"100%",left:0,right:0,zIndex:999,background:T.bg,border:`1px solid ${T.goldBorder}`,borderRadius:8,boxShadow:"0 4px 20px rgba(0,0,0,0.12)",marginTop:2,maxHeight:260,display:"flex",flexDirection:"column"}}>
+          <div style={{padding:"8px 10px",borderBottom:`1px solid ${T.border}`}}>
+            <input
+              autoFocus
+              value={q}
+              onChange={e=>setQ(e.target.value)}
+              placeholder="Buscar producto…"
+              style={{width:"100%",fontSize:12,padding:"5px 8px",border:`1px solid ${T.border}`,borderRadius:5}}
+              onClick={e=>e.stopPropagation()}
+            />
           </div>
-        </>
+          <div style={{overflowY:"auto",flex:1}}>
+            {fm.length>0 && (
+              <>
+                <div style={{padding:"5px 10px 2px",fontSize:10,fontWeight:700,color:T.textMuted,textTransform:"uppercase",letterSpacing:"0.08em",background:T.bgAlt}}>Mieles & Chocolates</div>
+                {fm.map(p=>(
+                  <div key={p.id} onClick={()=>pick(p.id)} style={{padding:"8px 12px",fontSize:12,cursor:"pointer",background:value===p.id?T.goldBg:undefined,color:value===p.id?T.goldText:T.text,display:"flex",justifyContent:"space-between",alignItems:"center"}}
+                    onMouseEnter={e=>e.currentTarget.style.background=T.bgAlt}
+                    onMouseLeave={e=>e.currentTarget.style.background=value===p.id?T.goldBg:"transparent"}>
+                    <span style={{fontWeight:value===p.id?600:400}}>{p.name}</span>
+                    <span style={{color:T.textMuted,fontSize:11}}>{$m(p.list)}</span>
+                  </div>
+                ))}
+              </>
+            )}
+            {fs.length>0 && (
+              <>
+                <div style={{padding:"5px 10px 2px",fontSize:10,fontWeight:700,color:T.textMuted,textTransform:"uppercase",letterSpacing:"0.08em",background:T.bgAlt}}>Sex Shop</div>
+                {fs.map(p=>(
+                  <div key={p.id} onClick={()=>pick(p.id)} style={{padding:"8px 12px",fontSize:12,cursor:"pointer",background:value===p.id?T.goldBg:undefined,color:value===p.id?T.goldText:T.text,display:"flex",justifyContent:"space-between",alignItems:"center"}}
+                    onMouseEnter={e=>e.currentTarget.style.background=T.bgAlt}
+                    onMouseLeave={e=>e.currentTarget.style.background=value===p.id?T.goldBg:"transparent"}>
+                    <span style={{fontWeight:value===p.id?600:400}}>{p.name}</span>
+                    <span style={{color:T.textMuted,fontSize:11}}>{$m(p.list)}</span>
+                  </div>
+                ))}
+              </>
+            )}
+            {fm.length===0&&fs.length===0 && <div style={{padding:"12px",fontSize:12,color:T.textMuted,textAlign:"center"}}>Sin resultados para "{q}"</div>}
+          </div>
+          {value && <div onClick={()=>pick("")} style={{padding:"8px 12px",fontSize:11,color:T.expense,cursor:"pointer",borderTop:`1px solid ${T.border}`,textAlign:"center"}}>✕ Quitar producto</div>}
+        </div>
       )}
     </div>
   );
@@ -603,9 +604,9 @@ function NuevaVenta({prods,setProds,pkgs,clients,setClients,sales,setSales}){
   const[mixEfectivo,setMixEfectivo]=useState("");
   const[mixTransferencia,setMixTransferencia]=useState("");
   const[mixCuenta,setMixCuenta]=useState("SPIN Marcel");
+  const[costoEnvio,setCostoEnvio]=useState("");
   const[envio,setEnvio]=useState("");
   const[envioTipo,setEnvioTipo]=useState("ninguno");
-  const[costoEnvio,setCostoEnvio]=useState("");
   const[envioDesc,setEnvioDesc]=useState("");
   const[note,setNote]=useState("");
   const[err,setErr]=useState("");
@@ -641,17 +642,12 @@ function NuevaVenta({prods,setProds,pkgs,clients,setClients,sales,setSales}){
       items=valid.map(l=>({pid:l.pid,qty:+l.qty,su:l.su||"caja"}));
     }
     const envioNum=+envio||0;
-    const costoEnvioN=+costoEnvio||0;
     const regaloC=envioTipo==="sobres"?(parseInt(envioDesc)||1)*SOBRE_COST:0;
-    // Total incluye lo cobrado por envío. Costo incluye lo pagado al repartidor + sobres regalo
-    const sale={id:uid(),date,clientId,pkgId:mode==="paquete"?pkgId:null,
-      total:total+envioNum,
-      cost:cost+regaloC+costoEnvioN,
-      desc,items,note,payMethod,
+    const sale={id:uid(),date,clientId,pkgId:mode==="paquete"?pkgId:null,total,cost:cost+regaloC,desc,items,note,payMethod,
       mixEfectivo:payMethod==="Mixto"?+mixEfectivo||0:0,
       mixTransferencia:payMethod==="Mixto"?+mixTransferencia||0:0,
-      mixCuenta:payMethod==="Mixto"?mixCuenta:payMethod==="Mixto"?mixCuenta:"",
-      envio:envioNum,costoEnvio:costoEnvioN,envioTipo,envioDesc};
+      mixCuenta:payMethod==="Mixto"?mixCuenta:"",
+      envio:envioNum,costoEnvio:+costoEnvio||0,envioTipo,envioDesc};
     setSales([...sales,sale]);
     // deduct stock
     setProds(prev=>prev.map(prod=>{
@@ -663,8 +659,8 @@ function NuevaVenta({prods,setProds,pkgs,clients,setClients,sales,setSales}){
     setErr("");
     setPkgId("");setPkgQty(1);setPkgOver("");
     setLines([{pid:"",qty:1,price:"",su:"caja"}]);
-    setEnvio("");setEnvioTipo("ninguno");setEnvioDesc("");setCostoEnvio("");setNote("");
-    setPayMethod("Efectivo");setCuenta("");setMixEfectivo("");setMixTransferencia("");setMixCuenta("SPIN Marcel");
+    setEnvio("");setEnvioTipo("ninguno");setEnvioDesc("");setNote("");
+    setPayMethod("Efectivo");setCuenta("");setMixEfectivo("");setMixTransferencia("");setMixCuenta("SPIN Marcel");setCostoEnvio("");
   };
 
   const updLine=(i,k,v)=>{
@@ -678,7 +674,7 @@ function NuevaVenta({prods,setProds,pkgs,clients,setClients,sales,setSales}){
       <Card>
         <STitle>Registrar venta</STitle>
         {/* ROW 1: fecha, modo */}
-        <div style={{display:"flex",flexDirection:"column",gap:12,marginBottom:12}}>
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12,marginBottom:12}}>
           <F label="Fecha"><input type="date" value={date} onChange={e=>setDate(e.target.value)}/></F>
           <F label="Modo de venta">
             <div style={{display:"flex",gap:10,paddingTop:6}}>
@@ -714,7 +710,7 @@ function NuevaVenta({prods,setProds,pkgs,clients,setClients,sales,setSales}){
           {newCl && (
             <div style={{background:T.goldBg,border:`1px solid ${T.goldBorder}`,borderRadius:10,padding:"14px"}}>
               <p style={{margin:"0 0 12px",fontSize:12,fontWeight:600,color:T.goldText,textTransform:"uppercase",letterSpacing:"0.05em"}}>➕ Datos del nuevo cliente</p>
-              <div style={{display:"flex",flexDirection:"column",gap:10}}>
+              <div style={{display:"grid",gridTemplateColumns:"2fr 1fr 1fr",gap:10}}>
                 <F label="Nombre *"><input value={newCl.name} onChange={e=>setNewCl({...newCl,name:e.target.value})} placeholder="Nombre del cliente" autoFocus/></F>
                 <F label="Tipo"><select value={newCl.type} onChange={e=>setNewCl({...newCl,type:e.target.value})}><option>Menudeo</option><option>Mayorista</option><option>Exclusivo</option></select></F>
                 <F label="Teléfono"><input value={newCl.phone} onChange={e=>setNewCl({...newCl,phone:e.target.value})} placeholder="Opcional"/></F>
@@ -738,7 +734,7 @@ function NuevaVenta({prods,setProds,pkgs,clients,setClients,sales,setSales}){
         {/* PAQUETE */}
         {mode==="paquete" && (
           <div style={{background:T.bgAlt,borderRadius:10,padding:"12px",marginBottom:12,border:`0.5px solid ${T.goldBorder}`}}>
-            <div style={{display:"flex",flexDirection:"column",gap:10}}>
+            <div style={{display:"grid",gridTemplateColumns:"2fr 1fr 1fr",gap:12}}>
               <F label="Paquete">
                 <select value={pkgId} onChange={e=>{setPkgId(e.target.value);setPkgOver("");setErr("");}}>
                   <option value="">— Selecciona paquete —</option>
@@ -767,8 +763,8 @@ function NuevaVenta({prods,setProds,pkgs,clients,setClients,sales,setSales}){
               const up=getLP(l);
               const ut=up*(+l.qty||1)-(p?p.cost*(+l.qty||1):0);
               return(
-                <div key={i} style={{display:"flex",flexDirection:"column",gap:8,marginBottom:12,padding:"10px",background:"rgba(196,150,42,0.04)",borderRadius:8,border:"0.5px solid rgba(196,150,42,0.15)"}}>
-                  <F label={i===0?"Producto":""} style={{width:"100%",position:"relative"}}>
+                <div key={i} style={{display:"flex",gap:8,marginBottom:8,alignItems:"flex-end",flexWrap:"wrap"}}>
+                  <F label={i===0?"Producto":""} style={{flex:"1 1 200px",position:"relative"}}>
                     <ProdSearch
                       prods={prods}
                       value={l.pid}
@@ -790,7 +786,7 @@ function NuevaVenta({prods,setProds,pkgs,clients,setClients,sales,setSales}){
                     <input type="number" min="0" value={l.price} onChange={e=>updLine(i,"price",e.target.value)} placeholder={p?String(clientPrice(cl,l.pid,p.tiers,+l.qty||1)):"0"} style={{width:90}}/>
                   </F>
                   {p && p.cost>0 && <div style={{paddingBottom:6,fontSize:11,fontWeight:600,color:ut>=0?T.profit:T.expense,whiteSpace:"nowrap"}}>{$m(ut)}</div>}
-                  <OutBtn onClick={()=>setLines(lines.filter((_,j)=>j!==i))} danger style={{padding:"10px 14px",fontSize:14,alignSelf:"flex-end"}}>✕ Quitar</OutBtn>
+                  <OutBtn onClick={()=>setLines(lines.filter((_,j)=>j!==i))} danger style={{padding:"6px 8px"}}>✕</OutBtn>
                 </div>
               );
             })}
@@ -805,44 +801,16 @@ function NuevaVenta({prods,setProds,pkgs,clients,setClients,sales,setSales}){
         )}
 
         {/* PAGO Y ENVÍO */}
-        <div style={{borderTop:`1px solid ${T.goldBorder}`,paddingTop:12,marginTop:4,display:"flex",flexWrap:"wrap",gap:10}}>
+        <div style={{borderTop:`1px solid ${T.goldBorder}`,paddingTop:12,marginTop:4,display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(140px,1fr))",gap:12}}>
           <F label="¿Cómo pagó?">
             <select value={payMethod} onChange={e=>setPayMethod(e.target.value)}>
               {PAY_METHODS.map(m=><option key={m} value={m}>{PAY_METHODS_LABEL[m]||m}</option>)}
             </select>
           </F>
 
-          {payMethod==="Mixto" && (
-            <>
-              <F label="💵 Parte en efectivo ($)">
-                <input type="number" min="0" value={mixEfectivo} onChange={e=>setMixEfectivo(e.target.value)} placeholder="0.00"/>
-              </F>
-              <F label="📱 Transferencia a">
-                <select value={mixCuenta} onChange={e=>setMixCuenta(e.target.value)}>
-                  <option value="SPIN Marcel">SPIN Marcel</option>
-                  <option value="SPIN Gustavo">SPIN Gustavo</option>
-                </select>
-              </F>
-              <F label={"💰 Monto transferido a "+mixCuenta+" ($)"}>
-                <input type="number" min="0" value={mixTransferencia} onChange={e=>setMixTransferencia(e.target.value)} placeholder="0.00"/>
-              </F>
-              {(+mixEfectivo>0||+mixTransferencia>0)&&(
-                <div style={{padding:"8px 12px",background:T.goldBg,borderRadius:8,fontSize:12,color:T.goldText}}>
-                  Total mixto: <strong>{$m((+mixEfectivo||0)+(+mixTransferencia||0))}</strong>
-                  {" · "}Efectivo: <strong>{$m(+mixEfectivo||0)}</strong>
-                  {" · "}{mixCuenta}: <strong>{$m(+mixTransferencia||0)}</strong>
-                </div>
-              )}
-            </>
-          )}
-          <F label="Cobro de envío al cliente ($)">
+          <F label="Cobro de envío ($)">
             <input type="number" min="0" value={envio} onChange={e=>setEnvio(e.target.value)} placeholder="0 = sin envío"/>
           </F>
-          {+envio>0&&(
-            <F label="Costo del repartidor ($)">
-              <input type="number" min="0" value={costoEnvio} onChange={e=>setCostoEnvio(e.target.value)} placeholder="0"/>
-            </F>
-          )}
           {+envio>0 && (
             <F label="Descuento en envío">
               <select value={envioTipo} onChange={e=>setEnvioTipo(e.target.value)}>
@@ -857,20 +825,9 @@ function NuevaVenta({prods,setProds,pkgs,clients,setClients,sales,setSales}){
               <input value={envioDesc} onChange={e=>setEnvioDesc(e.target.value)} placeholder={envioTipo==="mitad"?"Ej. regresé $60":"Ej. 2 sobres BH"}/>
             </F>
           )}
-          {+envio>0&&+costoEnvio>0&&(()=>{
-            const util=+envio-+costoEnvio;
-            return(
-              <div style={{padding:"8px 12px",background:util>=0?"rgba(26,140,90,0.08)":"rgba(192,64,64,0.08)",borderRadius:8,fontSize:12,border:`1px solid ${util>=0?"rgba(26,140,90,0.2)":"rgba(192,64,64,0.2)"}`}}>
-                {util>=0
-                  ?<span style={{color:T.profit}}>✓ El envío te deja <strong>{$m(util)}</strong> de ganancia extra</span>
-                  :<span style={{color:T.expense}}>⚠ El envío te cuesta <strong>{$m(Math.abs(util))}</strong> de tu utilidad</span>
-                }
-              </div>
-            );
-          })()}
         </div>
 
-        <div style={{display:"flex",flexDirection:"column",gap:10,marginTop:12}}>
+        <div style={{display:"flex",gap:12,alignItems:"flex-end",marginTop:12}}>
           <F label="Nota interna (opcional)" style={{flex:1}}>
             <input value={note} onChange={e=>setNote(e.target.value)} placeholder="Observaciones…"/>
           </F>
@@ -901,14 +858,7 @@ function NuevaVenta({prods,setProds,pkgs,clients,setClients,sales,setSales}){
                       <td style={{padding:"6px 10px",color:T.textSub,maxWidth:150,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{s.desc}</td>
                       <td style={{padding:"6px 10px"}}>{label&&<Chip label={label} bg={pc.bg} color={pc.c}/>}</td>
                       <td style={{padding:"6px 10px",fontWeight:600,color:T.revenue,whiteSpace:"nowrap"}}>{$m(s.total)}</td>
-                      <td style={{padding:"6px 10px",whiteSpace:"nowrap"}}>
-                      {(s.envio||0)>0?(
-                        <div>
-                          <div style={{color:T.client,fontWeight:500}}>{$m(s.envio||0)}</div>
-                          {(s.costoEnvio||0)>0&&<div style={{fontSize:10,color:(s.envio||0)-(s.costoEnvio||0)>=0?T.profit:T.expense}}>repa: {$m(s.costoEnvio||0)}</div>}
-                        </div>
-                      ):"—"}
-                    </td>
+                      <td style={{padding:"6px 10px",color:T.client,whiteSpace:"nowrap"}}>{(s.envio||0)>0?$m(s.envio):"—"}</td>
                       <td style={{padding:"6px 10px",fontWeight:700,color:u>=0?T.profit:T.expense,whiteSpace:"nowrap"}}>{s.cost>0?$m(u):"—"}</td>
                       <td style={{padding:"6px 10px",color:m>0?T.profit:T.expense,whiteSpace:"nowrap"}}>{s.cost>0?pct(m):"—"}</td>
                       <td style={{padding:"6px 10px"}}>
@@ -938,13 +888,13 @@ function Gastos({expenses,setExpenses}){
     <div style={{display:"flex",flexDirection:"column",gap:"1.25rem"}}>
       <Card>
         <STitle>Registrar gasto</STitle>
-        <div style={{display:"flex",flexDirection:"column",gap:10}}>
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr 2fr",gap:12}}>
           <F label="Fecha"><input type="date" value={form.date} onChange={e=>setForm({...form,date:e.target.value})}/></F>
           <F label="Categoría"><select value={form.cat} onChange={e=>setForm({...form,cat:e.target.value})}>{EXP_CATS.map(c=><option key={c}>{c}</option>)}</select></F>
           <F label="Monto ($)"><input type="number" min="0" step="0.01" value={form.amount} onChange={e=>setForm({...form,amount:e.target.value})} placeholder="0.00"/></F>
           <F label="Descripción"><input value={form.desc} onChange={e=>setForm({...form,desc:e.target.value})} placeholder="Detalle del gasto"/></F>
           <F label="¿Con qué se pagó?">
-            <select value={form.pagadoCon} onChange={e=>setForm({...form,pagadoCon:e.target.value})}>
+            <select value={form.pagadoCon||"Efectivo"} onChange={e=>setForm({...form,pagadoCon:e.target.value})}>
               <option value="Efectivo">💵 Efectivo</option>
               <option value="SPIN Marcel">📱 SPIN Marcel</option>
               <option value="SPIN Gustavo">📱 SPIN Gustavo</option>
@@ -972,7 +922,7 @@ function Gastos({expenses,setExpenses}){
         <STitle>Historial ({expenses.length})</STitle>
         {expenses.length===0 ? <Empty icon="ti-wallet" text="Sin gastos registrados"/> : (
           <table style={{width:"100%",fontSize:12,borderCollapse:"collapse"}}>
-            <TH cols={["Fecha","Categoría","Descripción","Pagado con","Monto",""]}/>
+            <TH cols={["Fecha","Categoría","Descripción","Monto",""]}/>
             <tbody>
               {[...expenses].sort((a,b)=>b.date.localeCompare(a.date)).map((e,i)=>(
                 <tr key={e.id} style={{background:i%2===0?T.bg:T.bgRow,borderBottom:`0.5px solid ${T.border}`}}>
@@ -994,8 +944,6 @@ function Gastos({expenses,setExpenses}){
 // ── INVENTARIO ────────────────────────────────────────────────────────────────
 function Inventario({prods,setProds,sales,stockMoves,setStockMoves}){
   const[entForm,setEntForm]=useState({date:today(),pid:"",cajas:"",note:""});
-  const[editingStock,setEditingStock]=useState(null);
-  const[editVals,setEditVals]=useState({cajas:"",sobres:""});
   const[abrirForm,setAbrirForm]=useState({pid:"",cajas:1});
   const[invErr,setInvErr]=useState("");
   const[physCajas,setPhysCajas]=useState({});
@@ -1023,34 +971,26 @@ function Inventario({prods,setProds,sales,stockMoves,setStockMoves}){
   };
 
   const[bulkMap,setBulkMap]=useState({});
-  const[bulkMapSobres,setBulkMapSobres]=useState({});
   const[showBulk,setShowBulk]=useState(true);
   const[confirmReset,setConfirmReset]=useState(false);
 
   const saveBulk=()=>{
-    const entriesCajas=Object.entries(bulkMap).filter(([,v])=>+v>0);
-    const entriesSobres=Object.entries(bulkMapSobres).filter(([,v])=>+v>0);
-    if(entriesCajas.length===0&&entriesSobres.length===0)return;
+    const entries=Object.entries(bulkMap).filter(([,v])=>+v>0);
+    if(entries.length===0)return;
     const newMoves=[];
     setProds(prods.map(p=>{
-      const cajas=+bulkMap[p.id]||0;
-      const sobres=+bulkMapSobres[p.id]||0;
-      if(cajas>0)newMoves.push({id:uid(),date:today(),pid:p.id,type:"entrada",cajas,note:"Carga de stock: "+cajas+" cajas"});
-      if(sobres>0)newMoves.push({id:uid(),date:today(),pid:p.id,type:"apertura",cajas:0,sobres,note:"Carga de sobres sueltos: "+sobres});
-      return {...p,
-        stockCajas:(p.stockCajas||0)+cajas,
-        stockSobres:(p.stockSobres||0)+sobres
-      };
+      const v=+bulkMap[p.id]||0;
+      if(v>0)newMoves.push({id:uid(),date:today(),pid:p.id,type:"entrada",cajas:v,note:"Carga de stock"});
+      return v>0?{...p,stockCajas:(p.stockCajas||0)+v}:p;
     }));
     setStockMoves([...stockMoves,...newMoves]);
     setBulkMap({});
-    setBulkMapSobres({});
   };
 
   const resetStock=()=>{
     setProds(prods.map(p=>({...p,stockCajas:0,stockSobres:0})));
     setStockMoves([]);
-    setConfirmReset(false);setBulkMapSobres({});
+    setConfirmReset(false);
   };
 
   return(
@@ -1079,50 +1019,22 @@ function Inventario({prods,setProds,sales,stockMoves,setStockMoves}){
             <p style={{margin:"0 0 12px",fontSize:12,color:T.textSub}}>
               Escribe cuántas cajas quieres <strong>agregar</strong> a cada producto. El número se suma al stock actual.
             </p>
-            <p style={{margin:"0 0 4px",fontSize:11,color:T.textMuted}}>
-              📦 <strong>Cajas</strong> = cajas selladas · 🔓 <strong>Sobres</strong> = sobres sueltos que ya tienes abiertos
-            </p>
-            <div style={{display:"flex",flexDirection:"column",gap:10,marginBottom:14}}>
-              {prods.filter(p=>p.cat==="Miel"&&p.id!=="sob").map(p=>(
-                <div key={p.id} style={{background:T.bgAlt,borderRadius:10,padding:"12px 14px",border:`0.5px solid ${T.border}`}}>
-                  <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:10,flexWrap:"wrap",gap:6}}>
-                    <div>
-                      <p style={{margin:"0 0 2px",fontSize:13,fontWeight:600,color:T.text}}>{p.name}</p>
-                      <p style={{margin:0,fontSize:11,color:T.textMuted}}>{p.spc>1?p.spc+" "+(p.spcu||"sobres")+"/caja":p.unit}</p>
-                    </div>
-                    <div style={{display:"flex",gap:5,flexWrap:"wrap"}}>
-                      {(p.stockCajas||0)>0&&<Chip label={(p.stockCajas||0)+" cajas"} bg={T.goldBg} color={T.goldText}/>}
-                      {(p.stockSobres||0)>0&&<Chip label={(p.stockSobres||0)+" sobres"} bg="rgba(40,96,176,0.1)" color={T.client}/>}
-                      {(p.stockCajas||0)===0&&(p.stockSobres||0)===0&&<Chip label="Sin stock" bg="rgba(192,64,64,0.08)" color={T.expense}/>}
-                    </div>
-                  </div>
-                  <div style={{display:"grid",gridTemplateColumns:p.spc>1?"1fr 1fr":"1fr",gap:10}}>
-                    <F label={"📦 Cajas"+(p.spc>1?" ("+p.spc+" "+(p.spcu||"sobres")+" c/u)":"")}>
-                      <input type="number" min="0" step="1"
-                        value={bulkMap[p.id]||""}
-                        onChange={e=>setBulkMap({...bulkMap,[p.id]:e.target.value})}
-                        placeholder="0"
-                        style={{textAlign:"center",fontWeight:700,fontSize:18}}/>
-                    </F>
-                    {p.spc>1&&(
-                      <F label="🔓 Sobres sueltos">
-                        <input type="number" min="0" step="1"
-                          value={bulkMapSobres[p.id]||""}
-                          onChange={e=>setBulkMapSobres({...bulkMapSobres,[p.id]:e.target.value})}
-                          placeholder="0"
-                          style={{textAlign:"center",fontWeight:700,fontSize:18}}/>
-                      </F>
-                    )}
+            <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(200px,1fr))",gap:10,marginBottom:14}}>
+              {prods.filter(p=>p.cat==="Miel").map(p=>(
+                <div key={p.id} style={{background:T.bgAlt,borderRadius:8,padding:"10px 12px",border:`0.5px solid ${T.border}`}}>
+                  <p style={{margin:"0 0 4px",fontSize:12,fontWeight:600,color:T.text,lineHeight:1.3}}>{p.name}</p>
+                  <p style={{margin:"0 0 8px",fontSize:10,color:T.textMuted}}>{p.spc>1?p.spc+" sobres/caja":p.unit}</p>
+                  <div style={{display:"flex",alignItems:"center",gap:8}}>
+                    <input type="number" min="0" step="1" value={bulkMap[p.id]||""} onChange={e=>setBulkMap({...bulkMap,[p.id]:e.target.value})} placeholder="0" style={{width:65,fontSize:14,fontWeight:600,textAlign:"center",padding:"5px 8px"}}/>
+                    <span style={{fontSize:11,color:T.textSub}}>cajas</span>
+                    <Chip label={"Stock: "+(p.stockCajas||0)} bg={(p.stockCajas||0)>0?T.goldBg:"rgba(192,64,64,0.08)"} color={(p.stockCajas||0)>0?T.goldText:T.expense}/>
                   </div>
                 </div>
               ))}
             </div>
-            {(Object.values(bulkMap).some(v=>+v>0)||Object.values(bulkMapSobres).some(v=>+v>0))&&(
-              <div style={{marginBottom:12,padding:"10px 14px",background:T.goldBg,borderRadius:8,fontSize:12,color:T.goldText,lineHeight:1.8}}>
-                <strong>Se agregarán:</strong><br/>
-                {[...Object.entries(bulkMap).filter(([,v])=>+v>0).map(([pid,v])=>{const p=prods.find(x=>x.id===pid);return "📦 "+v+" caja"+(+v!==1?"s":"")+" de "+(p?.name||pid);}),
-                  ...Object.entries(bulkMapSobres).filter(([,v])=>+v>0).map(([pid,v])=>{const p=prods.find(x=>x.id===pid);return "🔓 "+v+" sobre"+(+v!==1?"s":"")+" suelto"+(+v!==1?"s":"")+" de "+(p?.name||pid);})
-                ].join(" · ")}
+            {Object.values(bulkMap).some(v=>+v>0)&&(
+              <div style={{marginBottom:12,padding:"8px 14px",background:T.goldBg,borderRadius:8,fontSize:12,color:T.goldText}}>
+                Se agregarán: {Object.entries(bulkMap).filter(([,v])=>+v>0).map(([pid,v])=>{const p=prods.find(x=>x.id===pid);return v+"× "+(p?.name||pid);}).join(" · ")}
               </div>
             )}
             <GoldBtn onClick={saveBulk} style={{fontSize:13,padding:"9px 24px"}}>📦 Guardar stock</GoldBtn>
@@ -1134,7 +1046,7 @@ function Inventario({prods,setProds,sales,stockMoves,setStockMoves}){
         <STitle right={<span style={{fontSize:11,color:T.textMuted}}>🛡️ Conteo físico activa el control anti-robo</span>}>Inventario en cajas</STitle>
         <div style={{overflowX:"auto"}}>
           <table style={{width:"100%",borderCollapse:"collapse",minWidth:650,fontSize:12}}>
-            <TH cols={["Producto","Cajas","Sobres","Vendido","Conteo físico","Diferencia","Editar"]}/>· sobres)","Diferencia",""]}/>
+            <TH cols={["Producto","Cajas selladas","Sobres menudeo","Vendido","Conteo físico (cajas · sobres)","Diferencia"]}/>
             <tbody>
               {mielProds.map((p,idx)=>{
                 const spc=p.spc||1;
@@ -1152,7 +1064,7 @@ function Inventario({prods,setProds,sales,stockMoves,setStockMoves}){
                   <tr key={p.id} style={{background:hasDiff?"rgba(192,64,64,0.04)":idx%2===0?T.bg:T.bgRow,borderBottom:`0.5px solid ${T.border}`}}>
                     <td style={{padding:"9px 10px",fontWeight:600,color:T.text}}>{p.name}<div style={{fontSize:10,color:T.textMuted,fontWeight:400}}>{spc} sobres/caja</div></td>
                     <td style={{padding:"9px 10px",textAlign:"center"}}><span style={{fontSize:18,fontWeight:700,color:cajas<=0?T.expense:cajas<=2?"#E88020":T.profit}}>{cajas}</span><div style={{fontSize:10,color:T.textMuted}}>cajas</div></td>
-                    <td style={{padding:"9px 10px",textAlign:"center"}}>{sobres>0?<span style={{fontSize:18,fontWeight:700,color:T.client}}>{sobres}<div style={{fontSize:10,color:T.textMuted,fontWeight:400}}>{p.spcu||"sobres"}</div></span>:<span style={{color:T.textMuted}}>—</span>}</td>
+                    <td style={{padding:"9px 10px",textAlign:"center"}}>{sobres>0?<span style={{fontSize:18,fontWeight:700,color:T.client}}>{sobres}<div style={{fontSize:10,color:T.textMuted,fontWeight:400}}>sobres</div></span>:<span style={{color:T.textMuted}}>—</span>}</td>
                     <td style={{padding:"9px 10px",fontSize:11,color:T.textSub}}>{soldC>0&&<div>{soldC} caja{soldC!==1?"s":""}</div>}{soldS>0&&<div style={{color:T.client}}>{soldS} sobre{soldS!==1?"s":""}</div>}{soldC===0&&soldS===0&&"—"}</td>
                     <td style={{padding:"9px 10px"}}>
                       <div style={{display:"flex",gap:4}}>
@@ -1169,36 +1081,6 @@ function Inventario({prods,setProds,sales,stockMoves,setStockMoves}){
                         </div>
                       ):<span style={{color:T.textMuted}}>sin conteo</span>}
                     </td>
-                    <td style={{padding:"9px 10px"}}>
-                      {editingStock===p.id ? (
-                        <div style={{display:"flex",flexDirection:"column",gap:6}}>
-                          <F label="Cajas">
-                            <input type="number" min="0"
-                              value={editVals.cajas}
-                              onChange={e=>setEditVals({...editVals,cajas:e.target.value})}
-                              style={{textAlign:"center",fontWeight:700,width:70}}/>
-                          </F>
-                          {spc>1&&<F label="Sobres">
-                            <input type="number" min="0"
-                              value={editVals.sobres}
-                              onChange={e=>setEditVals({...editVals,sobres:e.target.value})}
-                              style={{textAlign:"center",fontWeight:700,width:70}}/>
-                          </F>}
-                          <div style={{display:"flex",gap:4}}>
-                            <GoldBtn onClick={()=>{
-                              const nc=editVals.cajas!==""?+editVals.cajas:cajas;
-                              const ns=editVals.sobres!==""?+editVals.sobres:sobres;
-                              setProds(prods.map(x=>x.id===p.id?{...x,stockCajas:nc,stockSobres:ns}:x));
-                              setStockMoves([...stockMoves,{id:uid(),date:today(),pid:p.id,type:"ajuste",cajas:nc-cajas,sobres:ns-sobres,note:"Ajuste manual"}]);
-                              setEditingStock(null);setEditVals({cajas:"",sobres:""});
-                            }} style={{fontSize:11,padding:"5px 10px"}}>✓</GoldBtn>
-                            <OutBtn onClick={()=>{setEditingStock(null);setEditVals({cajas:"",sobres:""}); }} style={{fontSize:11,padding:"5px 10px"}}>✕</OutBtn>
-                          </div>
-                        </div>
-                      ):(
-                        <OutBtn onClick={()=>{setEditingStock(p.id);setEditVals({cajas:String(cajas),sobres:String(sobres)});}} style={{fontSize:11,padding:"6px 12px"}}>✏️ Editar</OutBtn>
-                      )}
-                    </td>
                   </tr>
                 );
               })}
@@ -1210,7 +1092,7 @@ function Inventario({prods,setProds,sales,stockMoves,setStockMoves}){
       <Card>
         <STitle>Abrir caja para menudeo</STitle>
         <p style={{margin:"0 0 12px",fontSize:12,color:T.textSub}}>Descuenta cajas selladas y agrega los sobres al stock de menudeo.</p>
-        <div style={{display:"flex",flexDirection:"column",gap:10,alignItems:"flex-end"}}>
+        <div style={{display:"grid",gridTemplateColumns:"2fr 1fr 1fr",gap:12,alignItems:"flex-end"}}>
           <F label="Producto">
             <select value={abrirForm.pid} onChange={e=>{setInvErr("");setAbrirForm({...abrirForm,pid:e.target.value});}}>
               <option value="">Selecciona…</option>
@@ -1230,7 +1112,7 @@ function Inventario({prods,setProds,sales,stockMoves,setStockMoves}){
 
       <Card>
         <STitle>Registrar entrada de mercancía</STitle>
-        <div style={{display:"flex",flexDirection:"column",gap:10,alignItems:"flex-end"}}>
+        <div style={{display:"grid",gridTemplateColumns:"2fr 1fr 1fr 2fr",gap:12,alignItems:"flex-end"}}>
           <F label="Producto">
             <select value={entForm.pid} onChange={e=>setEntForm({...entForm,pid:e.target.value})}>
               <option value="">Selecciona…</option>
@@ -1253,13 +1135,13 @@ function Inventario({prods,setProds,sales,stockMoves,setStockMoves}){
             <tbody>
               {[...stockMoves].sort((a,b)=>b.date.localeCompare(a.date)).map((m,i)=>{
                 const prod=prods.find(p=>p.id===m.pid);
-                const isE=m.type==="entrada",isA=m.type==="apertura",isJ=m.type==="ajuste";
+                const isE=m.type==="entrada",isA=m.type==="apertura";
                 return(
                   <tr key={m.id} style={{background:i%2===0?T.bg:T.bgRow,borderBottom:`0.5px solid ${T.border}`}}>
                     <td style={{padding:"7px 10px",color:T.textSub,whiteSpace:"nowrap"}}>{m.date}</td>
-                    <td style={{padding:"7px 10px"}}><Chip label={isE?"Entrada":isA?"Apertura menudeo":isJ?"✏️ Ajuste manual":"Otro"} bg={isE?"rgba(26,140,90,0.1)":isA?"rgba(40,96,176,0.1)":T.goldBg} color={isE?T.profit:isA?T.client:isJ?"#E88020":T.gold}/></td>
+                    <td style={{padding:"7px 10px"}}><Chip label={isE?"Entrada":isA?"Apertura menudeo":"Otro"} bg={isE?"rgba(26,140,90,0.1)":isA?"rgba(40,96,176,0.1)":T.goldBg} color={isE?T.profit:isA?T.client:T.gold}/></td>
                     <td style={{padding:"7px 10px",fontWeight:500}}>{prod?.name||m.pid}</td>
-                    <td style={{padding:"7px 10px",color:isE?T.profit:T.client,fontWeight:600}}>{isE?"+"+m.cajas+" caja"+(m.cajas!==1?"s":""):isA?"−"+m.cajas+"c → +"+m.sobres+"s":isJ?"Cajas: "+(m.cajas>=0?"+":"")+m.cajas+" · Sobres: "+(m.sobres>=0?"+":"")+m.sobres:""}</td>
+                    <td style={{padding:"7px 10px",color:isE?T.profit:T.client,fontWeight:600}}>{isE?"+"+m.cajas+" caja"+(m.cajas!==1?"s":""):isA?"−"+m.cajas+"c → +"+m.sobres+"s":""}</td>
                     <td style={{padding:"7px 10px",color:T.textSub,fontSize:11}}>{m.note}</td>
                     <td style={{padding:"7px 10px"}}>
                       <OutBtn onClick={()=>{
@@ -1284,6 +1166,15 @@ function CorteCaja({sales,expenses,extras=[],setExtras}){
   const[period,setPeriod]=useState("semana");
   const[refDate,setRefDate]=useState(today());
   const[exForm,setExForm]=useState({date:today(),amount:"",desc:"",tipo:"utilidad",via:"Efectivo"});
+  const[exSaved,setExSaved]=useState(false);
+  const saveExtra=()=>{
+    if(!exForm.amount||+exForm.amount<=0)return;
+    setExtras([...(extras||[]),{...exForm,id:uid(),amount:+exForm.amount,desc:exForm.desc||exForm.tipo}]);
+    setExForm({date:today(),amount:"",desc:"",tipo:"utilidad",via:"Efectivo"});
+    setExSaved(true);
+    setTimeout(()=>setExSaved(false),3000);
+  };
+  const[exForm,setExForm]=useState({date:today(),amount:"",desc:"",socio:"Marcel",tipo:"utilidad"});
   const getRange=()=>{
     const d=new Date(refDate+"T12:00:00");
     if(period==="dia")return{start:refDate,end:refDate,label:refDate};
@@ -1296,31 +1187,7 @@ function CorteCaja({sales,expenses,extras=[],setExtras}){
   const rev=fSales.reduce((s,v)=>s+v.total,0);
   const envTotal=fSales.reduce((s,v)=>s+(v.envio||0),0);
   const gastos=fExp.reduce((s,e)=>s+e.amount,0);
-  // Distribute Mixto sales into Efectivo and SPIN accounts
-  const mixSales=fSales.filter(s=>s.payMethod==="Mixto");
-  const mixEfectivoTotal=mixSales.reduce((a,s)=>a+(s.mixEfectivo||0),0);
-  const mixMarcelTotal=mixSales.filter(s=>s.mixCuenta==="SPIN Marcel").reduce((a,s)=>a+(s.mixTransferencia||0),0);
-  const mixGustavoTotal=mixSales.filter(s=>s.mixCuenta==="SPIN Gustavo").reduce((a,s)=>a+(s.mixTransferencia||0),0);
-
-  // Extras by via
-  const fExtrasP=(extras||[]).filter(x=>x.date>=range.start&&x.date<=range.end);
-  const extraEfectivo=fExtrasP.filter(x=>x.via==="Efectivo").reduce((a,x)=>a+x.amount,0);
-  const extraMarcel=fExtrasP.filter(x=>x.via==="SPIN Marcel").reduce((a,x)=>a+x.amount,0);
-  const extraGustavo=fExtrasP.filter(x=>x.via==="SPIN Gustavo").reduce((a,x)=>a+x.amount,0);
-
-  const byMethod=PAY_METHODS.filter(m=>m!=="Mixto").map(m=>{
-    const direct=fSales.filter(s=>s.payMethod===m);
-    let total=direct.reduce((a,s)=>a+s.total,0);
-    let extraAmt=0;
-    // Add Mixto contributions
-    if(m==="Efectivo"){total+=mixEfectivoTotal;extraAmt=extraEfectivo;}
-    if(m==="SPIN Marcel"){total+=mixMarcelTotal;extraAmt=extraMarcel;}
-    if(m==="SPIN Gustavo"){total+=mixGustavoTotal;extraAmt=extraGustavo;}
-    const gastosDeEsta=fExp.filter(e=>e.pagadoCon===m).reduce((a,e)=>a+e.amount,0);
-    const neto=total+extraAmt-gastosDeEsta;
-    const pc=PAY_CLR[m]||{};
-    return{method:m,total,count:direct.length,env:direct.reduce((a,s)=>a+(s.envio||0),0),bg:pc.bg,c:pc.c,extraAmt,gastosDeEsta,neto};
-  });
+  const byMethod=PAY_METHODS.map(m=>{const direct=fSales.filter(s=>s.payMethod===m);const total=direct.reduce((a,s)=>a+s.total,0);const pc=PAY_CLR[m]||{};return{method:m,total,count:direct.length,env:direct.reduce((a,s)=>a+(s.envio||0),0),bg:pc.bg,c:pc.c};});
   const DAYS=["Lunes","Martes","Miércoles","Jueves","Viernes","Sábado","Domingo"];
   const byDay=DAYS.map((d,i)=>{const dn=(i+1)%7;const ds=fSales.filter(s=>{const w=new Date(s.date+"T12:00:00").getDay();return w===dn||(i===6&&w===0);});return{day:d,total:ds.reduce((a,s)=>a+s.total,0),util:ds.reduce((a,s)=>a+s.total-s.cost,0),count:ds.length};});
   const sinMetodo=fSales.filter(s=>!s.payMethod).length;
@@ -1346,19 +1213,14 @@ function CorteCaja({sales,expenses,extras=[],setExtras}){
       {sinMetodo>0 && <div style={{background:"rgba(192,64,64,0.08)",border:"1px solid rgba(192,64,64,0.25)",borderRadius:10,padding:"10px 16px",fontSize:13,color:T.expense,display:"flex",gap:8,alignItems:"center"}}><i className="ti ti-alert-triangle" style={{fontSize:18}}/><strong>{sinMetodo} venta{sinMetodo>1?"s":""}</strong> sin forma de pago. Ve a Ventas y corrígelas.</div>}
       <Card>
         <STitle>Desglose por forma de cobro</STitle>
-        <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(140px,1fr))",gap:10}}>
-          {byMethod.map(bm=>{
-            return(
-              <div key={bm.method} style={{background:bm.bg||T.goldBg,borderRadius:10,padding:"14px 16px",border:`0.5px solid ${bm.c||T.gold}30`}}>
-                <p style={{margin:"0 0 6px",fontWeight:700,fontSize:13,color:bm.c||T.gold}}>{bm.method} <span style={{fontWeight:400,fontSize:11,color:T.textMuted}}>({bm.count} venta{bm.count!==1?"s":""})</span></p>
-                <p style={{margin:0,fontSize:22,fontWeight:700,color:bm.c||T.gold}}>{$m(bm.total)}</p>
-                {bm.extraAmt>0&&<p style={{margin:"4px 0 0",fontSize:11,color:T.profit}}>+ {$m(bm.extraAmt)} utilidad extra</p>}
-                {bm.gastosDeEsta>0&&<p style={{margin:"2px 0 0",fontSize:11,color:T.expense}}>− {$m(bm.gastosDeEsta)} en gastos</p>}
-                {(bm.extraAmt>0||bm.gastosDeEsta>0)&&<p style={{margin:"4px 0 0",fontSize:14,fontWeight:700,color:bm.neto>=0?T.profit:T.expense,borderTop:`0.5px solid ${bm.c||T.gold}30`,paddingTop:6}}>= {$m(bm.neto)} neto</p>}
-                {bm.env>0&&<p style={{margin:"4px 0 0",fontSize:11,color:T.textSub}}>Incl. envíos: {$m(bm.env)}</p>}
-              </div>
-            );
-          })}
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
+          {byMethod.map(bm=>(
+            <div key={bm.method} style={{background:bm.bg||T.goldBg,borderRadius:10,padding:"14px 16px",border:`0.5px solid ${bm.c||T.gold}30`}}>
+              <p style={{margin:"0 0 6px",fontWeight:700,fontSize:13,color:bm.c||T.gold}}>{bm.method} <span style={{fontWeight:400,fontSize:11,color:T.textMuted}}>({bm.count} venta{bm.count!==1?"s":""})</span></p>
+              <p style={{margin:0,fontSize:22,fontWeight:700,color:bm.c||T.gold}}>{$m(bm.total)}</p>
+              {bm.env>0 && <p style={{margin:"4px 0 0",fontSize:11,color:T.textSub}}>Incl. envíos: {$m(bm.env)}</p>}
+            </div>
+          ))}
         </div>
         <div style={{marginTop:12,padding:"10px 14px",background:T.goldBg,borderRadius:8,fontSize:12,color:T.goldText}}>
           🛡️ <strong>Verifica:</strong> Efectivo debe estar en caja física · SPIN Marcel debe coincidir con la app de Marcel · SPIN Gustavo con la de Gustavo
@@ -1395,10 +1257,16 @@ function CorteCaja({sales,expenses,extras=[],setExtras}){
         <p style={{margin:"0 0 12px",fontSize:12,color:T.textSub}}>
           Registra ingresos que llegan por terceros — solo la utilidad que te corresponde como socio.
         </p>
-        <div style={{display:"flex",flexDirection:"column",gap:10,marginBottom:12}}>
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr 1fr 2fr",gap:10,marginBottom:12}}>
           <F label="Fecha"><input type="date" value={exForm.date} onChange={e=>setExForm({...exForm,date:e.target.value})}/></F>
           <F label="Monto recibido ($)"><input type="number" min="0" value={exForm.amount} onChange={e=>setExForm({...exForm,amount:e.target.value})} placeholder="0.00"/></F>
-
+          <F label="Corresponde a">
+            <select value={exForm.socio} onChange={e=>setExForm({...exForm,socio:e.target.value})}>
+              <option>Marcel</option>
+              <option>Gustavo</option>
+              <option>Ambos</option>
+            </select>
+          </F>
           <F label="Tipo">
             <select value={exForm.tipo} onChange={e=>setExForm({...exForm,tipo:e.target.value})}>
               <option value="utilidad">Utilidad de tercero</option>
@@ -1407,18 +1275,11 @@ function CorteCaja({sales,expenses,extras=[],setExtras}){
             </select>
           </F>
           <F label="Descripción"><input value={exForm.desc} onChange={e=>setExForm({...exForm,desc:e.target.value})} placeholder="Ej. venta por Andrés, comisión envío…"/></F>
-          <F label="¿Cómo llegó el dinero?">
-            <select value={exForm.via||"Efectivo"} onChange={e=>setExForm({...exForm,via:e.target.value})}>
-              <option value="Efectivo">💵 Efectivo</option>
-              <option value="SPIN Marcel">📱 SPIN Marcel</option>
-              <option value="SPIN Gustavo">📱 SPIN Gustavo</option>
-            </select>
-          </F>
         </div>
         <GoldBtn onClick={()=>{
           if(!exForm.amount||!exForm.desc.trim())return;
-          setExtras([...(extras||[]),{...exForm,id:uid(),amount:+exForm.amount}]);
-          setExForm({date:today(),amount:"",desc:"",tipo:"utilidad",via:"Efectivo"});
+          if(setExtras)setExtras([...(extras||[]),{...exForm,id:uid(),amount:+exForm.amount}]);
+          setExForm({date:today(),amount:"",desc:"",socio:"Marcel",tipo:"utilidad"});
         }}>+ Registrar utilidad extra</GoldBtn>
 
         {(extras||[]).length>0&&(()=>{
@@ -1432,17 +1293,16 @@ function CorteCaja({sales,expenses,extras=[],setExtras}){
                 <Chip label={"Total: "+$m(totalExtra)} bg="rgba(26,140,90,0.1)" color={T.profit}/>
               </div>
               <table style={{width:"100%",fontSize:12,borderCollapse:"collapse"}}>
-                <TH cols={["Fecha","Tipo","Llegó a","Descripción","Monto",""]}/>
+                <TH cols={["Fecha","Tipo","Socio","Descripción","Monto",""]}/>
                 <tbody>
                   {fExtras.map((x,i)=>(
                     <tr key={x.id} style={{background:i%2===0?T.bg:T.bgRow,borderBottom:`0.5px solid ${T.border}`}}>
                       <td style={{padding:"7px 10px",color:T.textSub,whiteSpace:"nowrap"}}>{x.date}</td>
                       <td style={{padding:"7px 10px"}}><Chip label={x.tipo==="utilidad"?"Utilidad tercero":x.tipo==="comision"?"Comisión":"Otro"} bg="rgba(26,140,90,0.1)" color={T.profit}/></td>
-
-                      <td style={{padding:"7px 10px"}}>{x.via&&(()=>{const pc=PAY_CLR[x.via]||{bg:T.goldBg,c:T.goldText};return<Chip label={x.via} bg={pc.bg} color={pc.c}/>;})()}</td>
+                      <td style={{padding:"7px 10px"}}><Chip label={x.socio} bg={x.socio==="Marcel"?T.goldBg:x.socio==="Gustavo"?"rgba(112,56,208,0.1)":"rgba(40,96,176,0.1)"} color={x.socio==="Marcel"?T.goldText:x.socio==="Gustavo"?T.pkg:T.client}/></td>
                       <td style={{padding:"7px 10px",color:T.text}}>{x.desc}</td>
                       <td style={{padding:"7px 10px",fontWeight:700,color:T.profit,whiteSpace:"nowrap"}}>{$m(x.amount)}</td>
-                      <td style={{padding:"7px 10px"}}><OutBtn onClick={()=>setExtras((extras||[]).filter(e=>e.id!==x.id))} danger style={{fontSize:11,padding:"3px 8px"}}>🗑️</OutBtn></td>
+                      <td style={{padding:"7px 10px"}}><OutBtn onClick={()=>setExtras&&setExtras((extras||[]).filter(e=>e.id!==x.id))} danger style={{fontSize:11,padding:"3px 8px"}}>🗑️</OutBtn></td>
                     </tr>
                   ))}
                 </tbody>
@@ -1450,6 +1310,54 @@ function CorteCaja({sales,expenses,extras=[],setExtras}){
             </div>
           );
         })()}
+      </Card>
+      {/* ── UTILIDAD EXTRA ── */}
+      <Card>
+        <STitle>Utilidad extra / negocios externos</STitle>
+        <div style={{display:"flex",flexDirection:"column",gap:10,marginBottom:12}}>
+          <F label="Fecha"><input type="date" value={exForm.date} onChange={e=>setExForm({...exForm,date:e.target.value})}/></F>
+          <F label="Monto recibido ($)"><input type="number" min="0" value={exForm.amount} onChange={e=>setExForm({...exForm,amount:e.target.value})} placeholder="0.00"/></F>
+          <F label="Tipo">
+            <select value={exForm.tipo} onChange={e=>setExForm({...exForm,tipo:e.target.value})}>
+              <option value="utilidad">Utilidad de tercero</option>
+              <option value="comision">Comisión</option>
+              <option value="otro">Otro ingreso</option>
+            </select>
+          </F>
+          <F label="¿Cómo llegó el dinero?">
+            <select value={exForm.via||"Efectivo"} onChange={e=>setExForm({...exForm,via:e.target.value})}>
+              <option value="Efectivo">💵 Efectivo</option>
+              <option value="SPIN Marcel">📱 SPIN Marcel</option>
+              <option value="SPIN Gustavo">📱 SPIN Gustavo</option>
+            </select>
+          </F>
+          <F label="Descripción (opcional)"><input value={exForm.desc} onChange={e=>setExForm({...exForm,desc:e.target.value})} placeholder="Ej. comisión por venta de Andrés…"/></F>
+        </div>
+        <GoldBtn onClick={saveExtra}>+ Registrar utilidad extra</GoldBtn>
+        {exSaved&&<div style={{marginTop:8,padding:"10px 14px",background:"rgba(26,140,90,0.1)",border:"1px solid rgba(26,140,90,0.3)",borderRadius:8,fontSize:13,color:T.profit}}>✓ ¡Registrado correctamente!</div>}
+        {(extras||[]).length>0&&(
+          <div style={{marginTop:16}}>
+            <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:10}}>
+              <p style={{margin:0,fontSize:12,fontWeight:600,color:T.text}}>Historial completo</p>
+              <Chip label={"Total: "+$m((extras||[]).reduce((s,x)=>s+x.amount,0))} bg="rgba(26,140,90,0.1)" color={T.profit}/>
+            </div>
+            <table style={{width:"100%",fontSize:12,borderCollapse:"collapse"}}>
+              <TH cols={["Fecha","Tipo","Llegó a","Descripción","Monto",""]}/>
+              <tbody>
+                {[...(extras||[])].sort((a,b)=>b.date.localeCompare(a.date)).map((x,i)=>(
+                  <tr key={x.id} style={{background:i%2===0?T.bg:T.bgRow,borderBottom:`0.5px solid ${T.border}`}}>
+                    <td style={{padding:"7px 10px",color:T.textSub,whiteSpace:"nowrap"}}>{x.date}</td>
+                    <td style={{padding:"7px 10px"}}><Chip label={x.tipo==="utilidad"?"Utilidad":x.tipo==="comision"?"Comisión":"Otro"} bg="rgba(26,140,90,0.1)" color={T.profit}/></td>
+                    <td style={{padding:"7px 10px"}}>{(()=>{const pc=PAY_CLR[x.via||"Efectivo"]||{};return <Chip label={x.via||"Efectivo"} bg={pc.bg||T.goldBg} color={pc.c||T.goldText}/>;})()}</td>
+                    <td style={{padding:"7px 10px",color:T.text}}>{x.desc||"—"}</td>
+                    <td style={{padding:"7px 10px",fontWeight:700,color:T.profit,whiteSpace:"nowrap"}}>{$m(x.amount)}</td>
+                    <td style={{padding:"7px 10px"}}><OutBtn onClick={()=>setExtras((extras||[]).filter(e=>e.id!==x.id))} danger style={{fontSize:11,padding:"3px 8px"}}>🗑️</OutBtn></td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
       </Card>
     </div>
   );
@@ -1491,21 +1399,20 @@ function Dashboard_App(){
       p=p.map(x=>{if(x.stockCajas!=null)return x;const spc=x.spc||1;const old=x.stock||0;return{...x,stockCajas:Math.floor(old/spc),stockSobres:old%spc,stock:undefined};});
       // Fix categories
       const fix=new Set(["gom","gom_f","gom_m","rchv","rhch"]);
-      p=p.map(x=>fix.has(x.id)?{...x,cat:"Miel"}:x);
-      // Remove old combined gomitas product (replaced by gom_f and gom_m)
       p=p.filter(x=>x.id!=="gom");
+      p=p.map(x=>fix.has(x.id)?{...x,cat:"Miel"}:x);
       setProds(p);setPkgs(pk);setClients(c);setSales(s);setExpenses(e);setStockMoves(sm);setExtras(ex);
       setReady(true);
     })();
   },[]);
 
-  useEffect(()=>{if(ready){const t=setTimeout(()=>save(SK.p,prods),500);return()=>clearTimeout(t);}},[prods,ready]);
-  useEffect(()=>{if(ready){const t=setTimeout(()=>save(SK.pk,pkgs),500);return()=>clearTimeout(t);}},[pkgs,ready]);
-  useEffect(()=>{if(ready){const t=setTimeout(()=>save(SK.c,clients),500);return()=>clearTimeout(t);}},[clients,ready]);
-  useEffect(()=>{if(ready){const t=setTimeout(()=>save(SK.s,sales),500);return()=>clearTimeout(t);}},[sales,ready]);
-  useEffect(()=>{if(ready){const t=setTimeout(()=>save(SK.e,expenses),500);return()=>clearTimeout(t);}},[expenses,ready]);
-  useEffect(()=>{if(ready){const t=setTimeout(()=>save(SK.sm,stockMoves),500);return()=>clearTimeout(t);}},[stockMoves,ready]);
-  useEffect(()=>{if(ready){const t=setTimeout(()=>save(SK.ex,extras),500);return()=>clearTimeout(t);}},[extras,ready]);
+    useEffect(()=>{if(ready){const t=setTimeout(()=>save(SK.p,prods),800);return()=>clearTimeout(t);}},[prods,ready]);
+  useEffect(()=>{if(ready){const t=setTimeout(()=>save(SK.pk,pkgs),800);return()=>clearTimeout(t);}},[pkgs,ready]);
+  useEffect(()=>{if(ready){const t=setTimeout(()=>save(SK.c,clients),800);return()=>clearTimeout(t);}},[clients,ready]);
+  useEffect(()=>{if(ready){const t=setTimeout(()=>save(SK.s,sales),800);return()=>clearTimeout(t);}},[sales,ready]);
+  useEffect(()=>{if(ready){const t=setTimeout(()=>save(SK.e,expenses),800);return()=>clearTimeout(t);}},[expenses,ready]);
+  useEffect(()=>{if(ready){const t=setTimeout(()=>save(SK.sm,stockMoves),800);return()=>clearTimeout(t);}},[stockMoves,ready]);
+  useEffect(()=>{if(ready){const t=setTimeout(()=>save(SK.ex,extras),800);return()=>clearTimeout(t);}},[extras,ready]);
 
   if(!ready)return(
     <div style={{display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",padding:"3rem",gap:12,color:T.textSub}}>
@@ -1520,7 +1427,7 @@ function Dashboard_App(){
   return(
     <div style={{fontFamily:"-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif",background:T.bg}}>
       <div style={{borderBottom:`2px solid ${T.goldBorder}`,marginBottom:"1.25rem"}}>
-        <div style={{display:"flex",alignItems:"center",gap:8,padding:"10px 0 8px"}}>
+        <div style={{display:"flex",alignItems:"center",gap:12,padding:"12px 0 10px"}}>
           <Logo size={38}/>
           <div>
             <p style={{margin:0,fontWeight:700,fontSize:15,color:T.text,letterSpacing:"0.05em"}}>MY SECRET PASSION MX</p>
@@ -1534,7 +1441,7 @@ function Dashboard_App(){
         </div>
         <div style={{display:"flex",overflowX:"auto"}}>
           {TABS.map(t=>(
-            <button key={t.k} onClick={()=>setTab(t.k)} style={{padding:"8px 8px",border:"none",borderBottom:tab===t.k?"2.5px solid "+t.color:"2.5px solid transparent",background:"transparent",cursor:"pointer",fontSize:11,whiteSpace:"nowrap",color:tab===t.k?t.color:T.textMuted,fontWeight:tab===t.k?700:400,display:"flex",alignItems:"center",gap:4}}>
+            <button key={t.k} onClick={()=>setTab(t.k)} style={{padding:"8px 14px",border:"none",borderBottom:tab===t.k?"2.5px solid "+t.color:"2.5px solid transparent",background:"transparent",cursor:"pointer",fontSize:12,whiteSpace:"nowrap",color:tab===t.k?t.color:T.textMuted,fontWeight:tab===t.k?700:400,display:"flex",alignItems:"center",gap:5}}>
               <i className={"ti "+t.icon} style={{fontSize:14,color:tab===t.k?t.color:T.textMuted}}/>
               {t.l}
             </button>
@@ -1548,7 +1455,7 @@ function Dashboard_App(){
       {tab==="venta" && <NuevaVenta {...props}/>}
       {tab==="gasto" && <Gastos     {...props}/>}
       {tab==="inv"   && <Inventario {...props}/>}
-      {tab==="corte" && <CorteCaja  sales={sales} expenses={expenses} extras={extras} setExtras={setExtras}/>}
+      {tab==="corte" && <CorteCaja  sales={sales} expenses={expenses}/>}
     </div>
   );
 }
