@@ -1283,7 +1283,7 @@ function Inventario({prods,setProds,sales,stockMoves,setStockMoves}){
 function CorteCaja({sales,expenses,extras=[],setExtras}){
   const[period,setPeriod]=useState("semana");
   const[refDate,setRefDate]=useState(today());
-  const[exForm,setExForm]=useState({date:today(),amount:"",desc:"",socio:"Marcel",tipo:"utilidad"});
+  const[exForm,setExForm]=useState({date:today(),amount:"",desc:"",socio:"Marcel",tipo:"utilidad",via:"Efectivo"});
   const getRange=()=>{
     const d=new Date(refDate+"T12:00:00");
     if(period==="dia")return{start:refDate,end:refDate,label:refDate};
@@ -1302,16 +1302,24 @@ function CorteCaja({sales,expenses,extras=[],setExtras}){
   const mixMarcelTotal=mixSales.filter(s=>s.mixCuenta==="SPIN Marcel").reduce((a,s)=>a+(s.mixTransferencia||0),0);
   const mixGustavoTotal=mixSales.filter(s=>s.mixCuenta==="SPIN Gustavo").reduce((a,s)=>a+(s.mixTransferencia||0),0);
 
+  // Extras by via
+  const fExtrasP=(extras||[]).filter(x=>x.date>=range.start&&x.date<=range.end);
+  const extraEfectivo=fExtrasP.filter(x=>x.via==="Efectivo").reduce((a,x)=>a+x.amount,0);
+  const extraMarcel=fExtrasP.filter(x=>x.via==="SPIN Marcel").reduce((a,x)=>a+x.amount,0);
+  const extraGustavo=fExtrasP.filter(x=>x.via==="SPIN Gustavo").reduce((a,x)=>a+x.amount,0);
+
   const byMethod=PAY_METHODS.filter(m=>m!=="Mixto").map(m=>{
     const direct=fSales.filter(s=>s.payMethod===m);
     let total=direct.reduce((a,s)=>a+s.total,0);
+    let extraAmt=0;
     // Add Mixto contributions
-    if(m==="Efectivo") total+=mixEfectivoTotal;
-    if(m==="SPIN Marcel") total+=mixMarcelTotal;
-    if(m==="SPIN Gustavo") total+=mixGustavoTotal;
-    const count=direct.length+(m==="Efectivo"&&mixEfectivoTotal>0?mixSales.length:0);
+    if(m==="Efectivo"){total+=mixEfectivoTotal;extraAmt=extraEfectivo;}
+    if(m==="SPIN Marcel"){total+=mixMarcelTotal;extraAmt=extraMarcel;}
+    if(m==="SPIN Gustavo"){total+=mixGustavoTotal;extraAmt=extraGustavo;}
+    const gastosDeEsta=fExp.filter(e=>e.pagadoCon===m).reduce((a,e)=>a+e.amount,0);
+    const neto=total+extraAmt-gastosDeEsta;
     const pc=PAY_CLR[m]||{};
-    return{method:m,total,count:direct.length,env:direct.reduce((a,s)=>a+(s.envio||0),0),bg:pc.bg,c:pc.c};
+    return{method:m,total,count:direct.length,env:direct.reduce((a,s)=>a+(s.envio||0),0),bg:pc.bg,c:pc.c,extraAmt,gastosDeEsta,neto};
   });
   const DAYS=["Lunes","Martes","Miércoles","Jueves","Viernes","Sábado","Domingo"];
   const byDay=DAYS.map((d,i)=>{const dn=(i+1)%7;const ds=fSales.filter(s=>{const w=new Date(s.date+"T12:00:00").getDay();return w===dn||(i===6&&w===0);});return{day:d,total:ds.reduce((a,s)=>a+s.total,0),util:ds.reduce((a,s)=>a+s.total-s.cost,0),count:ds.length};});
@@ -1340,14 +1348,13 @@ function CorteCaja({sales,expenses,extras=[],setExtras}){
         <STitle>Desglose por forma de cobro</STitle>
         <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(140px,1fr))",gap:10}}>
           {byMethod.map(bm=>{
-            const gastosDeEsta=fExp.filter(e=>e.pagadoCon===bm.method).reduce((a,e)=>a+e.amount,0);
-            const neto=bm.total-gastosDeEsta;
             return(
               <div key={bm.method} style={{background:bm.bg||T.goldBg,borderRadius:10,padding:"14px 16px",border:`0.5px solid ${bm.c||T.gold}30`}}>
                 <p style={{margin:"0 0 6px",fontWeight:700,fontSize:13,color:bm.c||T.gold}}>{bm.method} <span style={{fontWeight:400,fontSize:11,color:T.textMuted}}>({bm.count} venta{bm.count!==1?"s":""})</span></p>
                 <p style={{margin:0,fontSize:22,fontWeight:700,color:bm.c||T.gold}}>{$m(bm.total)}</p>
-                {gastosDeEsta>0&&<p style={{margin:"4px 0 0",fontSize:11,color:T.expense}}>− {$m(gastosDeEsta)} en gastos</p>}
-                {gastosDeEsta>0&&<p style={{margin:"2px 0 0",fontSize:13,fontWeight:700,color:neto>=0?T.profit:T.expense}}>= {$m(neto)} neto</p>}
+                {bm.extraAmt>0&&<p style={{margin:"4px 0 0",fontSize:11,color:T.profit}}>+ {$m(bm.extraAmt)} utilidad extra</p>}
+                {bm.gastosDeEsta>0&&<p style={{margin:"2px 0 0",fontSize:11,color:T.expense}}>− {$m(bm.gastosDeEsta)} en gastos</p>}
+                {(bm.extraAmt>0||bm.gastosDeEsta>0)&&<p style={{margin:"4px 0 0",fontSize:14,fontWeight:700,color:bm.neto>=0?T.profit:T.expense,borderTop:`0.5px solid ${bm.c||T.gold}30`,paddingTop:6}}>= {$m(bm.neto)} neto</p>}
                 {bm.env>0&&<p style={{margin:"4px 0 0",fontSize:11,color:T.textSub}}>Incl. envíos: {$m(bm.env)}</p>}
               </div>
             );
@@ -1406,11 +1413,18 @@ function CorteCaja({sales,expenses,extras=[],setExtras}){
             </select>
           </F>
           <F label="Descripción"><input value={exForm.desc} onChange={e=>setExForm({...exForm,desc:e.target.value})} placeholder="Ej. venta por Andrés, comisión envío…"/></F>
+          <F label="¿Cómo llegó el dinero?">
+            <select value={exForm.via||"Efectivo"} onChange={e=>setExForm({...exForm,via:e.target.value})}>
+              <option value="Efectivo">💵 Efectivo</option>
+              <option value="SPIN Marcel">📱 SPIN Marcel</option>
+              <option value="SPIN Gustavo">📱 SPIN Gustavo</option>
+            </select>
+          </F>
         </div>
         <GoldBtn onClick={()=>{
           if(!exForm.amount||!exForm.desc.trim())return;
           if(setExtras)setExtras([...(extras||[]),{...exForm,id:uid(),amount:+exForm.amount}]);
-          setExForm({date:today(),amount:"",desc:"",socio:"Marcel",tipo:"utilidad"});
+          setExForm({date:today(),amount:"",desc:"",socio:"Marcel",tipo:"utilidad",via:"Efectivo"});
         }}>+ Registrar utilidad extra</GoldBtn>
 
         {(extras||[]).length>0&&(()=>{
@@ -1424,13 +1438,14 @@ function CorteCaja({sales,expenses,extras=[],setExtras}){
                 <Chip label={"Total: "+$m(totalExtra)} bg="rgba(26,140,90,0.1)" color={T.profit}/>
               </div>
               <table style={{width:"100%",fontSize:12,borderCollapse:"collapse"}}>
-                <TH cols={["Fecha","Tipo","Socio","Descripción","Monto",""]}/>
+                <TH cols={["Fecha","Tipo","Socio","Llegó a","Descripción","Monto",""]}/>
                 <tbody>
                   {fExtras.map((x,i)=>(
                     <tr key={x.id} style={{background:i%2===0?T.bg:T.bgRow,borderBottom:`0.5px solid ${T.border}`}}>
                       <td style={{padding:"7px 10px",color:T.textSub,whiteSpace:"nowrap"}}>{x.date}</td>
                       <td style={{padding:"7px 10px"}}><Chip label={x.tipo==="utilidad"?"Utilidad tercero":x.tipo==="comision"?"Comisión":"Otro"} bg="rgba(26,140,90,0.1)" color={T.profit}/></td>
                       <td style={{padding:"7px 10px"}}><Chip label={x.socio} bg={x.socio==="Marcel"?T.goldBg:x.socio==="Gustavo"?"rgba(112,56,208,0.1)":"rgba(40,96,176,0.1)"} color={x.socio==="Marcel"?T.goldText:x.socio==="Gustavo"?T.pkg:T.client}/></td>
+                      <td style={{padding:"7px 10px"}}>{x.via&&(()=>{const pc=PAY_CLR[x.via]||{bg:T.goldBg,c:T.goldText};return<Chip label={x.via} bg={pc.bg} color={pc.c}/>;})()}</td>
                       <td style={{padding:"7px 10px",color:T.text}}>{x.desc}</td>
                       <td style={{padding:"7px 10px",fontWeight:700,color:T.profit,whiteSpace:"nowrap"}}>{$m(x.amount)}</td>
                       <td style={{padding:"7px 10px"}}><OutBtn onClick={()=>setExtras&&setExtras((extras||[]).filter(e=>e.id!==x.id))} danger style={{fontSize:11,padding:"3px 8px"}}>🗑️</OutBtn></td>
