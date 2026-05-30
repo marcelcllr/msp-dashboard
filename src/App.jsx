@@ -601,6 +601,7 @@ function NuevaVenta({prods,setProds,pkgs,clients,setClients,sales,setSales}){
   const[lines,setLines]=useState([{pid:"",qty:1,price:"",su:"caja"}]);
   const[payMethod,setPayMethod]=useState("Efectivo");
   const[mixEfectivo,setMixEfectivo]=useState("");
+  const[mixTransferencia,setMixTransferencia]=useState("");
   const[mixCuenta,setMixCuenta]=useState("SPIN Marcel");
   const[envio,setEnvio]=useState("");
   const[envioTipo,setEnvioTipo]=useState("ninguno");
@@ -648,7 +649,8 @@ function NuevaVenta({prods,setProds,pkgs,clients,setClients,sales,setSales}){
       cost:cost+regaloC+costoEnvioN,
       desc,items,note,payMethod,
       mixEfectivo:payMethod==="Mixto"?+mixEfectivo||0:0,
-      mixCuenta:payMethod==="Mixto"?mixCuenta:"",
+      mixTransferencia:payMethod==="Mixto"?+mixTransferencia||0:0,
+      mixCuenta:payMethod==="Mixto"?mixCuenta:payMethod==="Mixto"?mixCuenta:"",
       envio:envioNum,costoEnvio:costoEnvioN,envioTipo,envioDesc};
     setSales([...sales,sale]);
     // deduct stock
@@ -662,7 +664,7 @@ function NuevaVenta({prods,setProds,pkgs,clients,setClients,sales,setSales}){
     setPkgId("");setPkgQty(1);setPkgOver("");
     setLines([{pid:"",qty:1,price:"",su:"caja"}]);
     setEnvio("");setEnvioTipo("ninguno");setEnvioDesc("");setCostoEnvio("");setNote("");
-    setPayMethod("Efectivo");setCuenta("");setMixEfectivo("");setMixCuenta("SPIN Marcel");
+    setPayMethod("Efectivo");setCuenta("");setMixEfectivo("");setMixTransferencia("");setMixCuenta("SPIN Marcel");
   };
 
   const updLine=(i,k,v)=>{
@@ -815,12 +817,22 @@ function NuevaVenta({prods,setProds,pkgs,clients,setClients,sales,setSales}){
               <F label="💵 Parte en efectivo ($)">
                 <input type="number" min="0" value={mixEfectivo} onChange={e=>setMixEfectivo(e.target.value)} placeholder="0.00"/>
               </F>
-              <F label="📱 Parte en transferencia a">
+              <F label="📱 Transferencia a">
                 <select value={mixCuenta} onChange={e=>setMixCuenta(e.target.value)}>
                   <option value="SPIN Marcel">SPIN Marcel</option>
                   <option value="SPIN Gustavo">SPIN Gustavo</option>
                 </select>
               </F>
+              <F label={"💰 Monto transferido a "+mixCuenta+" ($)"}>
+                <input type="number" min="0" value={mixTransferencia} onChange={e=>setMixTransferencia(e.target.value)} placeholder="0.00"/>
+              </F>
+              {(+mixEfectivo>0||+mixTransferencia>0)&&(
+                <div style={{padding:"8px 12px",background:T.goldBg,borderRadius:8,fontSize:12,color:T.goldText}}>
+                  Total mixto: <strong>{$m((+mixEfectivo||0)+(+mixTransferencia||0))}</strong>
+                  {" · "}Efectivo: <strong>{$m(+mixEfectivo||0)}</strong>
+                  {" · "}{mixCuenta}: <strong>{$m(+mixTransferencia||0)}</strong>
+                </div>
+              )}
             </>
           )}
           <F label="Cobro de envío al cliente ($)">
@@ -1284,7 +1296,23 @@ function CorteCaja({sales,expenses,extras=[],setExtras}){
   const rev=fSales.reduce((s,v)=>s+v.total,0);
   const envTotal=fSales.reduce((s,v)=>s+(v.envio||0),0);
   const gastos=fExp.reduce((s,e)=>s+e.amount,0);
-  const byMethod=PAY_METHODS.map(m=>{const direct=fSales.filter(s=>s.payMethod===m);const total=direct.reduce((a,s)=>a+s.total,0);const pc=PAY_CLR[m]||{};return{method:m,total,count:direct.length,env:direct.reduce((a,s)=>a+(s.envio||0),0),bg:pc.bg,c:pc.c};});
+  // Distribute Mixto sales into Efectivo and SPIN accounts
+  const mixSales=fSales.filter(s=>s.payMethod==="Mixto");
+  const mixEfectivoTotal=mixSales.reduce((a,s)=>a+(s.mixEfectivo||0),0);
+  const mixMarcelTotal=mixSales.filter(s=>s.mixCuenta==="SPIN Marcel").reduce((a,s)=>a+(s.mixTransferencia||0),0);
+  const mixGustavoTotal=mixSales.filter(s=>s.mixCuenta==="SPIN Gustavo").reduce((a,s)=>a+(s.mixTransferencia||0),0);
+
+  const byMethod=PAY_METHODS.filter(m=>m!=="Mixto").map(m=>{
+    const direct=fSales.filter(s=>s.payMethod===m);
+    let total=direct.reduce((a,s)=>a+s.total,0);
+    // Add Mixto contributions
+    if(m==="Efectivo") total+=mixEfectivoTotal;
+    if(m==="SPIN Marcel") total+=mixMarcelTotal;
+    if(m==="SPIN Gustavo") total+=mixGustavoTotal;
+    const count=direct.length+(m==="Efectivo"&&mixEfectivoTotal>0?mixSales.length:0);
+    const pc=PAY_CLR[m]||{};
+    return{method:m,total,count:direct.length,env:direct.reduce((a,s)=>a+(s.envio||0),0),bg:pc.bg,c:pc.c};
+  });
   const DAYS=["Lunes","Martes","Miércoles","Jueves","Viernes","Sábado","Domingo"];
   const byDay=DAYS.map((d,i)=>{const dn=(i+1)%7;const ds=fSales.filter(s=>{const w=new Date(s.date+"T12:00:00").getDay();return w===dn||(i===6&&w===0);});return{day:d,total:ds.reduce((a,s)=>a+s.total,0),util:ds.reduce((a,s)=>a+s.total-s.cost,0),count:ds.length};});
   const sinMetodo=fSales.filter(s=>!s.payMethod).length;
