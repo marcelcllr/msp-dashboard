@@ -1283,7 +1283,7 @@ function Inventario({prods,setProds,sales,stockMoves,setStockMoves}){
 function CorteCaja({sales,expenses,extras=[],setExtras}){
   const[period,setPeriod]=useState("semana");
   const[refDate,setRefDate]=useState(today());
-  const[exForm,setExForm]=useState({date:today(),amount:"",desc:"",socio:"Marcel",tipo:"utilidad",via:"Efectivo"});
+  const[exForm,setExForm]=useState({date:today(),amount:"",desc:"",tipo:"utilidad",via:"Efectivo"});
   const getRange=()=>{
     const d=new Date(refDate+"T12:00:00");
     if(period==="dia")return{start:refDate,end:refDate,label:refDate};
@@ -1398,13 +1398,7 @@ function CorteCaja({sales,expenses,extras=[],setExtras}){
         <div style={{display:"flex",flexDirection:"column",gap:10,marginBottom:12}}>
           <F label="Fecha"><input type="date" value={exForm.date} onChange={e=>setExForm({...exForm,date:e.target.value})}/></F>
           <F label="Monto recibido ($)"><input type="number" min="0" value={exForm.amount} onChange={e=>setExForm({...exForm,amount:e.target.value})} placeholder="0.00"/></F>
-          <F label="Corresponde a">
-            <select value={exForm.socio} onChange={e=>setExForm({...exForm,socio:e.target.value})}>
-              <option>Marcel</option>
-              <option>Gustavo</option>
-              <option>Ambos</option>
-            </select>
-          </F>
+
           <F label="Tipo">
             <select value={exForm.tipo} onChange={e=>setExForm({...exForm,tipo:e.target.value})}>
               <option value="utilidad">Utilidad de tercero</option>
@@ -1423,8 +1417,8 @@ function CorteCaja({sales,expenses,extras=[],setExtras}){
         </div>
         <GoldBtn onClick={()=>{
           if(!exForm.amount||!exForm.desc.trim())return;
-          if(setExtras)setExtras([...(extras||[]),{...exForm,id:uid(),amount:+exForm.amount}]);
-          setExForm({date:today(),amount:"",desc:"",socio:"Marcel",tipo:"utilidad",via:"Efectivo"});
+          setExtras([...(extras||[]),{...exForm,id:uid(),amount:+exForm.amount}]);
+          setExForm({date:today(),amount:"",desc:"",tipo:"utilidad",via:"Efectivo"});
         }}>+ Registrar utilidad extra</GoldBtn>
 
         {(extras||[]).length>0&&(()=>{
@@ -1438,17 +1432,17 @@ function CorteCaja({sales,expenses,extras=[],setExtras}){
                 <Chip label={"Total: "+$m(totalExtra)} bg="rgba(26,140,90,0.1)" color={T.profit}/>
               </div>
               <table style={{width:"100%",fontSize:12,borderCollapse:"collapse"}}>
-                <TH cols={["Fecha","Tipo","Socio","Llegó a","Descripción","Monto",""]}/>
+                <TH cols={["Fecha","Tipo","Llegó a","Descripción","Monto",""]}/>
                 <tbody>
                   {fExtras.map((x,i)=>(
                     <tr key={x.id} style={{background:i%2===0?T.bg:T.bgRow,borderBottom:`0.5px solid ${T.border}`}}>
                       <td style={{padding:"7px 10px",color:T.textSub,whiteSpace:"nowrap"}}>{x.date}</td>
                       <td style={{padding:"7px 10px"}}><Chip label={x.tipo==="utilidad"?"Utilidad tercero":x.tipo==="comision"?"Comisión":"Otro"} bg="rgba(26,140,90,0.1)" color={T.profit}/></td>
-                      <td style={{padding:"7px 10px"}}><Chip label={x.socio} bg={x.socio==="Marcel"?T.goldBg:x.socio==="Gustavo"?"rgba(112,56,208,0.1)":"rgba(40,96,176,0.1)"} color={x.socio==="Marcel"?T.goldText:x.socio==="Gustavo"?T.pkg:T.client}/></td>
+
                       <td style={{padding:"7px 10px"}}>{x.via&&(()=>{const pc=PAY_CLR[x.via]||{bg:T.goldBg,c:T.goldText};return<Chip label={x.via} bg={pc.bg} color={pc.c}/>;})()}</td>
                       <td style={{padding:"7px 10px",color:T.text}}>{x.desc}</td>
                       <td style={{padding:"7px 10px",fontWeight:700,color:T.profit,whiteSpace:"nowrap"}}>{$m(x.amount)}</td>
-                      <td style={{padding:"7px 10px"}}><OutBtn onClick={()=>setExtras&&setExtras((extras||[]).filter(e=>e.id!==x.id))} danger style={{fontSize:11,padding:"3px 8px"}}>🗑️</OutBtn></td>
+                      <td style={{padding:"7px 10px"}}><OutBtn onClick={()=>setExtras((extras||[]).filter(e=>e.id!==x.id))} danger style={{fontSize:11,padding:"3px 8px"}}>🗑️</OutBtn></td>
                     </tr>
                   ))}
                 </tbody>
