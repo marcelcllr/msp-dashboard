@@ -1548,7 +1548,7 @@ function Dashboard_App(){
       {tab==="venta" && <NuevaVenta {...props}/>}
       {tab==="gasto" && <Gastos     {...props}/>}
       {tab==="inv"   && <Inventario {...props}/>}
-      {tab==="corte" && <CorteCaja  sales={sales} expenses={expenses}/>}
+      {tab==="corte" && <CorteCaja  sales={sales} expenses={expenses} extras={extras} setExtras={setExtras}/>}
     </div>
   );
 }
