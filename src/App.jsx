@@ -11,17 +11,20 @@ const _supabase = createClient(
 async function dbLoad(key, def) {
   try {
     const { data, error } = await _supabase
-      .from("msp_store").select("value").eq("key", key).single();
-    if (error || !data) return def;
+      .from("msp_store").select("value").eq("key", key).maybeSingle();
+    if (error) { console.error("dbLoad error:", key, error); return def; }
+    if (!data) return def;
     return JSON.parse(data.value);
-  } catch { return def; }
+  } catch(e) { console.error("dbLoad catch:", key, e); return def; }
 }
 
 async function dbSave(key, value) {
   try {
-    await _supabase.from("msp_store")
-      .upsert({ key, value: JSON.stringify(value) }, { onConflict: "key" });
-  } catch(e) { console.error("dbSave:", e); }
+    const { error } = await _supabase.from("msp_store")
+      .upsert({ key, value: JSON.stringify(value), updated_at: new Date().toISOString() }, 
+               { onConflict: "key" });
+    if (error) console.error("dbSave error:", key, error);
+  } catch(e) { console.error("dbSave catch:", key, e); }
 }
 
 // ── LOGIN ─────────────────────────────────────────────────────────────────────
@@ -112,9 +115,9 @@ const INIT_PKGS=[
   {id:"may", name:"Paquete Mayorista",    price:39400,items:[{pid:"bh",qty:20},{pid:"rhv",qty:15},{pid:"rhp",qty:15},{pid:"hs",qty:10},{pid:"pp24",qty:5},{pid:"pp12",qty:10}]},
 ];
 const EXP_CATS=["Gasolina","Repartidores","Importación","Transporte","Almacén","Marketing","Gastos generales","Otro"];
-const PAY_METHODS=["Efectivo","SPIN Marcel","SPIN Gustavo","Tercero"];
+const PAY_METHODS=["Efectivo","SPIN Marcel","SPIN Gustavo","Tercero","Mixto"];
 const PAY_METHODS_LABEL={"Efectivo":"💵 Efectivo","SPIN Marcel":"📱 SPIN Marcel","SPIN Gustavo":"📱 SPIN Gustavo","Tercero":"🤝 Tercero"};
-const PAY_CLR={"Efectivo":{bg:"rgba(26,140,90,0.12)",c:"#1A8C5A"},"SPIN Marcel":{bg:"rgba(196,150,42,0.12)",c:"#8B6716"},"SPIN Gustavo":{bg:"rgba(112,56,208,0.12)",c:"#7038D0"},"Tercero":{bg:"rgba(40,96,176,0.12)",c:"#2860B0"}};
+const PAY_CLR={"Efectivo":{bg:"rgba(26,140,90,0.12)",c:"#1A8C5A"},"SPIN Marcel":{bg:"rgba(196,150,42,0.12)",c:"#8B6716"},"SPIN Gustavo":{bg:"rgba(112,56,208,0.12)",c:"#7038D0"},"Tercero":{bg:"rgba(40,96,176,0.12)",c:"#2860B0"},"Mixto":{bg:"rgba(100,100,100,0.1)",c:"#555555"}};
 
 // ── THEME ─────────────────────────────────────────────────────────────────────
 const T={
@@ -208,6 +211,11 @@ function Dashboard({prods,pkgs,clients,sales,expenses}){
           <p style={{margin:"0 0 8px",fontSize:11,fontWeight:600,color:T.textSub,textTransform:"uppercase",letterSpacing:"0.08em"}}>Gastos del mes</p>
           <p style={{margin:"0 0 4px",fontSize:28,fontWeight:700,color:T.text}}>{$m(gastosMes)}</p>
           <p style={{margin:0,fontSize:12,color:T.textMuted}}>Mes actual</p>
+        </div>
+        <div style={{background:mesData.net>=0?"rgba(26,140,90,0.06)":"rgba(192,64,64,0.06)",borderRadius:12,padding:"16px 18px",border:`2px solid ${mesData.net>=0?T.profit:T.expense}`}}>
+          <p style={{margin:"0 0 8px",fontSize:11,fontWeight:600,color:mesData.net>=0?T.profit:T.expense,textTransform:"uppercase",letterSpacing:"0.08em"}}>✨ Utilidad neta del mes</p>
+          <p style={{margin:"0 0 4px",fontSize:28,fontWeight:700,color:mesData.net>=0?T.profit:T.expense}}>{$m(mesData.net)}</p>
+          <p style={{margin:0,fontSize:12,color:T.textMuted}}>Ganancias − gastos · {nomMes}</p>
         </div>
       </div>
 
@@ -592,6 +600,8 @@ function NuevaVenta({prods,setProds,pkgs,clients,setClients,sales,setSales}){
   const[pkgOver,setPkgOver]=useState("");
   const[lines,setLines]=useState([{pid:"",qty:1,price:"",su:"caja"}]);
   const[payMethod,setPayMethod]=useState("Efectivo");
+  const[mixEfectivo,setMixEfectivo]=useState("");
+  const[mixCuenta,setMixCuenta]=useState("SPIN Marcel");
   const[envio,setEnvio]=useState("");
   const[envioTipo,setEnvioTipo]=useState("ninguno");
   const[envioDesc,setEnvioDesc]=useState("");
@@ -630,7 +640,7 @@ function NuevaVenta({prods,setProds,pkgs,clients,setClients,sales,setSales}){
     }
     const envioNum=+envio||0;
     const regaloC=envioTipo==="sobres"?(parseInt(envioDesc)||1)*SOBRE_COST:0;
-    const sale={id:uid(),date,clientId,pkgId:mode==="paquete"?pkgId:null,total,cost:cost+regaloC,desc,items,note,payMethod,envio:envioNum,envioTipo,envioDesc};
+    const sale={id:uid(),date,clientId,pkgId:mode==="paquete"?pkgId:null,total,cost:cost+regaloC,desc,items,note,payMethod,mixEfectivo:payMethod==="Mixto"?+mixEfectivo||0:0,mixCuenta:payMethod==="Mixto"?mixCuenta:"",envio:envioNum,envioTipo,envioDesc};
     setSales([...sales,sale]);
     // deduct stock
     setProds(prev=>prev.map(prod=>{
@@ -643,7 +653,7 @@ function NuevaVenta({prods,setProds,pkgs,clients,setClients,sales,setSales}){
     setPkgId("");setPkgQty(1);setPkgOver("");
     setLines([{pid:"",qty:1,price:"",su:"caja"}]);
     setEnvio("");setEnvioTipo("ninguno");setEnvioDesc("");setNote("");
-    setPayMethod("Efectivo");setCuenta("");
+    setPayMethod("Efectivo");setCuenta("");setMixEfectivo("");setMixCuenta("SPIN Marcel");
   };
 
   const updLine=(i,k,v)=>{
@@ -791,6 +801,19 @@ function NuevaVenta({prods,setProds,pkgs,clients,setClients,sales,setSales}){
             </select>
           </F>
 
+          {payMethod==="Mixto" && (
+            <>
+              <F label="💵 Parte en efectivo ($)">
+                <input type="number" min="0" value={mixEfectivo} onChange={e=>setMixEfectivo(e.target.value)} placeholder="0.00"/>
+              </F>
+              <F label="📱 Parte en transferencia a">
+                <select value={mixCuenta} onChange={e=>setMixCuenta(e.target.value)}>
+                  <option value="SPIN Marcel">SPIN Marcel</option>
+                  <option value="SPIN Gustavo">SPIN Gustavo</option>
+                </select>
+              </F>
+            </>
+          )}
           <F label="Cobro de envío ($)">
             <input type="number" min="0" value={envio} onChange={e=>setEnvio(e.target.value)} placeholder="0 = sin envío"/>
           </F>
@@ -1387,18 +1410,20 @@ function Dashboard_App(){
       // Fix categories
       const fix=new Set(["gom","gom_f","gom_m","rchv","rhch"]);
       p=p.map(x=>fix.has(x.id)?{...x,cat:"Miel"}:x);
+      // Remove old combined gomitas product (replaced by gom_f and gom_m)
+      p=p.filter(x=>x.id!=="gom");
       setProds(p);setPkgs(pk);setClients(c);setSales(s);setExpenses(e);setStockMoves(sm);setExtras(ex);
       setReady(true);
     })();
   },[]);
 
-  useEffect(()=>{if(ready)save(SK.p,prods);},[prods,ready]);
-  useEffect(()=>{if(ready)save(SK.pk,pkgs);},[pkgs,ready]);
-  useEffect(()=>{if(ready)save(SK.c,clients);},[clients,ready]);
-  useEffect(()=>{if(ready)save(SK.s,sales);},[sales,ready]);
-  useEffect(()=>{if(ready)save(SK.e,expenses);},[expenses,ready]);
-  useEffect(()=>{if(ready)save(SK.sm,stockMoves);},[stockMoves,ready]);
-  useEffect(()=>{if(ready)save(SK.ex,extras);},[extras,ready]);
+  useEffect(()=>{if(ready){const t=setTimeout(()=>save(SK.p,prods),500);return()=>clearTimeout(t);}},[prods,ready]);
+  useEffect(()=>{if(ready){const t=setTimeout(()=>save(SK.pk,pkgs),500);return()=>clearTimeout(t);}},[pkgs,ready]);
+  useEffect(()=>{if(ready){const t=setTimeout(()=>save(SK.c,clients),500);return()=>clearTimeout(t);}},[clients,ready]);
+  useEffect(()=>{if(ready){const t=setTimeout(()=>save(SK.s,sales),500);return()=>clearTimeout(t);}},[sales,ready]);
+  useEffect(()=>{if(ready){const t=setTimeout(()=>save(SK.e,expenses),500);return()=>clearTimeout(t);}},[expenses,ready]);
+  useEffect(()=>{if(ready){const t=setTimeout(()=>save(SK.sm,stockMoves),500);return()=>clearTimeout(t);}},[stockMoves,ready]);
+  useEffect(()=>{if(ready){const t=setTimeout(()=>save(SK.ex,extras),500);return()=>clearTimeout(t);}},[extras,ready]);
 
   if(!ready)return(
     <div style={{display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",padding:"3rem",gap:12,color:T.textSub}}>
