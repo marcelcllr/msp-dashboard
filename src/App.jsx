@@ -604,6 +604,7 @@ function NuevaVenta({prods,setProds,pkgs,clients,setClients,sales,setSales}){
   const[mixCuenta,setMixCuenta]=useState("SPIN Marcel");
   const[envio,setEnvio]=useState("");
   const[envioTipo,setEnvioTipo]=useState("ninguno");
+  const[costoEnvio,setCostoEnvio]=useState("");
   const[envioDesc,setEnvioDesc]=useState("");
   const[note,setNote]=useState("");
   const[err,setErr]=useState("");
@@ -639,8 +640,16 @@ function NuevaVenta({prods,setProds,pkgs,clients,setClients,sales,setSales}){
       items=valid.map(l=>({pid:l.pid,qty:+l.qty,su:l.su||"caja"}));
     }
     const envioNum=+envio||0;
+    const costoEnvioN=+costoEnvio||0;
     const regaloC=envioTipo==="sobres"?(parseInt(envioDesc)||1)*SOBRE_COST:0;
-    const sale={id:uid(),date,clientId,pkgId:mode==="paquete"?pkgId:null,total,cost:cost+regaloC,desc,items,note,payMethod,mixEfectivo:payMethod==="Mixto"?+mixEfectivo||0:0,mixCuenta:payMethod==="Mixto"?mixCuenta:"",envio:envioNum,envioTipo,envioDesc};
+    // Total incluye lo cobrado por envío. Costo incluye lo pagado al repartidor + sobres regalo
+    const sale={id:uid(),date,clientId,pkgId:mode==="paquete"?pkgId:null,
+      total:total+envioNum,
+      cost:cost+regaloC+costoEnvioN,
+      desc,items,note,payMethod,
+      mixEfectivo:payMethod==="Mixto"?+mixEfectivo||0:0,
+      mixCuenta:payMethod==="Mixto"?mixCuenta:"",
+      envio:envioNum,costoEnvio:costoEnvioN,envioTipo,envioDesc};
     setSales([...sales,sale]);
     // deduct stock
     setProds(prev=>prev.map(prod=>{
@@ -652,7 +661,7 @@ function NuevaVenta({prods,setProds,pkgs,clients,setClients,sales,setSales}){
     setErr("");
     setPkgId("");setPkgQty(1);setPkgOver("");
     setLines([{pid:"",qty:1,price:"",su:"caja"}]);
-    setEnvio("");setEnvioTipo("ninguno");setEnvioDesc("");setNote("");
+    setEnvio("");setEnvioTipo("ninguno");setEnvioDesc("");setCostoEnvio("");setNote("");
     setPayMethod("Efectivo");setCuenta("");setMixEfectivo("");setMixCuenta("SPIN Marcel");
   };
 
@@ -814,9 +823,14 @@ function NuevaVenta({prods,setProds,pkgs,clients,setClients,sales,setSales}){
               </F>
             </>
           )}
-          <F label="Cobro de envío ($)">
+          <F label="Cobro de envío al cliente ($)">
             <input type="number" min="0" value={envio} onChange={e=>setEnvio(e.target.value)} placeholder="0 = sin envío"/>
           </F>
+          {+envio>0&&(
+            <F label="Costo del repartidor ($)">
+              <input type="number" min="0" value={costoEnvio} onChange={e=>setCostoEnvio(e.target.value)} placeholder="0"/>
+            </F>
+          )}
           {+envio>0 && (
             <F label="Descuento en envío">
               <select value={envioTipo} onChange={e=>setEnvioTipo(e.target.value)}>
@@ -831,6 +845,17 @@ function NuevaVenta({prods,setProds,pkgs,clients,setClients,sales,setSales}){
               <input value={envioDesc} onChange={e=>setEnvioDesc(e.target.value)} placeholder={envioTipo==="mitad"?"Ej. regresé $60":"Ej. 2 sobres BH"}/>
             </F>
           )}
+          {+envio>0&&+costoEnvio>0&&(()=>{
+            const util=+envio-+costoEnvio;
+            return(
+              <div style={{padding:"8px 12px",background:util>=0?"rgba(26,140,90,0.08)":"rgba(192,64,64,0.08)",borderRadius:8,fontSize:12,border:`1px solid ${util>=0?"rgba(26,140,90,0.2)":"rgba(192,64,64,0.2)"}`}}>
+                {util>=0
+                  ?<span style={{color:T.profit}}>✓ El envío te deja <strong>{$m(util)}</strong> de ganancia extra</span>
+                  :<span style={{color:T.expense}}>⚠ El envío te cuesta <strong>{$m(Math.abs(util))}</strong> de tu utilidad</span>
+                }
+              </div>
+            );
+          })()}
         </div>
 
         <div style={{display:"flex",flexDirection:"column",gap:10,marginTop:12}}>
@@ -864,7 +889,14 @@ function NuevaVenta({prods,setProds,pkgs,clients,setClients,sales,setSales}){
                       <td style={{padding:"6px 10px",color:T.textSub,maxWidth:150,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{s.desc}</td>
                       <td style={{padding:"6px 10px"}}>{label&&<Chip label={label} bg={pc.bg} color={pc.c}/>}</td>
                       <td style={{padding:"6px 10px",fontWeight:600,color:T.revenue,whiteSpace:"nowrap"}}>{$m(s.total)}</td>
-                      <td style={{padding:"6px 10px",color:T.client,whiteSpace:"nowrap"}}>{(s.envio||0)>0?$m(s.envio):"—"}</td>
+                      <td style={{padding:"6px 10px",whiteSpace:"nowrap"}}>
+                      {(s.envio||0)>0?(
+                        <div>
+                          <div style={{color:T.client,fontWeight:500}}>{$m(s.envio||0)}</div>
+                          {(s.costoEnvio||0)>0&&<div style={{fontSize:10,color:(s.envio||0)-(s.costoEnvio||0)>=0?T.profit:T.expense}}>repa: {$m(s.costoEnvio||0)}</div>}
+                        </div>
+                      ):"—"}
+                    </td>
                       <td style={{padding:"6px 10px",fontWeight:700,color:u>=0?T.profit:T.expense,whiteSpace:"nowrap"}}>{s.cost>0?$m(u):"—"}</td>
                       <td style={{padding:"6px 10px",color:m>0?T.profit:T.expense,whiteSpace:"nowrap"}}>{s.cost>0?pct(m):"—"}</td>
                       <td style={{padding:"6px 10px"}}>
