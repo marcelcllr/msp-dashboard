@@ -884,7 +884,7 @@ function NuevaVenta({prods,setProds,pkgs,clients,setClients,sales,setSales}){
 
 // ── GASTOS ────────────────────────────────────────────────────────────────────
 function Gastos({expenses,setExpenses}){
-  const blank={date:today(),cat:"Importación",amount:"",desc:""};
+  const blank={date:today(),cat:"Importación",amount:"",desc:"",pagadoCon:"Efectivo"};
   const[form,setForm]=useState(blank);
   const total=expenses.reduce((s,e)=>s+e.amount,0);
   const EXP_CLR=["#C4962A","#1A8C5A","#2860B0","#C04040","#7038D0","#9A6020"];
@@ -899,6 +899,13 @@ function Gastos({expenses,setExpenses}){
           <F label="Categoría"><select value={form.cat} onChange={e=>setForm({...form,cat:e.target.value})}>{EXP_CATS.map(c=><option key={c}>{c}</option>)}</select></F>
           <F label="Monto ($)"><input type="number" min="0" step="0.01" value={form.amount} onChange={e=>setForm({...form,amount:e.target.value})} placeholder="0.00"/></F>
           <F label="Descripción"><input value={form.desc} onChange={e=>setForm({...form,desc:e.target.value})} placeholder="Detalle del gasto"/></F>
+          <F label="¿Con qué se pagó?">
+            <select value={form.pagadoCon} onChange={e=>setForm({...form,pagadoCon:e.target.value})}>
+              <option value="Efectivo">💵 Efectivo</option>
+              <option value="SPIN Marcel">📱 SPIN Marcel</option>
+              <option value="SPIN Gustavo">📱 SPIN Gustavo</option>
+            </select>
+          </F>
         </div>
         <GoldBtn onClick={save} style={{marginTop:12}}>Registrar gasto</GoldBtn>
       </Card>
@@ -921,7 +928,7 @@ function Gastos({expenses,setExpenses}){
         <STitle>Historial ({expenses.length})</STitle>
         {expenses.length===0 ? <Empty icon="ti-wallet" text="Sin gastos registrados"/> : (
           <table style={{width:"100%",fontSize:12,borderCollapse:"collapse"}}>
-            <TH cols={["Fecha","Categoría","Descripción","Monto",""]}/>
+            <TH cols={["Fecha","Categoría","Descripción","Pagado con","Monto",""]}/>
             <tbody>
               {[...expenses].sort((a,b)=>b.date.localeCompare(a.date)).map((e,i)=>(
                 <tr key={e.id} style={{background:i%2===0?T.bg:T.bgRow,borderBottom:`0.5px solid ${T.border}`}}>
@@ -1272,13 +1279,19 @@ function CorteCaja({sales,expenses,extras=[],setExtras}){
       <Card>
         <STitle>Desglose por forma de cobro</STitle>
         <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(140px,1fr))",gap:10}}>
-          {byMethod.map(bm=>(
-            <div key={bm.method} style={{background:bm.bg||T.goldBg,borderRadius:10,padding:"14px 16px",border:`0.5px solid ${bm.c||T.gold}30`}}>
-              <p style={{margin:"0 0 6px",fontWeight:700,fontSize:13,color:bm.c||T.gold}}>{bm.method} <span style={{fontWeight:400,fontSize:11,color:T.textMuted}}>({bm.count} venta{bm.count!==1?"s":""})</span></p>
-              <p style={{margin:0,fontSize:22,fontWeight:700,color:bm.c||T.gold}}>{$m(bm.total)}</p>
-              {bm.env>0 && <p style={{margin:"4px 0 0",fontSize:11,color:T.textSub}}>Incl. envíos: {$m(bm.env)}</p>}
-            </div>
-          ))}
+          {byMethod.map(bm=>{
+            const gastosDeEsta=fExp.filter(e=>e.pagadoCon===bm.method).reduce((a,e)=>a+e.amount,0);
+            const neto=bm.total-gastosDeEsta;
+            return(
+              <div key={bm.method} style={{background:bm.bg||T.goldBg,borderRadius:10,padding:"14px 16px",border:`0.5px solid ${bm.c||T.gold}30`}}>
+                <p style={{margin:"0 0 6px",fontWeight:700,fontSize:13,color:bm.c||T.gold}}>{bm.method} <span style={{fontWeight:400,fontSize:11,color:T.textMuted}}>({bm.count} venta{bm.count!==1?"s":""})</span></p>
+                <p style={{margin:0,fontSize:22,fontWeight:700,color:bm.c||T.gold}}>{$m(bm.total)}</p>
+                {gastosDeEsta>0&&<p style={{margin:"4px 0 0",fontSize:11,color:T.expense}}>− {$m(gastosDeEsta)} en gastos</p>}
+                {gastosDeEsta>0&&<p style={{margin:"2px 0 0",fontSize:13,fontWeight:700,color:neto>=0?T.profit:T.expense}}>= {$m(neto)} neto</p>}
+                {bm.env>0&&<p style={{margin:"4px 0 0",fontSize:11,color:T.textSub}}>Incl. envíos: {$m(bm.env)}</p>}
+              </div>
+            );
+          })}
         </div>
         <div style={{marginTop:12,padding:"10px 14px",background:T.goldBg,borderRadius:8,fontSize:12,color:T.goldText}}>
           🛡️ <strong>Verifica:</strong> Efectivo debe estar en caja física · SPIN Marcel debe coincidir con la app de Marcel · SPIN Gustavo con la de Gustavo
