@@ -610,6 +610,7 @@ function NuevaVenta({prods,setProds,pkgs,clients,setClients,sales,setSales}){
   const[envioDesc,setEnvioDesc]=useState("");
   const[note,setNote]=useState("");
   const[err,setErr]=useState("");
+  const[pricesSaved,setPricesSaved]=useState(false);
   const[newCl,setNewCl]=useState(null);
 
   const cl=clients.find(c=>c.id===clientId);
@@ -762,31 +763,38 @@ function NuevaVenta({prods,setProds,pkgs,clients,setClients,sales,setSales}){
               const p=prods.find(x=>x.id===l.pid);
               const up=getLP(l);
               const ut=up*(+l.qty||1)-(p?p.cost*(+l.qty||1):0);
+              const esEspecial=p&&cl?.prices?.[l.pid];
               return(
-                <div key={i} style={{display:"flex",gap:8,marginBottom:8,alignItems:"flex-end",flexWrap:"wrap"}}>
-                  <F label={i===0?"Producto":""} style={{flex:"1 1 200px",position:"relative"}}>
-                    <ProdSearch
-                      prods={prods}
-                      value={l.pid}
-                      onChange={pid=>updLine(i,"pid",pid)}
-                    />
-                  </F>
-                  {p && p.spc>1 && (
-                    <F label={i===0?"Unidad":""}>
-                      <select value={l.su||"caja"} onChange={e=>updLine(i,"su",e.target.value)} style={{width:80}}>
-                        <option value="caja">Caja</option>
-                        <option value="sobre">Sobre</option>
-                      </select>
-                    </F>
+                <div key={i} style={{background:T.bg,borderRadius:8,padding:"10px",marginBottom:8,border:`0.5px solid ${T.border}`}}>
+                  <div style={{marginBottom:8}}>
+                    <ProdSearch prods={prods} value={l.pid} onChange={pid=>updLine(i,"pid",pid)}/>
+                  </div>
+                  {p&&(
+                    <div style={{display:"flex",gap:8,alignItems:"flex-end",flexWrap:"wrap"}}>
+                      {p.spc>1&&(
+                        <div style={{flex:"0 0 auto"}}>
+                          <label style={{fontSize:10,fontWeight:600,color:T.textSub,display:"block",marginBottom:2}}>Unidad</label>
+                          <select value={l.su||"caja"} onChange={e=>updLine(i,"su",e.target.value)} style={{width:72,minHeight:38}}>
+                            <option value="caja">Caja</option>
+                            <option value="sobre">Sobre</option>
+                          </select>
+                        </div>
+                      )}
+                      <div style={{flex:"0 0 auto"}}>
+                        <label style={{fontSize:10,fontWeight:600,color:T.textSub,display:"block",marginBottom:2}}>Cant.</label>
+                        <input type="number" min="0.1" step="0.1" value={l.qty} onChange={e=>updLine(i,"qty",e.target.value)} style={{width:58,minHeight:38,textAlign:"center"}}/>
+                      </div>
+                      <div style={{flex:"1 1 90px"}}>
+                        <label style={{fontSize:10,fontWeight:600,color:esEspecial?T.profit:T.textSub,display:"block",marginBottom:2}}>{esEspecial?"Precio especial":"Precio"}</label>
+                        <input type="number" min="0" value={l.price} onChange={e=>updLine(i,"price",e.target.value)} placeholder={p?String(clientPrice(cl,l.pid,p.tiers,+l.qty||1)):"0"} style={{minHeight:38,textAlign:"center",fontWeight:600}}/>
+                      </div>
+                      <div style={{flex:"0 0 auto",textAlign:"right",paddingBottom:8}}>
+                        <div style={{fontSize:10,color:T.textMuted}}>Utilidad</div>
+                        <div style={{fontSize:14,fontWeight:700,color:ut>=0?T.profit:T.expense,whiteSpace:"nowrap"}}>{p.cost>0?$m(ut):"—"}</div>
+                      </div>
+                      <OutBtn onClick={()=>setLines(lines.filter((_,j)=>j!==i))} danger style={{padding:"7px 10px",marginBottom:2}}>✕</OutBtn>
+                    </div>
                   )}
-                  <F label={i===0?"Cantidad":""}>
-                    <input type="number" min="0.1" step="0.1" value={l.qty} onChange={e=>updLine(i,"qty",e.target.value)} style={{width:65}}/>
-                  </F>
-                  <F label={i===0?("Precio"+(p&&cl?.prices?.[l.pid]?" (especial)":p?" (lista $"+p.list+")":"")):""}>
-                    <input type="number" min="0" value={l.price} onChange={e=>updLine(i,"price",e.target.value)} placeholder={p?String(clientPrice(cl,l.pid,p.tiers,+l.qty||1)):"0"} style={{width:90}}/>
-                  </F>
-                  {p && p.cost>0 && <div style={{paddingBottom:6,fontSize:11,fontWeight:600,color:ut>=0?T.profit:T.expense,whiteSpace:"nowrap"}}>{$m(ut)}</div>}
-                  <OutBtn onClick={()=>setLines(lines.filter((_,j)=>j!==i))} danger style={{padding:"6px 8px"}}>✕</OutBtn>
                 </div>
               );
             })}
@@ -795,6 +803,23 @@ function NuevaVenta({prods,setProds,pkgs,clients,setClients,sales,setSales}){
               <div style={{marginTop:10,padding:"8px 12px",background:T.goldBg,borderRadius:8,fontSize:12,display:"flex",gap:20,flexWrap:"wrap"}}>
                 <span style={{color:T.textSub}}>Total: <strong style={{color:T.revenue}}>{$m(lineTotal)}</strong></span>
                 {lineCostCalc>0 && <span style={{color:T.textSub}}>Utilidad: <strong style={{color:lineTotal-lineCostCalc>=0?T.profit:T.expense}}>{$m(lineTotal-lineCostCalc)} ({pct((lineTotal-lineCostCalc)/lineTotal*100)})</strong></span>}
+              </div>
+            )}
+            {cl&&lines.some(l=>l.pid&&l.price)&&(
+              <div style={{marginTop:8}}>
+                {pricesSaved?(
+                  <div style={{padding:"8px 12px",background:"rgba(26,140,90,0.1)",border:"1px solid rgba(26,140,90,0.3)",borderRadius:8,fontSize:12,color:T.profit}}>✓ Precios guardados para {cl.name}</div>
+                ):(
+                  <OutBtn onClick={()=>{
+                    const newPrices={...(cl.prices||{})};
+                    lines.forEach(l=>{if(l.pid&&l.price)newPrices[l.pid]=+l.price;});
+                    setClients(clients.map(c=>c.id===cl.id?{...c,prices:newPrices}:c));
+                    setPricesSaved(true);
+                    setTimeout(()=>setPricesSaved(false),3000);
+                  }} style={{fontSize:12,color:T.client,borderColor:"rgba(40,96,176,0.3)"}}>
+                    💾 Guardar estos precios para {cl.name}
+                  </OutBtn>
+                )}
               </div>
             )}
           </div>
