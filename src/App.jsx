@@ -1187,7 +1187,25 @@ function CorteCaja({sales,expenses,extras=[],setExtras}){
   const rev=fSales.reduce((s,v)=>s+v.total,0);
   const envTotal=fSales.reduce((s,v)=>s+(v.envio||0),0);
   const gastos=fExp.reduce((s,e)=>s+e.amount,0);
-  const byMethod=PAY_METHODS.map(m=>{const direct=fSales.filter(s=>s.payMethod===m);const total=direct.reduce((a,s)=>a+s.total,0);const pc=PAY_CLR[m]||{};return{method:m,total,count:direct.length,env:direct.reduce((a,s)=>a+(s.envio||0),0),bg:pc.bg,c:pc.c};});
+  const fExtrasP=(extras||[]).filter(x=>x.date>=range.start&&x.date<=range.end);
+  const extraEfectivo=fExtrasP.filter(x=>x.via==="Efectivo").reduce((a,x)=>a+x.amount,0);
+  const extraMarcel=fExtrasP.filter(x=>x.via==="SPIN Marcel").reduce((a,x)=>a+x.amount,0);
+  const extraGustavo=fExtrasP.filter(x=>x.via==="SPIN Gustavo").reduce((a,x)=>a+x.amount,0);
+  const mixSales=fSales.filter(s=>s.payMethod==="Mixto");
+  const mixEfectivoTotal=mixSales.reduce((a,s)=>a+(s.mixEfectivo||0),0);
+  const mixMarcelTotal=mixSales.filter(s=>s.mixCuenta==="SPIN Marcel").reduce((a,s)=>a+(s.mixTransferencia||0),0);
+  const mixGustavoTotal=mixSales.filter(s=>s.mixCuenta==="SPIN Gustavo").reduce((a,s)=>a+(s.mixTransferencia||0),0);
+  const byMethod=PAY_METHODS.filter(m=>m!=="Mixto").map(m=>{
+    const direct=fSales.filter(s=>s.payMethod===m);
+    const ventasTotal=direct.reduce((a,s)=>a+s.total,0);
+    const mixAmt=m==="Efectivo"?mixEfectivoTotal:m==="SPIN Marcel"?mixMarcelTotal:m==="SPIN Gustavo"?mixGustavoTotal:0;
+    const extraAmt=m==="Efectivo"?extraEfectivo:m==="SPIN Marcel"?extraMarcel:m==="SPIN Gustavo"?extraGustavo:0;
+    const gastosDeEsta=fExp.filter(e=>(e.pagadoCon||"Efectivo")===m).reduce((a,e)=>a+e.amount,0);
+    const entradas=ventasTotal+mixAmt+extraAmt;
+    const neto=entradas-gastosDeEsta;
+    const pc=PAY_CLR[m]||{};
+    return{method:m,ventasTotal,mixAmt,extraAmt,entradas,gastosDeEsta,neto,count:direct.length,env:direct.reduce((a,s)=>a+(s.envio||0),0),bg:pc.bg,c:pc.c};
+  });
   const DAYS=["Lunes","Martes","Miércoles","Jueves","Viernes","Sábado","Domingo"];
   const byDay=DAYS.map((d,i)=>{const dn=(i+1)%7;const ds=fSales.filter(s=>{const w=new Date(s.date+"T12:00:00").getDay();return w===dn||(i===6&&w===0);});return{day:d,total:ds.reduce((a,s)=>a+s.total,0),util:ds.reduce((a,s)=>a+s.total-s.cost,0),count:ds.length};});
   const sinMetodo=fSales.filter(s=>!s.payMethod).length;
@@ -1216,9 +1234,16 @@ function CorteCaja({sales,expenses,extras=[],setExtras}){
         <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
           {byMethod.map(bm=>(
             <div key={bm.method} style={{background:bm.bg||T.goldBg,borderRadius:10,padding:"14px 16px",border:`0.5px solid ${bm.c||T.gold}30`}}>
-              <p style={{margin:"0 0 6px",fontWeight:700,fontSize:13,color:bm.c||T.gold}}>{bm.method} <span style={{fontWeight:400,fontSize:11,color:T.textMuted}}>({bm.count} venta{bm.count!==1?"s":""})</span></p>
-              <p style={{margin:0,fontSize:22,fontWeight:700,color:bm.c||T.gold}}>{$m(bm.total)}</p>
-              {bm.env>0 && <p style={{margin:"4px 0 0",fontSize:11,color:T.textSub}}>Incl. envíos: {$m(bm.env)}</p>}
+              <p style={{margin:"0 0 8px",fontWeight:700,fontSize:13,color:bm.c||T.gold}}>{bm.method} <span style={{fontWeight:400,fontSize:11,color:T.textMuted}}>({bm.count} venta{bm.count!==1?"s":""})</span></p>
+              {bm.ventasTotal>0&&<p style={{margin:"2px 0",fontSize:12,color:T.textSub}}>Ventas: <strong style={{color:bm.c||T.gold}}>{$m(bm.ventasTotal)}</strong></p>}
+              {bm.mixAmt>0&&<p style={{margin:"2px 0",fontSize:12,color:T.textSub}}>Mixto: <strong style={{color:bm.c||T.gold}}>+{$m(bm.mixAmt)}</strong></p>}
+              {bm.extraAmt>0&&<p style={{margin:"2px 0",fontSize:12,color:T.textSub}}>Extra: <strong style={{color:T.profit}}>+{$m(bm.extraAmt)}</strong></p>}
+              {bm.gastosDeEsta>0&&<p style={{margin:"2px 0",fontSize:12,color:T.textSub}}>Gastos: <strong style={{color:T.expense}}>−{$m(bm.gastosDeEsta)}</strong></p>}
+              {bm.env>0&&<p style={{margin:"2px 0",fontSize:11,color:T.textMuted}}>Envíos: {$m(bm.env)}</p>}
+              <div style={{borderTop:`1px solid ${bm.c||T.gold}30`,marginTop:8,paddingTop:8}}>
+                <p style={{margin:0,fontSize:20,fontWeight:700,color:bm.neto>=0?T.profit:T.expense}}>{$m(bm.neto)}</p>
+                <p style={{margin:"2px 0 0",fontSize:10,color:T.textMuted}}>neto en esta cuenta</p>
+              </div>
             </div>
           ))}
         </div>
@@ -1341,21 +1366,27 @@ function CorteCaja({sales,expenses,extras=[],setExtras}){
               <p style={{margin:0,fontSize:12,fontWeight:600,color:T.text}}>Historial completo</p>
               <Chip label={"Total: "+$m((extras||[]).reduce((s,x)=>s+x.amount,0))} bg="rgba(26,140,90,0.1)" color={T.profit}/>
             </div>
-            <table style={{width:"100%",fontSize:12,borderCollapse:"collapse"}}>
-              <TH cols={["Fecha","Tipo","Llegó a","Descripción","Monto",""]}/>
-              <tbody>
-                {[...(extras||[])].sort((a,b)=>b.date.localeCompare(a.date)).map((x,i)=>(
-                  <tr key={x.id} style={{background:i%2===0?T.bg:T.bgRow,borderBottom:`0.5px solid ${T.border}`}}>
-                    <td style={{padding:"7px 10px",color:T.textSub,whiteSpace:"nowrap"}}>{x.date}</td>
-                    <td style={{padding:"7px 10px"}}><Chip label={x.tipo==="utilidad"?"Utilidad":x.tipo==="comision"?"Comisión":"Otro"} bg="rgba(26,140,90,0.1)" color={T.profit}/></td>
-                    <td style={{padding:"7px 10px"}}>{(()=>{const pc=PAY_CLR[x.via||"Efectivo"]||{};return <Chip label={x.via||"Efectivo"} bg={pc.bg||T.goldBg} color={pc.c||T.goldText}/>;})()}</td>
-                    <td style={{padding:"7px 10px",color:T.text}}>{x.desc||"—"}</td>
-                    <td style={{padding:"7px 10px",fontWeight:700,color:T.profit,whiteSpace:"nowrap"}}>{$m(x.amount)}</td>
-                    <td style={{padding:"7px 10px"}}><OutBtn onClick={()=>setExtras((extras||[]).filter(e=>e.id!==x.id))} danger style={{fontSize:11,padding:"3px 8px"}}>🗑️</OutBtn></td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+            <div style={{display:"flex",flexDirection:"column",gap:8}}>
+              {[...(extras||[])].sort((a,b)=>b.date.localeCompare(a.date)).map((x,i)=>{
+                const pc=PAY_CLR[x.via||"Efectivo"]||{bg:T.goldBg,c:T.goldText};
+                return(
+                  <div key={x.id} style={{background:i%2===0?T.bg:T.bgRow,borderRadius:8,padding:"10px 12px",border:`0.5px solid ${T.border}`,display:"flex",alignItems:"center",gap:10}}>
+                    <div style={{flex:1,minWidth:0}}>
+                      <div style={{display:"flex",gap:6,flexWrap:"wrap",marginBottom:4,alignItems:"center"}}>
+                        <span style={{fontSize:11,color:T.textMuted,whiteSpace:"nowrap"}}>{x.date}</span>
+                        <Chip label={x.tipo==="utilidad"?"Utilidad":x.tipo==="comision"?"Comisión":"Otro"} bg="rgba(26,140,90,0.1)" color={T.profit}/>
+                        <Chip label={x.via||"Efectivo"} bg={pc.bg} color={pc.c}/>
+                      </div>
+                      <p style={{margin:0,fontSize:13,color:T.text,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{x.desc||"—"}</p>
+                    </div>
+                    <div style={{display:"flex",alignItems:"center",gap:8,flexShrink:0}}>
+                      <span style={{fontWeight:700,fontSize:15,color:T.profit}}>{$m(x.amount)}</span>
+                      <OutBtn onClick={()=>setExtras((extras||[]).filter(e=>e.id!==x.id))} danger style={{fontSize:11,padding:"4px 8px"}}>🗑️</OutBtn>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
           </div>
         )}
       </Card>
