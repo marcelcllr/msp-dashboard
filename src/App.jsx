@@ -1220,7 +1220,6 @@ function CorteCaja({sales,expenses,extras=[],setExtras}){
     setExSaved(true);
     setTimeout(()=>setExSaved(false),3000);
   };
-  const[exForm,setExForm]=useState({date:today(),amount:"",desc:"",socio:"Marcel",tipo:"utilidad"});
   const getRange=()=>{
     const d=new Date(refDate+"T12:00:00");
     if(period==="dia")return{start:refDate,end:refDate,label:refDate};
