@@ -794,7 +794,7 @@ function NuevaVenta({prods,setProds,pkgs,clients,setClients,sales,setSales}){
                       {p.spc>1&&(
                         <div style={{flex:"0 0 auto"}}>
                           <label style={{fontSize:10,fontWeight:600,color:T.textSub,display:"block",marginBottom:2}}>Unidad</label>
-                          <select value={l.su||"caja"} onChange={e=>updLine(i,"su",e.target.value)} style={{width:72,minHeight:38}}>
+                          <select value={l.su||"caja"} onChange={e=>updLine(i,"su",e.target.value)} style={{width:90,minHeight:40}}>
                             <option value="caja">Caja</option>
                             <option value="sobre">Sobre</option>
                           </select>
@@ -802,11 +802,11 @@ function NuevaVenta({prods,setProds,pkgs,clients,setClients,sales,setSales}){
                       )}
                       <div style={{flex:"0 0 auto"}}>
                         <label style={{fontSize:10,fontWeight:600,color:T.textSub,display:"block",marginBottom:2}}>Cant.</label>
-                        <input type="number" min="0.1" step="0.1" value={l.qty} onChange={e=>updLine(i,"qty",e.target.value)} style={{width:58,minHeight:38,textAlign:"center"}}/>
+                        <input type="number" min="1" step="1" value={l.qty} onChange={e=>updLine(i,"qty",e.target.value)} style={{width:72,minHeight:40,textAlign:"center"}}/>
                       </div>
-                      <div style={{flex:"1 1 90px"}}>
+                      <div style={{flex:"0 0 130px"}}>
                         <label style={{fontSize:10,fontWeight:600,color:esEspecial?T.profit:T.textSub,display:"block",marginBottom:2}}>{esEspecial?"Precio especial":"Precio"}</label>
-                        <input type="number" min="0" value={l.price} onChange={e=>updLine(i,"price",e.target.value)} placeholder={p?String(clientPrice(cl,l.pid,p.tiers,+l.qty||1)):"0"} style={{minHeight:38,textAlign:"center",fontWeight:600}}/>
+                        <input type="number" min="0" value={l.price} onChange={e=>updLine(i,"price",e.target.value)} placeholder={p?String(clientPrice(cl,l.pid,p.tiers,+l.qty||1)):"0"} style={{minHeight:40,textAlign:"center",fontWeight:600}}/>
                       </div>
                       <div style={{flex:"0 0 auto",textAlign:"right",paddingBottom:8}}>
                         <div style={{fontSize:10,color:T.textMuted}}>Utilidad</div>
