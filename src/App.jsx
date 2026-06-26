@@ -117,7 +117,6 @@ const INIT_PKGS=[
 const EXP_CATS=["Gasolina","Repartidores","Importación","Transporte","Almacén","Marketing","Gastos generales","Otro"];
 const PAY_METHODS=["Efectivo","SPIN Marcel","SPIN Gustavo","Tercero","Mixto"];
 const PAY_METHODS_LABEL={"Efectivo":"💵 Efectivo","SPIN Marcel":"📱 SPIN Marcel","SPIN Gustavo":"📱 SPIN Gustavo","Tercero":"🤝 Tercero","Mixto":"💳 Mixto"};
-const PAY_METHODS_LABEL={"Efectivo":"💵 Efectivo","SPIN Marcel":"📱 SPIN Marcel","SPIN Gustavo":"📱 SPIN Gustavo","Tercero":"🤝 Tercero"};
 const PAY_CLR={"Efectivo":{bg:"rgba(26,140,90,0.12)",c:"#1A8C5A"},"SPIN Marcel":{bg:"rgba(196,150,42,0.12)",c:"#8B6716"},"SPIN Gustavo":{bg:"rgba(112,56,208,0.12)",c:"#7038D0"},"Tercero":{bg:"rgba(40,96,176,0.12)",c:"#2860B0"},"Mixto":{bg:"rgba(100,100,100,0.1)",c:"#555555"}};
 
 // ── THEME ─────────────────────────────────────────────────────────────────────
