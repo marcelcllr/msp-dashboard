@@ -612,6 +612,7 @@ function NuevaVenta({prods,setProds,pkgs,clients,setClients,sales,setSales}){
   const[err,setErr]=useState("");
   const[pricesSaved,setPricesSaved]=useState(false);
   const[newCl,setNewCl]=useState(null);
+  const[newClPrices,setNewClPrices]=useState(false);
 
   const cl=clients.find(c=>c.id===clientId);
   const selPkg=pkgs.find(p=>p.id===pkgId);
@@ -699,7 +700,7 @@ function NuevaVenta({prods,setProds,pkgs,clients,setClients,sales,setSales}){
             </div>
           ) : !newCl ? (
             <F label="Cliente">
-              <select value="" onChange={e=>{setErr("");const v=e.target.value;if(v==="__new__"){setNewCl({name:"",type:"Menudeo",phone:""});}else if(v){setClientId(v);}}}>
+              <select value="" onChange={e=>{setErr("");const v=e.target.value;if(v==="__new__"){setNewCl({name:"",type:"Menudeo",phone:"",prices:{}});}else if(v){setClientId(v);}}}>
                 <option value="">— Selecciona cliente —</option>
                 <option value="__new__" style={{color:T.gold,fontWeight:600}}>➕ Nuevo cliente rápido</option>
                 {clients.map(c=><option key={c.id} value={c.id}>{c.name} ({c.type})</option>)}
@@ -711,22 +712,42 @@ function NuevaVenta({prods,setProds,pkgs,clients,setClients,sales,setSales}){
           {newCl && (
             <div style={{background:T.goldBg,border:`1px solid ${T.goldBorder}`,borderRadius:10,padding:"14px"}}>
               <p style={{margin:"0 0 12px",fontSize:12,fontWeight:600,color:T.goldText,textTransform:"uppercase",letterSpacing:"0.05em"}}>➕ Datos del nuevo cliente</p>
-              <div style={{display:"grid",gridTemplateColumns:"2fr 1fr 1fr",gap:10}}>
+              <div style={{display:"flex",flexDirection:"column",gap:10}}>
                 <F label="Nombre *"><input value={newCl.name} onChange={e=>setNewCl({...newCl,name:e.target.value})} placeholder="Nombre del cliente" autoFocus/></F>
                 <F label="Tipo"><select value={newCl.type} onChange={e=>setNewCl({...newCl,type:e.target.value})}><option>Menudeo</option><option>Mayorista</option><option>Exclusivo</option></select></F>
                 <F label="Teléfono"><input value={newCl.phone} onChange={e=>setNewCl({...newCl,phone:e.target.value})} placeholder="Opcional"/></F>
               </div>
+              <button onClick={()=>setNewClPrices(!newClPrices)} style={{marginTop:10,fontSize:12,color:T.gold,background:"none",border:"none",cursor:"pointer",fontWeight:600,padding:0}}>
+                {newClPrices?"▲ Ocultar":"▼ Configurar"} precios especiales (opcional)
+              </button>
+              {newClPrices&&(
+                <div style={{marginTop:10,padding:"12px",background:T.bg,borderRadius:8,border:`0.5px solid ${T.goldBorder}`}}>
+                  <p style={{margin:"0 0 8px",fontSize:11,fontWeight:600,color:T.goldText,textTransform:"uppercase"}}>Precio especial por producto (vacío = precio lista)</p>
+                  <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
+                    {prods.filter(p=>p.cat==="Miel").map(p=>(
+                      <F key={p.id} label={p.name}>
+                        <input type="number" min="0" placeholder={"$"+p.list}
+                          value={newCl.prices?.[p.id]||""}
+                          onChange={e=>setNewCl({...newCl,prices:{...(newCl.prices||{}),[p.id]:e.target.value}})}/>
+                      </F>
+                    ))}
+                  </div>
+                </div>
+              )}
               {!newCl.name.trim() && <p style={{margin:"8px 0 0",fontSize:11,color:T.expense}}>⚠ Escribe el nombre del cliente para continuar</p>}
               <div style={{display:"flex",gap:8,marginTop:12}}>
                 <GoldBtn onClick={()=>{
                   if(!newCl.name.trim())return;
-                  const nc={id:uid(),name:newCl.name.trim(),type:newCl.type,phone:newCl.phone||"",notes:"",prices:{},pkgPrices:{}};
+                  const cleanPrices={};
+                  Object.entries(newCl.prices||{}).forEach(([k,v])=>{if(v&&+v>0)cleanPrices[k]=+v;});
+                  const nc={id:uid(),name:newCl.name.trim(),type:newCl.type,phone:newCl.phone||"",notes:"",prices:cleanPrices,pkgPrices:{}};
                   setClients(prev=>[...prev,nc]);
                   setClientId(nc.id);
                   setNewCl(null);
+                  setNewClPrices(false);
                   setErr("");
                 }}>✓ Guardar y continuar</GoldBtn>
-                <OutBtn onClick={()=>{setNewCl(null);}}>Cancelar</OutBtn>
+                <OutBtn onClick={()=>{setNewCl(null);setNewClPrices(false);}}>Cancelar</OutBtn>
               </div>
             </div>
           )}
