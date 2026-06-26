@@ -1440,6 +1440,59 @@ function CorteCaja({sales,expenses,extras=[],setExtras}){
 
 
 // ── REPARTO DE UTILIDADES ─────────────────────────────────────────────────────
+function RepartoCard({data,label,sublabel}){
+  const marcel=data.neta*0.33, gustavo=data.neta*0.33, reinv=data.neta*0.34;
+  return(
+    <Card>
+      <STitle right={<span style={{fontSize:13,fontWeight:600,color:T.gold}}>{label}</span>}>{sublabel}</STitle>
+      <div style={{background:T.bgAlt,borderRadius:10,padding:"14px",marginBottom:16}}>
+        <div style={{display:"flex",justifyContent:"space-between",padding:"4px 0",fontSize:13}}>
+          <span style={{color:T.textSub}}>Ingresos por ventas ({data.ventas})</span>
+          <span style={{fontWeight:600,color:T.revenue}}>{$m(data.ingresos)}</span>
+        </div>
+        <div style={{display:"flex",justifyContent:"space-between",padding:"4px 0",fontSize:13}}>
+          <span style={{color:T.textSub}}>− Costo de productos</span>
+          <span style={{fontWeight:600,color:T.cost}}>−{$m(data.costo)}</span>
+        </div>
+        <div style={{display:"flex",justifyContent:"space-between",padding:"4px 0",fontSize:13}}>
+          <span style={{color:T.textSub}}>− Gastos</span>
+          <span style={{fontWeight:600,color:T.expense}}>−{$m(data.gastos)}</span>
+        </div>
+        {data.extrasP>0&&(
+          <div style={{display:"flex",justifyContent:"space-between",padding:"4px 0",fontSize:13}}>
+            <span style={{color:T.textSub}}>+ Utilidades extra</span>
+            <span style={{fontWeight:600,color:T.profit}}>+{$m(data.extrasP)}</span>
+          </div>
+        )}
+        <div style={{borderTop:`1px solid ${T.goldBorder}`,marginTop:8,paddingTop:8,display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+          <span style={{fontWeight:700,fontSize:14,color:T.text}}>Utilidad neta a repartir</span>
+          <span style={{fontWeight:700,fontSize:20,color:data.neta>=0?T.profit:T.expense}}>{$m(data.neta)}</span>
+        </div>
+      </div>
+      {data.neta>0?(
+        <div style={{display:"grid",gridTemplateColumns:"1fr",gap:10}}>
+          <div style={{background:"rgba(196,150,42,0.08)",borderRadius:10,padding:"14px 16px",border:`1px solid ${T.goldBorder}`,display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+            <div><p style={{margin:0,fontWeight:700,fontSize:14,color:T.goldText}}>🧑 Marcel</p><p style={{margin:0,fontSize:11,color:T.textMuted}}>33% de la utilidad</p></div>
+            <span style={{fontWeight:700,fontSize:22,color:T.goldText}}>{$m(marcel)}</span>
+          </div>
+          <div style={{background:"rgba(112,56,208,0.08)",borderRadius:10,padding:"14px 16px",border:"1px solid rgba(112,56,208,0.25)",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+            <div><p style={{margin:0,fontWeight:700,fontSize:14,color:T.pkg}}>🧑 Gustavo</p><p style={{margin:0,fontSize:11,color:T.textMuted}}>33% de la utilidad</p></div>
+            <span style={{fontWeight:700,fontSize:22,color:T.pkg}}>{$m(gustavo)}</span>
+          </div>
+          <div style={{background:"rgba(26,140,90,0.08)",borderRadius:10,padding:"14px 16px",border:"1px solid rgba(26,140,90,0.25)",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+            <div><p style={{margin:0,fontWeight:700,fontSize:14,color:T.profit}}>🏢 Reinversión MSP</p><p style={{margin:0,fontSize:11,color:T.textMuted}}>34% para la empresa</p></div>
+            <span style={{fontWeight:700,fontSize:22,color:T.profit}}>{$m(reinv)}</span>
+          </div>
+        </div>
+      ):(
+        <div style={{padding:"16px",textAlign:"center",color:T.textMuted,fontSize:13}}>
+          {data.neta===0?"Sin utilidad para repartir en este período":"⚠ Hay pérdida en este período — no hay reparto"}
+        </div>
+      )}
+    </Card>
+  );
+}
+
 function Reparto({sales,expenses,extras=[]}){
   const[refDate,setRefDate]=useState(today());
 
@@ -1449,12 +1502,10 @@ function Reparto({sales,expenses,extras=[]}){
     const costo=ss.reduce((a,s)=>a+s.cost,0);
     const gastos=expenses.filter(e=>e.date>=start&&e.date<=end).reduce((a,e)=>a+e.amount,0);
     const extrasP=(extras||[]).filter(x=>x.date>=start&&x.date<=end).reduce((a,x)=>a+x.amount,0);
-    const utilidadBruta=ingresos-costo;
-    const neta=utilidadBruta-gastos+extrasP;
-    return{ingresos,costo,gastos,extrasP,utilidadBruta,neta,ventas:ss.length};
+    const neta=(ingresos-costo)-gastos+extrasP;
+    return{ingresos,costo,gastos,extrasP,neta,ventas:ss.length};
   };
 
-  // Semana actual del refDate
   const d=new Date(refDate+"T12:00:00");
   const day=d.getDay();
   const mon=new Date(d);mon.setDate(d.getDate()-(day===0?6:day-1));
@@ -1463,82 +1514,29 @@ function Reparto({sales,expenses,extras=[]}){
   const weekEnd=sun.toISOString().slice(0,10);
   const weekLabel="Sem "+mon.toLocaleDateString("es-MX",{day:"2-digit",month:"short"})+" – "+sun.toLocaleDateString("es-MX",{day:"2-digit",month:"short"});
 
-  // Mes actual del refDate
   const monthStr=refDate.slice(0,7);
-  const monthStart=monthStr+"-01";
-  const monthEnd=monthStr+"-31";
   const monthLabel=new Date(refDate+"T12:00:00").toLocaleDateString("es-MX",{month:"long",year:"numeric"});
 
   const sem=calcUtilidad(weekStart,weekEnd);
-  const mes=calcUtilidad(monthStart,monthEnd);
+  const mes=calcUtilidad(monthStr+"-01",monthStr+"-31");
 
-  const RepartoCard=({data,label,sublabel})=>{
-    const marcel=data.neta*0.33;
-    const gustavo=data.neta*0.33;
-    const reinv=data.neta*0.34;
-    return(
-      <Card>
-        <STitle right={<span style={{fontSize:13,fontWeight:600,color:T.gold}}>{label}</span>}>{sublabel}</STitle>
+  // Gráfica: utilidad neta por cada día de la semana
+  const NOM_DIAS=["Lun","Mar","Mié","Jue","Vie","Sáb","Dom"];
+  const weekChart=NOM_DIAS.map((nom,i)=>{
+    const dd=new Date(mon);dd.setDate(mon.getDate()+i);
+    const ds=dd.toISOString().slice(0,10);
+    const u=calcUtilidad(ds,ds);
+    return{name:nom,neta:Math.round(u.neta)};
+  });
 
-        {/* Desglose del cálculo */}
-        <div style={{background:T.bgAlt,borderRadius:10,padding:"14px",marginBottom:16}}>
-          <div style={{display:"flex",justifyContent:"space-between",padding:"4px 0",fontSize:13}}>
-            <span style={{color:T.textSub}}>Ingresos por ventas ({data.ventas})</span>
-            <span style={{fontWeight:600,color:T.revenue}}>{$m(data.ingresos)}</span>
-          </div>
-          <div style={{display:"flex",justifyContent:"space-between",padding:"4px 0",fontSize:13}}>
-            <span style={{color:T.textSub}}>− Costo de productos</span>
-            <span style={{fontWeight:600,color:T.cost}}>−{$m(data.costo)}</span>
-          </div>
-          <div style={{display:"flex",justifyContent:"space-between",padding:"4px 0",fontSize:13}}>
-            <span style={{color:T.textSub}}>− Gastos</span>
-            <span style={{fontWeight:600,color:T.expense}}>−{$m(data.gastos)}</span>
-          </div>
-          {data.extrasP>0&&(
-            <div style={{display:"flex",justifyContent:"space-between",padding:"4px 0",fontSize:13}}>
-              <span style={{color:T.textSub}}>+ Utilidades extra</span>
-              <span style={{fontWeight:600,color:T.profit}}>+{$m(data.extrasP)}</span>
-            </div>
-          )}
-          <div style={{borderTop:`1px solid ${T.goldBorder}`,marginTop:8,paddingTop:8,display:"flex",justifyContent:"space-between",alignItems:"center"}}>
-            <span style={{fontWeight:700,fontSize:14,color:T.text}}>Utilidad neta a repartir</span>
-            <span style={{fontWeight:700,fontSize:20,color:data.neta>=0?T.profit:T.expense}}>{$m(data.neta)}</span>
-          </div>
-        </div>
-
-        {/* Reparto en 3 sectores */}
-        {data.neta>0 ? (
-          <div style={{display:"grid",gridTemplateColumns:"1fr",gap:10}}>
-            <div style={{background:"rgba(196,150,42,0.08)",borderRadius:10,padding:"14px 16px",border:`1px solid ${T.goldBorder}`,display:"flex",justifyContent:"space-between",alignItems:"center"}}>
-              <div>
-                <p style={{margin:0,fontWeight:700,fontSize:14,color:T.goldText}}>🧑 Marcel</p>
-                <p style={{margin:0,fontSize:11,color:T.textMuted}}>33% de la utilidad</p>
-              </div>
-              <span style={{fontWeight:700,fontSize:22,color:T.goldText}}>{$m(marcel)}</span>
-            </div>
-            <div style={{background:"rgba(112,56,208,0.08)",borderRadius:10,padding:"14px 16px",border:"1px solid rgba(112,56,208,0.25)",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
-              <div>
-                <p style={{margin:0,fontWeight:700,fontSize:14,color:T.pkg}}>🧑 Gustavo</p>
-                <p style={{margin:0,fontSize:11,color:T.textMuted}}>33% de la utilidad</p>
-              </div>
-              <span style={{fontWeight:700,fontSize:22,color:T.pkg}}>{$m(gustavo)}</span>
-            </div>
-            <div style={{background:"rgba(26,140,90,0.08)",borderRadius:10,padding:"14px 16px",border:"1px solid rgba(26,140,90,0.25)",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
-              <div>
-                <p style={{margin:0,fontWeight:700,fontSize:14,color:T.profit}}>🏢 Reinversión MSP</p>
-                <p style={{margin:0,fontSize:11,color:T.textMuted}}>34% para la empresa</p>
-              </div>
-              <span style={{fontWeight:700,fontSize:22,color:T.profit}}>{$m(reinv)}</span>
-            </div>
-          </div>
-        ) : (
-          <div style={{padding:"16px",textAlign:"center",color:T.textMuted,fontSize:13}}>
-            {data.neta===0?"Sin utilidad para repartir en este período":"⚠ Hay pérdida en este período — no hay reparto"}
-          </div>
-        )}
-      </Card>
-    );
-  };
+  // Gráfica: utilidad neta por mes del año actual
+  const year=refDate.slice(0,4);
+  const NOM_MESES=["Ene","Feb","Mar","Abr","May","Jun","Jul","Ago","Sep","Oct","Nov","Dic"];
+  const monthChart=NOM_MESES.map((nom,i)=>{
+    const mm=String(i+1).padStart(2,"0");
+    const u=calcUtilidad(year+"-"+mm+"-01",year+"-"+mm+"-31");
+    return{name:nom,neta:Math.round(u.neta)};
+  });
 
   return(
     <div style={{display:"flex",flexDirection:"column",gap:"1.25rem"}}>
@@ -1548,15 +1546,47 @@ function Reparto({sales,expenses,extras=[]}){
           <input type="date" value={refDate} onChange={e=>setRefDate(e.target.value)} style={{fontSize:13,maxWidth:180}}/>
         </div>
         <p style={{margin:"10px 0 0",fontSize:12,color:T.textSub}}>
-          El reparto se calcula sobre la utilidad neta (ventas − costo − gastos + utilidades extra) y se divide: <strong>33% Marcel · 33% Gustavo · 34% reinversión</strong>.
+          Reparto sobre la utilidad neta (ventas − costo − gastos + utilidades extra): <strong>33% Marcel · 33% Gustavo · 34% reinversión</strong>.
         </p>
       </Card>
 
-      {/* REPARTO SEMANAL */}
       <RepartoCard data={sem} label={weekLabel} sublabel="Reparto semanal"/>
 
-      {/* VISUALIZACIÓN MENSUAL */}
+      {/* GRÁFICA SEMANAL */}
+      <Card>
+        <STitle>Utilidad neta por día — {weekLabel}</STitle>
+        <div style={{width:"100%",height:220}}>
+          <ResponsiveContainer width="100%" height="100%">
+            <BarChart data={weekChart} margin={{top:10,right:10,left:-10,bottom:0}}>
+              <XAxis dataKey="name" tick={{fontSize:11,fill:T.textSub}} axisLine={{stroke:T.border}} tickLine={false}/>
+              <YAxis tick={{fontSize:10,fill:T.textMuted}} axisLine={false} tickLine={false} tickFormatter={v=>"$"+(v/1000).toFixed(0)+"k"}/>
+              <Tooltip formatter={v=>$m(v)} contentStyle={{fontSize:12,borderRadius:8,border:`1px solid ${T.goldBorder}`}}/>
+              <Bar dataKey="neta" radius={[6,6,0,0]}>
+                {weekChart.map((e,i)=><Cell key={i} fill={e.neta>=0?T.profit:T.expense}/>)}
+              </Bar>
+            </BarChart>
+          </ResponsiveContainer>
+        </div>
+      </Card>
+
       <RepartoCard data={mes} label={monthLabel} sublabel="Resumen mensual"/>
+
+      {/* GRÁFICA MENSUAL */}
+      <Card>
+        <STitle>Utilidad neta por mes — {year}</STitle>
+        <div style={{width:"100%",height:240}}>
+          <ResponsiveContainer width="100%" height="100%">
+            <BarChart data={monthChart} margin={{top:10,right:10,left:-10,bottom:0}}>
+              <XAxis dataKey="name" tick={{fontSize:10,fill:T.textSub}} axisLine={{stroke:T.border}} tickLine={false}/>
+              <YAxis tick={{fontSize:10,fill:T.textMuted}} axisLine={false} tickLine={false} tickFormatter={v=>"$"+(v/1000).toFixed(0)+"k"}/>
+              <Tooltip formatter={v=>$m(v)} contentStyle={{fontSize:12,borderRadius:8,border:`1px solid ${T.goldBorder}`}}/>
+              <Bar dataKey="neta" radius={[6,6,0,0]}>
+                {monthChart.map((e,i)=><Cell key={i} fill={e.name===NOM_MESES[d.getMonth()]?T.gold:(e.neta>=0?"rgba(26,140,90,0.55)":T.expense)}/>)}
+              </Bar>
+            </BarChart>
+          </ResponsiveContainer>
+        </div>
+      </Card>
     </div>
   );
 }
@@ -1654,7 +1684,8 @@ function Dashboard_App(){
       {tab==="venta" && <NuevaVenta {...props}/>}
       {tab==="gasto" && <Gastos     {...props}/>}
       {tab==="inv"   && <Inventario {...props}/>}
-      {tab==="corte" && <CorteCaja  sales={sales} expenses={expenses}/>}
+      {tab==="corte" && <CorteCaja  sales={sales} expenses={expenses} extras={extras} setExtras={setExtras}/>}
+      {tab==="reparto" && <Reparto sales={sales} expenses={expenses} extras={extras}/>}
     </div>
   );
 }
