@@ -852,6 +852,32 @@ function NuevaVenta({prods,setProds,pkgs,clients,setClients,sales,setSales}){
               {PAY_METHODS.map(m=><option key={m} value={m}>{PAY_METHODS_LABEL[m]||m}</option>)}
             </select>
           </F>
+          {payMethod==="Mixto"&&(
+            <div style={{gridColumn:"1/-1",background:"rgba(100,100,100,0.06)",borderRadius:10,padding:"14px",border:"1px solid rgba(100,100,100,0.15)"}}>
+              <p style={{margin:"0 0 12px",fontSize:12,fontWeight:600,color:T.text}}>💳 Desglose del pago mixto</p>
+              <div style={{display:"flex",flexDirection:"column",gap:10}}>
+                <F label="💵 ¿Cuánto pagó en efectivo? ($)">
+                  <input type="number" min="0" value={mixEfectivo} onChange={e=>setMixEfectivo(e.target.value)} placeholder="0.00"/>
+                </F>
+                <F label="📱 ¿A qué cuenta se transfirió?">
+                  <select value={mixCuenta} onChange={e=>setMixCuenta(e.target.value)}>
+                    <option value="SPIN Marcel">SPIN Marcel</option>
+                    <option value="SPIN Gustavo">SPIN Gustavo</option>
+                  </select>
+                </F>
+                <F label={"💰 ¿Cuánto se transfirió a "+mixCuenta+"? ($)"}>
+                  <input type="number" min="0" value={mixTransferencia} onChange={e=>setMixTransferencia(e.target.value)} placeholder="0.00"/>
+                </F>
+                {(+mixEfectivo>0||+mixTransferencia>0)&&(
+                  <div style={{padding:"10px 12px",background:T.goldBg,borderRadius:8,fontSize:12,color:T.goldText}}>
+                    Total mixto: <strong>{$m((+mixEfectivo||0)+(+mixTransferencia||0))}</strong>
+                    {" · "}💵 Efectivo: <strong>{$m(+mixEfectivo||0)}</strong>
+                    {" · "}📱 {mixCuenta}: <strong>{$m(+mixTransferencia||0)}</strong>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
 
           <F label="Cobro de envío ($)">
             <input type="number" min="0" value={envio} onChange={e=>setEnvio(e.target.value)} placeholder="0 = sin envío"/>
