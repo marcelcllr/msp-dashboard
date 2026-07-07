@@ -80,22 +80,21 @@ function clientPrice(cl,pid,tiers,qty){if(cl?.prices?.[pid]!=null)return+cl.pric
 function pkgPrice(cl,pkgId,std){if(cl?.pkgPrices?.[pkgId]!=null)return+cl.pkgPrices[pkgId];return std;}
 
 // ── CATALOG ───────────────────────────────────────────────────────────────────
-const COSTS={"bh":225,"rhv":220,"hs":235,"rh":125,"rhp":170,"pp24":220,"pp12":195,"vf":340,"sob":10,"gom":130,"rchv":290,"rhch":290};
+const COSTS={"bh":225,"rhv":220,"hs":235,"rh":125,"rhp":170,"pp24":220,"vf":340,"sob":10,"gom":130,"rchv":290,"rhch":290};
 const INIT_PRODS=[
-  {id:"bh",  name:"Black Horse (24 sobres)",           cat:"Miel",    unit:"caja", spc:24, cost:225, list:1199,tiers:TA,stockCajas:0,stockSobres:0},
-  {id:"rhv", name:"Royal Honey VIP (24 sobres)",        cat:"Miel",    unit:"caja", spc:24, cost:220, list:1199,tiers:TA,stockCajas:0,stockSobres:0},
-  {id:"hs",  name:"Hard Steel (24 sobres)",             cat:"Miel",    unit:"caja", spc:24, cost:235, list:1199,tiers:TA,stockCajas:0,stockSobres:0},
-  {id:"rh",  name:"Royal Honey (12 sobres)",            cat:"Miel",    unit:"caja", spc:12, cost:125, list:999, tiers:TB,stockCajas:0,stockSobres:0},
-  {id:"rhp", name:"Royal Honey Platinum (12 sobres)",   cat:"Miel",    unit:"caja", spc:12, cost:183, list:999, tiers:TB,stockCajas:0,stockSobres:0},
-  {id:"rhh", name:"Royal Honey for Her (12 sobres)",    cat:"Miel",    unit:"caja", spc:12, cost:173, list:999, tiers:TB,stockCajas:0,stockSobres:0},
-  {id:"pp24",name:"Pink Pussycat (24 sobres)",          cat:"Miel",    unit:"caja", spc:24, cost:220, list:1199,tiers:TA,stockCajas:0,stockSobres:0},
-  {id:"pp12",name:"Pink Pussycat (12 sobres)",          cat:"Miel",    unit:"caja", spc:12, cost:195, list:999, tiers:TB,stockCajas:0,stockSobres:0},
-  {id:"vf",  name:"Vitafer-L (16 sobres)",              cat:"Miel",    unit:"caja", spc:16, cost:340, list:1199,tiers:TA,stockCajas:0,stockSobres:0},
+  {id:"bh",  name:"Black Horse (24 sobres)",           cat:"Miel",    unit:"caja", spc:24, cost:225, list:1199,tiers:TA,costSobre:9,listSobre:150,stockCajas:0,stockSobres:0},
+  {id:"rhv", name:"Royal Honey VIP (24 sobres)",        cat:"Miel",    unit:"caja", spc:24, cost:220, list:1199,tiers:TA,costSobre:9,listSobre:150,stockCajas:0,stockSobres:0},
+  {id:"hs",  name:"Hard Steel (24 sobres)",             cat:"Miel",    unit:"caja", spc:24, cost:235, list:1199,tiers:TA,costSobre:10,listSobre:150,stockCajas:0,stockSobres:0},
+  {id:"rh",  name:"Royal Honey (12 sobres)",            cat:"Miel",    unit:"caja", spc:12, cost:125, list:999, tiers:TB,costSobre:10,listSobre:150,stockCajas:0,stockSobres:0},
+  {id:"rhp", name:"Royal Honey Platinum (12 sobres)",   cat:"Miel",    unit:"caja", spc:12, cost:183, list:999, tiers:TB,costSobre:15,listSobre:150,stockCajas:0,stockSobres:0},
+  {id:"rhh", name:"Royal Honey for Her (12 sobres)",    cat:"Miel",    unit:"caja", spc:12, cost:173, list:999, tiers:TB,costSobre:14,listSobre:150,stockCajas:0,stockSobres:0},
+  {id:"pp24",name:"Pink Pussycat (24 sobres)",          cat:"Miel",    unit:"caja", spc:24, cost:220, list:1199,tiers:TA,costSobre:9,listSobre:150,stockCajas:0,stockSobres:0},
+  {id:"vf",  name:"Vitafer-L (16 sobres)",              cat:"Miel",    unit:"caja", spc:16, cost:340, list:1199,tiers:TA,costSobre:21,listSobre:150,stockCajas:0,stockSobres:0},
   {id:"sob", name:"Sobre individual",                   cat:"Miel",    unit:"sobre",spc:1,  cost:10,  list:150, tiers:[{m:1,p:150},{m:4,p:125},{m:8,p:100}],stockCajas:0,stockSobres:0},
-  {id:"gom_f",name:"Gomitas Bliss Bears — Mujer",        cat:"Miel",    unit:"caja", spc:6,  cost:130, list:400, tiers:TD,stockCajas:0,stockSobres:0,spcu:"piezas"},
-  {id:"gom_m",name:"Gomitas Boner Bears — Hombre",       cat:"Miel",    unit:"caja", spc:6,  cost:130, list:400, tiers:TD,stockCajas:0,stockSobres:0,spcu:"piezas"},
-  {id:"rchv",name:"Royal Choco VIP",                    cat:"Miel",    unit:"caja", spc:12, cost:290, list:1250,tiers:TC,spcu:"piezas",stockCajas:0,stockSobres:0},
-  {id:"rhch",name:"Rhino Choco",                        cat:"Miel",    unit:"caja", spc:12, cost:290, list:1250,tiers:TC,spcu:"piezas",stockCajas:0,stockSobres:0},
+  {id:"gom_f",name:"Gomitas Bliss Bears — Mujer",        cat:"Miel",    unit:"caja", spc:6,  cost:130, list:400, tiers:TD,costSobre:22,listSobre:150,stockCajas:0,stockSobres:0,spcu:"piezas"},
+  {id:"gom_m",name:"Gomitas Boner Bears — Hombre",       cat:"Miel",    unit:"caja", spc:6,  cost:130, list:400, tiers:TD,costSobre:22,listSobre:150,stockCajas:0,stockSobres:0,spcu:"piezas"},
+  {id:"rchv",name:"Royal Choco VIP",                    cat:"Miel",    unit:"caja", spc:12, cost:290, list:1250,tiers:TC,spcu:"piezas",costSobre:24,listSobre:150,stockCajas:0,stockSobres:0},
+  {id:"rhch",name:"Rhino Choco",                        cat:"Miel",    unit:"caja", spc:12, cost:290, list:1250,tiers:TC,spcu:"piezas",costSobre:24,listSobre:150,stockCajas:0,stockSobres:0},
   {id:"cond",name:"Condones + Lubricante",              cat:"SexShop", unit:"kit",  spc:1,  cost:0,   list:55,  tiers:[{m:1,p:55}],stockCajas:0,stockSobres:0},
   {id:"gel", name:"Gel de Masaje Sizzle Lips",          cat:"SexShop", unit:"pieza",spc:1,  cost:0,   list:645, tiers:[{m:1,p:645}],stockCajas:0,stockSobres:0},
   {id:"swn", name:"Swiss Navy Max Size",                cat:"SexShop", unit:"tubo", spc:1,  cost:0,   list:1680,tiers:[{m:1,p:1680}],stockCajas:0,stockSobres:0},
@@ -113,7 +112,7 @@ const INIT_PKGS=[
   {id:"ini", name:"Paquete Inicial",      price:1849, items:[{pid:"bh",qty:1},{pid:"rhv",qty:1},{pid:"rh",qty:1}]},
   {id:"emp", name:"Paquete Emprendedor",  price:3000, items:[{pid:"bh",qty:2},{pid:"rhv",qty:1},{pid:"rh",qty:1},{pid:"pp24",qty:1}]},
   {id:"dist",name:"Paquete Distribuidor", price:9400, items:[{pid:"bh",qty:5},{pid:"rhv",qty:4},{pid:"rh",qty:5},{pid:"pp24",qty:3},{pid:"hs",qty:3}]},
-  {id:"may", name:"Paquete Mayorista",    price:39400,items:[{pid:"bh",qty:20},{pid:"rhv",qty:15},{pid:"rhp",qty:15},{pid:"hs",qty:10},{pid:"pp24",qty:5},{pid:"pp12",qty:10}]},
+  {id:"may", name:"Paquete Mayorista",    price:39400,items:[{pid:"bh",qty:20},{pid:"rhv",qty:15},{pid:"rhp",qty:15},{pid:"hs",qty:10},{pid:"pp24",qty:5}]},
 ];
 const EXP_CATS=["Gasolina","Repartidores","Importación","Transporte","Almacén","Marketing","Gastos generales","Otro"];
 const PAY_METHODS=["Efectivo","SPIN Marcel","SPIN Gustavo","Tercero","Mixto"];
@@ -325,27 +324,33 @@ function Productos({prods,setProds}){
   const missing=prods.filter(p=>p.cost===0).length;
   return(
     <div style={{display:"flex",flexDirection:"column",gap:"1.25rem"}}>
-      {missing>0 && <div style={{background:T.goldBg,border:`1px solid ${T.goldBorder}`,borderRadius:10,padding:"10px 16px",display:"flex",alignItems:"center",gap:10,fontSize:13,color:T.goldText}}><i className="ti ti-alert-circle" style={{fontSize:18,color:T.gold}}/><span>Faltan costos en <strong>{missing} productos</strong>.</span>{!editMode&&<GoldBtn onClick={()=>{const m={};prods.forEach(p=>m[p.id]=String(p.cost));setCostMap(m);setEditMode(true);}} style={{marginLeft:"auto",fontSize:11}}>Editar costos</GoldBtn>}</div>}
+      {missing>0 && <div style={{background:T.goldBg,border:`1px solid ${T.goldBorder}`,borderRadius:10,padding:"10px 16px",display:"flex",alignItems:"center",gap:10,fontSize:13,color:T.goldText}}><i className="ti ti-alert-circle" style={{fontSize:18,color:T.gold}}/><span>Faltan costos en <strong>{missing} productos</strong>.</span>{!editMode&&<GoldBtn onClick={()=>{const m={};prods.forEach(p=>m[p.id]=String(p.cost));setCostMap(m);const ms={};const ml={};prods.forEach(p=>{if(p.spc>1){ms[p.id]=String(p.costSobre||Math.round(p.cost/p.spc));ml[p.id]=String(p.listSobre||150);}});setCostSobreMap(ms);setListSobreMap(ml);setEditMode(true);}} style={{marginLeft:"auto",fontSize:11}}>Editar costos</GoldBtn>}</div>}
       {cats.map(cat=>(
         <Card key={cat}>
-          <STitle right={!editMode&&cat===cats[0]&&<OutBtn onClick={()=>{const m={};prods.forEach(p=>m[p.id]=String(p.cost));setCostMap(m);setEditMode(true);}} style={{fontSize:11}}>Editar costos</OutBtn>}>
+          <STitle right={!editMode&&cat===cats[0]&&<OutBtn onClick={()=>{const m={};prods.forEach(p=>m[p.id]=String(p.cost));setCostMap(m);const ms={};const ml={};prods.forEach(p=>{if(p.spc>1){ms[p.id]=String(p.costSobre||Math.round(p.cost/p.spc));ml[p.id]=String(p.listSobre||150);}});setCostSobreMap(ms);setListSobreMap(ml);setEditMode(true);}} style={{fontSize:11}}>Editar costos</OutBtn>}>
             {cat==="Miel"?"Productos en existencia":"Sex Shop"}
           </STitle>
           <div style={{overflowX:"auto"}}>
             <table style={{width:"100%",fontSize:12,borderCollapse:"collapse"}}>
-              <TH cols={["Producto","Contenido","Costo import.","P. lista","Margen lista"]}/>
+              <TH cols={["Producto","Contenido","Costo caja","Costo sobre","P. lista","P. sobre","Margen"]}/>
               <tbody>
                 {prods.filter(p=>p.cat===cat).map((p,i)=>{
                   const u=p.list-p.cost;const m=p.list>0?(u/p.list)*100:0;
                   return(
                     <tr key={p.id} style={{background:i%2===0?T.bg:T.bgRow,borderBottom:`0.5px solid ${T.border}`}}>
                       <td style={{padding:"8px 10px",fontWeight:600,color:T.text}}>{p.name}</td>
-                      <td style={{padding:"8px 10px",color:T.textSub,fontSize:11}}>{p.spc>1?p.spc+" sobres/caja":p.unit}</td>
+                      <td style={{padding:"8px 10px",color:T.textSub,fontSize:11}}>{p.spc>1?p.spc+" "+(p.spcu||"sobres")+"/caja":p.unit}</td>
                       <td style={{padding:"8px 10px"}}>
-                        {editMode ? <input type="number" min="0" step="0.01" value={costMap[p.id]||""} onChange={e=>setCostMap({...costMap,[p.id]:e.target.value})} style={{width:90,fontSize:12}}/> : (p.cost>0?<span style={{color:T.cost,fontWeight:600}}>{$m(p.cost)}</span>:<span style={{color:T.textMuted}}>— pendiente</span>)}
+                        {editMode ? <input type="number" min="0" step="0.01" value={costMap[p.id]||""} onChange={e=>setCostMap({...costMap,[p.id]:e.target.value})} style={{width:80,fontSize:12}}/> : (p.cost>0?<span style={{color:T.cost,fontWeight:600}}>{$m(p.cost)}</span>:<span style={{color:T.textMuted}}>—</span>)}
                       </td>
-                      <td style={{padding:"8px 10px",color:T.text}}>{$m(p.list)}/{p.unit}</td>
-                      <td style={{padding:"8px 10px"}}>{p.cost>0?<span style={{color:m>0?T.profit:T.expense,fontWeight:700}}>{$m(u)} <span style={{fontWeight:400}}>({pct(m)})</span></span>:<span style={{color:T.textMuted,fontSize:11}}>— agregar costo</span>}</td>
+                      <td style={{padding:"8px 10px"}}>
+                        {p.spc>1?(editMode ? <input type="number" min="0" step="0.01" value={costSobreMap[p.id]||""} onChange={e=>setCostSobreMap({...costSobreMap,[p.id]:e.target.value})} placeholder={String(p.costSobre||Math.round(p.cost/p.spc))} style={{width:70,fontSize:12}}/> : <span style={{color:T.cost,fontSize:12}}>{$m(p.costSobre||Math.round(p.cost/p.spc))}</span>):<span style={{color:T.textMuted,fontSize:11}}>—</span>}
+                      </td>
+                      <td style={{padding:"8px 10px",color:T.text}}>{$m(p.list)}</td>
+                      <td style={{padding:"8px 10px"}}>
+                        {p.spc>1?(editMode ? <input type="number" min="0" step="1" value={listSobreMap[p.id]||""} onChange={e=>setListSobreMap({...listSobreMap,[p.id]:e.target.value})} placeholder={String(p.listSobre||150)} style={{width:70,fontSize:12}}/> : <span style={{color:T.revenue,fontSize:12,fontWeight:600}}>{$m(p.listSobre||150)}</span>):<span style={{color:T.textMuted,fontSize:11}}>—</span>}
+                      </td>
+                      <td style={{padding:"8px 10px"}}>{p.cost>0?<span style={{color:m>0?T.profit:T.expense,fontWeight:700}}>{pct(m)}</span>:<span style={{color:T.textMuted,fontSize:11}}>—</span>}</td>
                     </tr>
                   );
                 })}
@@ -354,7 +359,14 @@ function Productos({prods,setProds}){
           </div>
           {editMode&&cat===cats[cats.length-1]&&(
             <div style={{display:"flex",gap:8,marginTop:12}}>
-              <GoldBtn onClick={()=>{setProds(prods.map(p=>({...p,cost:parseFloat(costMap[p.id])||0})));setEditMode(false);}}>Guardar costos</GoldBtn>
+              <GoldBtn onClick={()=>{setProds(prods.map(p=>{
+                const upd={...p,cost:parseFloat(costMap[p.id])||0};
+                if(p.spc>1){
+                  if(costSobreMap[p.id]!==undefined&&costSobreMap[p.id]!=="")upd.costSobre=parseFloat(costSobreMap[p.id])||0;
+                  if(listSobreMap[p.id]!==undefined&&listSobreMap[p.id]!=="")upd.listSobre=parseFloat(listSobreMap[p.id])||0;
+                }
+                return upd;
+              }));setEditMode(false);setCostSobreMap({});setListSobreMap({});}}>Guardar costos</GoldBtn>
               <OutBtn onClick={()=>setEditMode(false)}>Cancelar</OutBtn>
             </div>
           )}
@@ -622,11 +634,12 @@ function NuevaVenta({prods,setProds,pkgs,clients,setClients,sales,setSales}){
   const pkgTotal=effPkgPrice*pkgQty;
   const pkgCostT=pkgCostU*pkgQty;
 
-  const getLP=l=>{if(l.price)return+l.price;if(!l.pid)return 0;const p=prods.find(x=>x.id===l.pid);if(!p)return 0;return clientPrice(cl,l.pid,p.tiers,+l.qty||1);};
+  const getLC=l=>{const p=prods.find(x=>x.id===l.pid);if(!p)return 0;return l.su==="sobre"?(p.costSobre||Math.round(p.cost/(p.spc||1))):p.cost;};
+  const getLP=l=>{if(l.price)return+l.price;if(!l.pid)return 0;const p=prods.find(x=>x.id===l.pid);if(!p)return 0;if(l.su==="sobre")return p.listSobre||150;return clientPrice(cl,l.pid,p.tiers,+l.qty||1);};
   const lineTotal=lines.reduce((s,l)=>s+getLP(l)*(+l.qty||1),0);
-  const lineCost=lines.reduce((s,l)=>{const p=prods.find(x=>x.id===l.pid);if(!p)return s;return s+(l.su==="sobre"?p.cost*(+l.qty||1):p.cost*p.spc*(+l.qty||1)/p.spc*(+l.qty||1));},0);
+  const lineCost=lines.reduce((s,l)=>{if(!l.pid)return s;return s+getLC(l)*(+l.qty||1);},0);
   // simpler lineCost
-  const lineCostCalc=lines.reduce((s,l)=>{const p=prods.find(x=>x.id===l.pid);if(!p)return s;const qty=+l.qty||1;return s+p.cost*qty;},0);
+  const lineCostCalc=lines.reduce((s,l)=>{if(!l.pid)return s;return s+getLC(l)*(+l.qty||1);},0);
 
   const register=()=>{
     if(!clientId){setErr("Selecciona un cliente");return;}
@@ -783,7 +796,7 @@ function NuevaVenta({prods,setProds,pkgs,clients,setClients,sales,setSales}){
             {lines.map((l,i)=>{
               const p=prods.find(x=>x.id===l.pid);
               const up=getLP(l);
-              const ut=up*(+l.qty||1)-(p?p.cost*(+l.qty||1):0);
+              const ut=up*(+l.qty||1)-(p?getLC(l)*(+l.qty||1):0);
               const esEspecial=p&&cl?.prices?.[l.pid];
               return(
                 <div key={i} style={{background:T.bg,borderRadius:8,padding:"10px",marginBottom:8,border:`0.5px solid ${T.border}`}}>
@@ -1678,7 +1691,7 @@ function Dashboard_App(){
       p=p.map(x=>{if(x.stockCajas!=null)return x;const spc=x.spc||1;const old=x.stock||0;return{...x,stockCajas:Math.floor(old/spc),stockSobres:old%spc,stock:undefined};});
       // Fix categories
       const fix=new Set(["gom","gom_f","gom_m","rchv","rhch"]);
-      p=p.filter(x=>x.id!=="gom");
+      p=p.filter(x=>x.id!=="gom"&&x.id!=="pp12");
       p=p.map(x=>fix.has(x.id)?{...x,cat:"Miel"}:x);
       setProds(p);setPkgs(pk);setClients(c);setSales(s);setExpenses(e);setStockMoves(sm);setExtras(ex);
       setReady(true);
