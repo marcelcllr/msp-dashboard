@@ -1649,8 +1649,9 @@ function Dashboard_App(){
       // Merge new products
       const ids=new Set(p.map(x=>x.id));
       INIT_PRODS.forEach(ip=>{if(!ids.has(ip.id))p.push(ip);});
-      // Apply latest costs & names
-      p=p.map(x=>{const ip=INIT_PRODS.find(i=>i.id===x.id);if(!ip)return x;return{...x,cost:ip.cost,name:ip.name,spc:ip.spc,tiers:ip.tiers};});
+      // Apply latest names/structure but RESPECT user-edited costs
+      // Only set cost if the product doesn't have one yet (new products)
+      p=p.map(x=>{const ip=INIT_PRODS.find(i=>i.id===x.id);if(!ip)return x;return{...x,name:ip.name,spc:ip.spc,tiers:ip.tiers,cost:(x.cost!=null&&x.cost>0)?x.cost:ip.cost};});
       // Migrate old stock field
       p=p.map(x=>{if(x.stockCajas!=null)return x;const spc=x.spc||1;const old=x.stock||0;return{...x,stockCajas:Math.floor(old/spc),stockSobres:old%spc,stock:undefined};});
       // Fix categories
