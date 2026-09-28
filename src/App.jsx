@@ -30,28 +30,51 @@ async function dbSave(key, value) {
 // ── LOGIN ─────────────────────────────────────────────────────────────────────
 const APP_PWD = import.meta.env.VITE_APP_PASSWORD || "msp2024";
 
+// Cada quien entra con su contraseña. Si no existen las variables nuevas en Vercel,
+// Marcel y Gustavo siguen entrando con VITE_APP_PASSWORD. El empleado necesita VITE_PWD_EMPLEADO.
+const USERS=[
+  {id:"marcel",  name:"Marcel",  role:"admin", pwd:import.meta.env.VITE_PWD_MARCEL  ||APP_PWD},
+  {id:"gustavo", name:"Gustavo", role:"admin", pwd:import.meta.env.VITE_PWD_GUSTAVO ||APP_PWD},
+  {id:"empleado",name:import.meta.env.VITE_EMPLEADO_NOMBRE||"Empleado",role:"staff",pwd:import.meta.env.VITE_PWD_EMPLEADO||""},
+];
+
 function LoginScreen({ onLogin }) {
+  const [who, setWho] = useState(null);
   const [pass, setPass] = useState("");
   const [err, setErr] = useState("");
   const check = () => {
-    if (pass === APP_PWD) onLogin();
+    if (!who.pwd) { setErr("Falta configurar la contraseña de "+who.name+" en Vercel"); return; }
+    if (pass === who.pwd) onLogin(who);
     else { setErr("Contraseña incorrecta"); setPass(""); }
   };
   return (
     <div style={{minHeight:"100vh",display:"flex",alignItems:"center",justifyContent:"center",background:"#FDFCF9"}}>
-      <div style={{background:"#fff",borderRadius:16,padding:"40px 36px",border:"1px solid rgba(196,150,42,0.25)",width:"100%",maxWidth:380,textAlign:"center",boxShadow:"0 4px 30px rgba(196,150,42,0.1)"}}>
+      <div style={{background:"#fff",borderRadius:16,padding:"36px 24px",border:"1px solid rgba(196,150,42,0.25)",width:"100%",maxWidth:380,textAlign:"center",boxShadow:"0 4px 30px rgba(196,150,42,0.1)"}}>
         <p style={{margin:"0 0 4px",fontWeight:700,fontSize:20,color:"#1C1A16",letterSpacing:"0.05em"}}>MY SECRET PASSION MX</p>
-        <p style={{margin:"0 0 28px",fontSize:12,color:"#ADA394"}}>Dashboard de control</p>
-        <input type="password" value={pass}
-          onChange={e=>setPass(e.target.value)}
-          onKeyDown={e=>e.key==="Enter"&&check()}
-          placeholder="Contraseña de acceso"
-          style={{width:"100%",marginBottom:10,padding:"10px 14px",fontSize:14,textAlign:"center",borderRadius:8,border:"1px solid rgba(196,150,42,0.3)",outline:"none"}}
-          autoFocus/>
-        {err&&<p style={{color:"#C04040",fontSize:12,marginBottom:8}}>{err}</p>}
-        <button onClick={check} style={{width:"100%",background:"#C4962A",color:"#fff",border:"none",borderRadius:8,padding:11,fontSize:14,fontWeight:600,cursor:"pointer"}}>
-          Entrar
-        </button>
+        <p style={{margin:"0 0 24px",fontSize:12,color:"#ADA394"}}>{who?"Hola, "+who.name:"¿Quién eres?"}</p>
+        {!who ? (
+          <div style={{display:"flex",flexDirection:"column",gap:10}}>
+            {USERS.map(u=>(
+              <button key={u.id} onClick={()=>{setWho(u);setErr("");setPass("");}} style={{minHeight:56,fontSize:16,fontWeight:600,color:"#1C1A16",border:"1px solid rgba(196,150,42,0.35)",borderRadius:12,background:"#FDFCF9"}}>
+                {u.role==="admin"?"👤 ":"🧑‍💼 "}{u.name}
+              </button>
+            ))}
+          </div>
+        ) : (
+          <>
+            <input type="password" value={pass}
+              onChange={e=>setPass(e.target.value)}
+              onKeyDown={e=>e.key==="Enter"&&check()}
+              placeholder="Tu contraseña"
+              style={{width:"100%",marginBottom:10,textAlign:"center"}}
+              autoFocus/>
+            {err&&<p style={{color:"#C04040",fontSize:12,marginBottom:8}}>{err}</p>}
+            <button onClick={check} style={{width:"100%",background:"#C4962A",color:"#fff",border:"none",borderRadius:10,minHeight:48,fontSize:15,fontWeight:600}}>
+              Entrar
+            </button>
+            <button onClick={()=>{setWho(null);setErr("");}} style={{marginTop:10,border:"none",color:"#7A7060",fontSize:13}}>← No soy {who.name}</button>
+          </>
+        )}
       </div>
     </div>
   );
@@ -59,7 +82,7 @@ function LoginScreen({ onLogin }) {
 
 
 // ── STORAGE ──────────────────────────────────────────────────────────────────
-const SK = { p:"msp-p4",pk:"msp-pk4",c:"msp-c4",s:"msp-s4",e:"msp-e4",sm:"msp-sm4",ex:"msp-ex4" };
+const SK = { p:"msp-p4",pk:"msp-pk4",c:"msp-c4",s:"msp-s4",e:"msp-e4",sm:"msp-sm4",ex:"msp-ex4",pop:"msp-pop4",fx:"msp-fx4" };
 const load = dbLoad;
 const save = dbSave;
 
@@ -67,7 +90,8 @@ const save = dbSave;
 const $m = n => "$"+Number(n).toLocaleString("es-MX",{minimumFractionDigits:2,maximumFractionDigits:2});
 const pct = n => Number(n).toFixed(1)+"%";
 const uid = () => Date.now().toString(36)+Math.random().toString(36).slice(2,5);
-const today = () => new Date().toISOString().slice(0,10);
+// Fecha local (Monterrey), no UTC: con toISOString después de las 6 pm ya salía el día siguiente
+const today = () => { const d=new Date(); return new Date(d.getTime()-d.getTimezoneOffset()*60000).toISOString().slice(0,10); };
 const SOBRE_COST = 10;
 
 // ── TIERS ─────────────────────────────────────────────────────────────────────
@@ -114,7 +138,28 @@ const INIT_PKGS=[
   {id:"dist",name:"Paquete Distribuidor", price:9400, items:[{pid:"bh",qty:5},{pid:"rhv",qty:4},{pid:"rh",qty:5},{pid:"pp24",qty:3},{pid:"hs",qty:3}]},
   {id:"may", name:"Paquete Mayorista",    price:39400,items:[{pid:"bh",qty:20},{pid:"rhv",qty:15},{pid:"rhp",qty:15},{pid:"hs",qty:10},{pid:"pp24",qty:5}]},
 ];
-const EXP_CATS=["Gasolina","Repartidores","Importación","Transporte","Almacén","Marketing","Gastos generales","Otro"];
+const EXP_CATS=["Renta local","Luz / agua / internet","Sueldos","Insumos palomitas","Gasolina","Repartidores","Importación","Transporte","Almacén","Marketing","Gastos generales","Otro"];
+
+// Gastos fijos: solo los socios los ven y registran
+const FIXED_CATS=["Renta local","Luz / agua / internet","Sueldos"];
+const INIT_FIXED=[
+  {id:"renta", name:"Renta del local", cat:"Renta local", amount:7859, freq:"mensual"},
+  {id:"sueldo",name:"Sueldo empleado", cat:"Sueldos",     amount:2000, freq:"semanal"},
+];
+const ymd=d=>d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0");
+const weekStartOf=ds=>{const d=new Date(ds+"T12:00:00");const w=d.getDay();d.setDate(d.getDate()-(w===0?6:w-1));return ymd(d);};
+// Periodo actual de un gasto fijo: "2026-09" (mensual) o el lunes de la semana (semanal)
+const fixedPeriod=(f,ds)=>f.freq==="semanal"?weekStartOf(ds):ds.slice(0,7);
+const fixedPeriodLabel=(f,ds)=>{
+  if(f.freq==="semanal"){const m=new Date(weekStartOf(ds)+"T12:00:00");return "semana del "+m.toLocaleDateString("es-MX",{day:"numeric",month:"short"});}
+  return new Date(ds.slice(0,7)+"-15T12:00:00").toLocaleDateString("es-MX",{month:"long",year:"numeric"});
+};
+const fixedMonthly=f=>f.freq==="semanal"?f.amount*52/12:f.amount;
+const fixedPending=(fixed,expenses,ds)=>(fixed||[]).filter(f=>!expenses.some(e=>e.fixedId===f.id&&e.period===fixedPeriod(f,ds)));
+
+// ── PALOMITAS ─────────────────────────────────────────────────────────────────
+const POP_SIZES=["s","m","l"];
+const INIT_POP={s:{name:"Pequeño",price:20,cost:0},m:{name:"Mediano",price:35,cost:0},l:{name:"Grande",price:50,cost:0}};
 const PAY_METHODS=["Efectivo","SPIN Marcel","SPIN Gustavo","Tercero","Mixto"];
 const PAY_METHODS_LABEL={"Efectivo":"💵 Efectivo","SPIN Marcel":"📱 SPIN Marcel","SPIN Gustavo":"📱 SPIN Gustavo","Tercero":"🤝 Tercero","Mixto":"💳 Mixto"};
 const PAY_CLR={"Efectivo":{bg:"rgba(26,140,90,0.12)",c:"#1A8C5A"},"SPIN Marcel":{bg:"rgba(196,150,42,0.12)",c:"#8B6716"},"SPIN Gustavo":{bg:"rgba(112,56,208,0.12)",c:"#7038D0"},"Tercero":{bg:"rgba(40,96,176,0.12)",c:"#2860B0"},"Mixto":{bg:"rgba(100,100,100,0.1)",c:"#555555"}};
@@ -152,9 +197,9 @@ function pkgCost(pkg,prods){return pkg.items.reduce((s,it)=>{const p=prods.find(
 function pkgDesc(pkg,prods){return pkg.items.map(it=>{const p=prods.find(x=>x.id===it.pid);return it.qty+"× "+(p?p.name:it.pid);}).join(" · ");}
 
 // ── DASHBOARD ─────────────────────────────────────────────────────────────────
-function Dashboard({prods,pkgs,clients,sales,expenses}){
+function Dashboard({prods,pkgs,clients,sales,expenses,fixed,goTab}){
   const now      = new Date();
-  const todayStr = now.toISOString().slice(0,10);
+  const todayStr = today();
   const curMonth = todayStr.slice(0,7);
   const curYear  = todayStr.slice(0,4);
 
@@ -187,8 +232,21 @@ function Dashboard({prods,pkgs,clients,sales,expenses}){
 
   const nomMes=now.toLocaleDateString("es-MX",{month:"long"}).replace(/^\w/,c=>c.toUpperCase());
 
+  const pendFijos=fixedPending(fixed,expenses,todayStr);
+
   return(
     <div style={{display:"flex",flexDirection:"column",gap:"1.25rem"}}>
+
+      {pendFijos.length>0&&(
+        <button onClick={()=>goTab&&goTab("gasto")} style={{textAlign:"left",background:"rgba(192,64,64,0.07)",border:"1px solid rgba(192,64,64,0.3)",borderRadius:12,padding:"12px 14px",display:"flex",alignItems:"center",gap:10}}>
+          <i className="ti ti-bell-ringing" style={{fontSize:22,color:T.expense}}/>
+          <div style={{flex:1}}>
+            <p style={{margin:0,fontSize:13,fontWeight:700,color:T.expense}}>Gastos fijos pendientes</p>
+            <p style={{margin:0,fontSize:12,color:T.textSub}}>{pendFijos.map(f=>f.name+" "+$m(f.amount)).join(" · ")}</p>
+          </div>
+          <i className="ti ti-chevron-right" style={{fontSize:18,color:T.textMuted}}/>
+        </button>
+      )}
 
       {/* ── KPI CARDS ── */}
       <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(160px,1fr))",gap:12}}>
@@ -198,9 +256,9 @@ function Dashboard({prods,pkgs,clients,sales,expenses}){
           <p style={{margin:0,fontSize:12,color:T.textMuted}}>{nomMes}</p>
         </div>
         <div style={{background:T.bgCard,borderRadius:12,padding:"16px 18px",border:`0.5px solid ${T.goldBorder}`,borderTop:`3px solid ${T.profit}`}}>
-          <p style={{margin:"0 0 8px",fontSize:11,fontWeight:600,color:T.textSub,textTransform:"uppercase",letterSpacing:"0.08em"}}>Ganancias totales</p>
+          <p style={{margin:"0 0 8px",fontSize:11,fontWeight:600,color:T.textSub,textTransform:"uppercase",letterSpacing:"0.08em"}}>Ganancias del año</p>
           <p style={{margin:"0 0 4px",fontSize:28,fontWeight:700,color:T.text}}>{$m(totalData.util)}</p>
-          <p style={{margin:0,fontSize:12,color:T.textMuted}}>Todos los registros</p>
+          <p style={{margin:0,fontSize:12,color:T.textMuted}}>Enero a hoy · {curYear}</p>
         </div>
         <div style={{background:T.bgCard,borderRadius:12,padding:"16px 18px",border:`0.5px solid ${T.goldBorder}`,borderTop:`3px solid ${T.client}`}}>
           <p style={{margin:"0 0 8px",fontSize:11,fontWeight:600,color:T.textSub,textTransform:"uppercase",letterSpacing:"0.08em"}}>Ventas este mes</p>
@@ -220,7 +278,7 @@ function Dashboard({prods,pkgs,clients,sales,expenses}){
       </div>
 
       {/* ── CHART + RECIENTES ── */}
-      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}>
+      <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(280px,1fr))",gap:12}}>
         {/* Gráfica mensual */}
         <Card>
           <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:16}}>
@@ -263,7 +321,7 @@ function Dashboard({prods,pkgs,clients,sales,expenses}){
                 return(
                   <div key={s.id} style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"10px 4px",borderBottom:i<recent.length-1?`0.5px solid ${T.border}`:"none"}}>
                     <div>
-                      <p style={{margin:"0 0 2px",fontWeight:600,fontSize:13,color:T.text}}>{cl?.name||"Cliente"}</p>
+                      <p style={{margin:"0 0 2px",fontWeight:600,fontSize:13,color:T.text}}>{cl?.name||(s.tipo==="palomitas"?"🍿 Palomitas":"Cliente")}</p>
                       <p style={{margin:0,fontSize:11,color:T.textMuted}}>{fecha} · {s.desc?.slice(0,28)}{s.desc?.length>28?"…":""}</p>
                     </div>
                     <p style={{margin:0,fontWeight:700,fontSize:14,color:util>=0?T.profit:T.expense,whiteSpace:"nowrap",marginLeft:12}}>{util>0?$m(util):$m(s.total)}</p>
@@ -320,6 +378,8 @@ function Dashboard({prods,pkgs,clients,sales,expenses}){
 function Productos({prods,setProds}){
   const[editMode,setEditMode]=useState(false);
   const[costMap,setCostMap]=useState({});
+  const[costSobreMap,setCostSobreMap]=useState({});
+  const[listSobreMap,setListSobreMap]=useState({});
   const cats=[...new Set(prods.map(p=>p.cat))];
   const missing=prods.filter(p=>p.cost===0).length;
   return(
@@ -447,7 +507,7 @@ function Paquetes({pkgs,setPkgs,prods}){
 }
 
 // ── CLIENTES ──────────────────────────────────────────────────────────────────
-function Clientes({clients,setClients,prods,pkgs}){
+function Clientes({clients,setClients,prods,pkgs,isAdmin}){
   const blank={name:"",type:"Menudeo",phone:"",notes:"",prices:{},pkgPrices:{}};
   const[form,setForm]=useState(blank);
   const[editing,setEditing]=useState(null);
@@ -466,16 +526,16 @@ function Clientes({clients,setClients,prods,pkgs}){
     <div style={{display:"flex",flexDirection:"column",gap:"1.25rem"}}>
       <Card>
         <STitle>{editing?"Editar cliente":"Agregar cliente"}</STitle>
-        <div style={{display:"grid",gridTemplateColumns:"2fr 1fr 1fr 2fr",gap:12}}>
+        <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(150px,1fr))",gap:12}}>
           <F label="Nombre / empresa"><input value={form.name} onChange={e=>setForm({...form,name:e.target.value})} placeholder="Nombre del cliente"/></F>
           <F label="Tipo"><select value={form.type} onChange={e=>setForm({...form,type:e.target.value})}>{TYPES.map(t=><option key={t}>{t}</option>)}</select></F>
           <F label="Teléfono"><input value={form.phone} onChange={e=>setForm({...form,phone:e.target.value})} placeholder="55 0000 0000"/></F>
           <F label="Notas"><input value={form.notes} onChange={e=>setForm({...form,notes:e.target.value})} placeholder="Zona, condiciones…"/></F>
         </div>
-        <button onClick={()=>setShowP(!showP)} style={{marginTop:10,fontSize:11,color:T.gold,background:"none",border:"none",cursor:"pointer",fontWeight:600}}>
+        {isAdmin&&<button onClick={()=>setShowP(!showP)} style={{marginTop:10,fontSize:11,color:T.gold,background:"none",border:"none",cursor:"pointer",fontWeight:600}}>
           {showP?"▲ Ocultar":"▼ Configurar"} precios especiales
-        </button>
-        {showP && (
+        </button>}
+        {isAdmin && showP && (
           <div style={{marginTop:10,padding:"12px",background:T.goldBg,borderRadius:10,border:`0.5px solid ${T.goldBorder}`}}>
             <p style={{margin:"0 0 8px",fontSize:11,fontWeight:600,color:T.goldText,textTransform:"uppercase"}}>Precio especial por producto (vacío = precio lista)</p>
             <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(200px,1fr))",gap:8}}>
@@ -519,7 +579,7 @@ function Clientes({clients,setClients,prods,pkgs}){
                         ) : (
                           <div style={{display:"flex",gap:6}}>
                             <button onClick={()=>startEdit(c)} style={{padding:"5px 12px",fontSize:11,background:"rgba(40,96,176,0.1)",color:T.client,border:"1px solid rgba(40,96,176,0.25)",borderRadius:6,cursor:"pointer",fontWeight:500}}>✏️ Editar</button>
-                            <button onClick={()=>setConfirmDel(c.id)} style={{padding:"5px 12px",fontSize:11,background:"rgba(192,64,64,0.1)",color:T.expense,border:"1px solid rgba(192,64,64,0.25)",borderRadius:6,cursor:"pointer",fontWeight:500}}>🗑️ Borrar</button>
+                            {isAdmin&&<button onClick={()=>setConfirmDel(c.id)} style={{padding:"5px 12px",fontSize:11,background:"rgba(192,64,64,0.1)",color:T.expense,border:"1px solid rgba(192,64,64,0.25)",borderRadius:6,cursor:"pointer",fontWeight:500}}>🗑️ Borrar</button>}
                           </div>
                         )}
                       </td>
@@ -604,7 +664,8 @@ function ProdSearch({prods,value,onChange}){
 }
 
 // ── NUEVA VENTA ───────────────────────────────────────────────────────────────
-function NuevaVenta({prods,setProds,pkgs,clients,setClients,sales,setSales}){
+function NuevaVenta({prods,setProds,pkgs,clients,setClients,sales,setSales,user,isAdmin}){
+  const[confirmDel,setConfirmDel]=useState(null);
   const[date,setDate]=useState(today());
   const[clientId,setClientId]=useState("");
   const[mode,setMode]=useState("custom");
@@ -622,6 +683,7 @@ function NuevaVenta({prods,setProds,pkgs,clients,setClients,sales,setSales}){
   const[envioDesc,setEnvioDesc]=useState("");
   const[note,setNote]=useState("");
   const[err,setErr]=useState("");
+  const[okMsg,setOkMsg]=useState("");
   const[pricesSaved,setPricesSaved]=useState(false);
   const[newCl,setNewCl]=useState(null);
   const[newClPrices,setNewClPrices]=useState(false);
@@ -636,6 +698,7 @@ function NuevaVenta({prods,setProds,pkgs,clients,setClients,sales,setSales}){
 
   const getLC=l=>{const p=prods.find(x=>x.id===l.pid);if(!p)return 0;return l.su==="sobre"?(p.costSobre||Math.round(p.cost/(p.spc||1))):p.cost;};
   const getLP=l=>{if(l.price)return+l.price;if(!l.pid)return 0;const p=prods.find(x=>x.id===l.pid);if(!p)return 0;if(l.su==="sobre")return p.listSobre||150;return clientPrice(cl,l.pid,p.tiers,+l.qty||1);};
+  const getStd=l=>{const p=prods.find(x=>x.id===l.pid);if(!p)return 0;if(l.su==="sobre")return p.listSobre||150;return clientPrice(cl,l.pid,p.tiers,+l.qty||1);};
   const lineTotal=lines.reduce((s,l)=>s+getLP(l)*(+l.qty||1),0);
   const lineCost=lines.reduce((s,l)=>{if(!l.pid)return s;return s+getLC(l)*(+l.qty||1);},0);
   // simpler lineCost
@@ -643,10 +706,11 @@ function NuevaVenta({prods,setProds,pkgs,clients,setClients,sales,setSales}){
 
   const register=()=>{
     if(!clientId){setErr("Selecciona un cliente");return;}
-    let total,cost,desc,items;
+    let total,cost,desc,items,bajoPrecio=false;
     if(mode==="paquete"){
       if(!pkgId){setErr("Selecciona un paquete");return;}
       total=pkgTotal;cost=pkgCostT;
+      bajoPrecio=effPkgPrice<pSalePrice;
       desc=selPkg.name+" ×"+pkgQty;
       items=(selPkg.items||[]).map(it=>({pid:it.pid,qty:it.qty*pkgQty,su:"caja"}));
     } else {
@@ -654,7 +718,8 @@ function NuevaVenta({prods,setProds,pkgs,clients,setClients,sales,setSales}){
       if(valid.length===0){setErr("Agrega al menos un producto");return;}
       total=lineTotal;cost=lineCostCalc;
       desc=valid.map(l=>{const p=prods.find(x=>x.id===l.pid);return l.qty+"× "+(p?p.name:l.pid);}).join(", ");
-      items=valid.map(l=>({pid:l.pid,qty:+l.qty,su:l.su||"caja"}));
+      items=valid.map(l=>({pid:l.pid,qty:+l.qty,su:l.su||"caja",price:getLP(l),std:getStd(l)}));
+      bajoPrecio=items.some(it=>it.price<it.std);
     }
     const envioNum=+envio||0;
     const regaloC=envioTipo==="sobres"?(parseInt(envioDesc)||1)*SOBRE_COST:0;
@@ -662,20 +727,23 @@ function NuevaVenta({prods,setProds,pkgs,clients,setClients,sales,setSales}){
       mixEfectivo:payMethod==="Mixto"?+mixEfectivo||0:0,
       mixTransferencia:payMethod==="Mixto"?+mixTransferencia||0:0,
       mixCuenta:payMethod==="Mixto"?mixCuenta:"",
-      envio:envioNum,costoEnvio:+costoEnvio||0,envioTipo,envioDesc};
+      envio:envioNum,costoEnvio:+costoEnvio||0,envioTipo,envioDesc,by:user?.name||"",bajoPrecio};
     setSales([...sales,sale]);
-    // deduct stock
+    // deduct stock (suma todas las líneas del mismo producto: cajas y sobres por separado)
     setProds(prev=>prev.map(prod=>{
-      const si=items.find(it=>it.pid===prod.id);
-      if(!si)return prod;
-      if((si.su||"caja")==="sobre") return {...prod,stockSobres:Math.max(0,(prod.stockSobres||0)-si.qty)};
-      return {...prod,stockCajas:Math.max(0,(prod.stockCajas||0)-si.qty)};
+      const its=items.filter(it=>it.pid===prod.id);
+      if(its.length===0)return prod;
+      const qS=its.filter(it=>it.su==="sobre").reduce((a,it)=>a+(+it.qty||0),0);
+      const qC=its.filter(it=>(it.su||"caja")!=="sobre").reduce((a,it)=>a+(+it.qty||0),0);
+      return {...prod,stockCajas:Math.max(0,(prod.stockCajas||0)-qC),stockSobres:Math.max(0,(prod.stockSobres||0)-qS)};
     }));
     setErr("");
     setPkgId("");setPkgQty(1);setPkgOver("");
     setLines([{pid:"",qty:1,price:"",su:"caja"}]);
     setEnvio("");setEnvioTipo("ninguno");setEnvioDesc("");setNote("");
-    setPayMethod("Efectivo");setCuenta("");setMixEfectivo("");setMixTransferencia("");setMixCuenta("SPIN Marcel");setCostoEnvio("");
+    setPayMethod("Efectivo");setMixEfectivo("");setMixTransferencia("");setMixCuenta("SPIN Marcel");setCostoEnvio("");
+    setOkMsg("✓ Venta de "+$m(total)+" registrada");
+    setTimeout(()=>setOkMsg(""),3000);
   };
 
   const updLine=(i,k,v)=>{
@@ -730,10 +798,10 @@ function NuevaVenta({prods,setProds,pkgs,clients,setClients,sales,setSales}){
                 <F label="Tipo"><select value={newCl.type} onChange={e=>setNewCl({...newCl,type:e.target.value})}><option>Menudeo</option><option>Mayorista</option><option>Exclusivo</option></select></F>
                 <F label="Teléfono"><input value={newCl.phone} onChange={e=>setNewCl({...newCl,phone:e.target.value})} placeholder="Opcional"/></F>
               </div>
-              <button onClick={()=>setNewClPrices(!newClPrices)} style={{marginTop:10,fontSize:12,color:T.gold,background:"none",border:"none",cursor:"pointer",fontWeight:600,padding:0}}>
+              {isAdmin&&<button onClick={()=>setNewClPrices(!newClPrices)} style={{marginTop:10,fontSize:12,color:T.gold,background:"none",border:"none",cursor:"pointer",fontWeight:600,padding:0}}>
                 {newClPrices?"▲ Ocultar":"▼ Configurar"} precios especiales (opcional)
-              </button>
-              {newClPrices&&(
+              </button>}
+              {isAdmin&&newClPrices&&(
                 <div style={{marginTop:10,padding:"12px",background:T.bg,borderRadius:8,border:`0.5px solid ${T.goldBorder}`}}>
                   <p style={{margin:"0 0 8px",fontSize:11,fontWeight:600,color:T.goldText,textTransform:"uppercase"}}>Precio especial por producto (vacío = precio lista)</p>
                   <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
@@ -784,7 +852,7 @@ function NuevaVenta({prods,setProds,pkgs,clients,setClients,sales,setSales}){
             {selPkg && (
               <div style={{marginTop:8,fontSize:11,color:T.textSub}}>
                 <span>Incluye: {pkgDesc(selPkg,prods)}</span>
-                {pkgCostT>0 && <span style={{marginLeft:12}}>Utilidad: <strong style={{color:T.profit}}>{$m(pkgTotal-pkgCostT)} ({pct((pkgTotal-pkgCostT)/pkgTotal*100)})</strong></span>}
+                {isAdmin && pkgCostT>0 && <span style={{marginLeft:12}}>Utilidad: <strong style={{color:T.profit}}>{$m(pkgTotal-pkgCostT)} ({pct((pkgTotal-pkgCostT)/pkgTotal*100)})</strong></span>}
               </div>
             )}
           </div>
@@ -822,10 +890,10 @@ function NuevaVenta({prods,setProds,pkgs,clients,setClients,sales,setSales}){
                         <label style={{fontSize:10,fontWeight:600,color:esEspecial?T.profit:T.textSub,display:"block",marginBottom:2}}>{esEspecial?"Precio especial":"Precio"}</label>
                         <input type="number" min="0" value={l.price} onChange={e=>updLine(i,"price",e.target.value)} placeholder={p?String(clientPrice(cl,l.pid,p.tiers,+l.qty||1)):"0"} style={{minHeight:40,textAlign:"center",fontWeight:600}}/>
                       </div>
-                      <div style={{flex:"0 0 auto",textAlign:"right",paddingBottom:8}}>
+                      {isAdmin&&<div style={{flex:"0 0 auto",textAlign:"right",paddingBottom:8}}>
                         <div style={{fontSize:10,color:T.textMuted}}>Utilidad</div>
                         <div style={{fontSize:14,fontWeight:700,color:ut>=0?T.profit:T.expense,whiteSpace:"nowrap"}}>{p.cost>0?$m(ut):"—"}</div>
-                      </div>
+                      </div>}
                       <OutBtn onClick={()=>setLines(lines.filter((_,j)=>j!==i))} danger style={{padding:"7px 10px",marginBottom:2}}>✕</OutBtn>
                     </div>
                   )}
@@ -836,10 +904,10 @@ function NuevaVenta({prods,setProds,pkgs,clients,setClients,sales,setSales}){
             {lineTotal>0 && (
               <div style={{marginTop:10,padding:"8px 12px",background:T.goldBg,borderRadius:8,fontSize:12,display:"flex",gap:20,flexWrap:"wrap"}}>
                 <span style={{color:T.textSub}}>Total: <strong style={{color:T.revenue}}>{$m(lineTotal)}</strong></span>
-                {lineCostCalc>0 && <span style={{color:T.textSub}}>Utilidad: <strong style={{color:lineTotal-lineCostCalc>=0?T.profit:T.expense}}>{$m(lineTotal-lineCostCalc)} ({pct((lineTotal-lineCostCalc)/lineTotal*100)})</strong></span>}
+                {isAdmin && lineCostCalc>0 && <span style={{color:T.textSub}}>Utilidad: <strong style={{color:lineTotal-lineCostCalc>=0?T.profit:T.expense}}>{$m(lineTotal-lineCostCalc)} ({pct((lineTotal-lineCostCalc)/lineTotal*100)})</strong></span>}
               </div>
             )}
-            {cl&&lines.some(l=>l.pid&&l.price)&&(
+            {isAdmin&&cl&&lines.some(l=>l.pid&&l.price)&&(
               <div style={{marginTop:8}}>
                 {pricesSaved?(
                   <div style={{padding:"8px 12px",background:"rgba(26,140,90,0.1)",border:"1px solid rgba(26,140,90,0.3)",borderRadius:8,fontSize:12,color:T.profit}}>✓ Precios guardados para {cl.name}</div>
@@ -921,17 +989,18 @@ function NuevaVenta({prods,setProds,pkgs,clients,setClients,sales,setSales}){
           </GoldBtn>
         </div>
         <ErrMsg msg={err}/>
+        {okMsg&&<div style={{marginTop:8,padding:"10px 14px",background:"rgba(26,140,90,0.1)",border:"1px solid rgba(26,140,90,0.3)",borderRadius:8,fontSize:13,color:T.profit,fontWeight:600}}>{okMsg}</div>}
       </Card>
 
       {/* HISTORIAL */}
       <Card>
-        <STitle>Historial de ventas ({sales.length})</STitle>
+        <STitle>{isAdmin?"Historial de ventas ("+sales.length+")":"Ventas de hoy"}</STitle>
         {sales.length===0 ? <Empty icon="ti-shopping-cart" text="Sin ventas registradas"/> : (
           <div style={{overflowX:"auto"}}>
             <table style={{width:"100%",fontSize:12,borderCollapse:"collapse",minWidth:580}}>
-              <TH cols={["Fecha","Cliente","Descripción","Cobro","Ingresos","Envío","Utilidad","Margen",""]}/>
+              <TH cols={isAdmin?["Fecha","Cliente","Descripción","Cobro","Ingresos","Envío","Utilidad","Margen","Registró",""]:["Fecha","Cliente","Descripción","Cobro","Total","Envío","Registró"]}/>
               <tbody>
-                {[...sales].sort((a,b)=>b.date.localeCompare(a.date)).map((s,i)=>{
+                {[...sales].filter(s=>isAdmin||s.date===today()).sort((a,b)=>b.date.localeCompare(a.date)).map((s,i)=>{
                   const c=clients.find(x=>x.id===s.clientId);
                   const u=s.total-s.cost;const m=s.total>0?(u/s.total)*100:0;
                   const label=s.payMethod;
@@ -939,16 +1008,24 @@ function NuevaVenta({prods,setProds,pkgs,clients,setClients,sales,setSales}){
                   return(
                     <tr key={s.id} style={{background:i%2===0?T.bg:T.bgRow,borderBottom:`0.5px solid ${T.border}`}}>
                       <td style={{padding:"6px 10px",color:T.textSub,whiteSpace:"nowrap"}}>{s.date}</td>
-                      <td style={{padding:"6px 10px",fontWeight:500,maxWidth:110,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{c?.name||"—"}</td>
-                      <td style={{padding:"6px 10px",color:T.textSub,maxWidth:150,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{s.desc}</td>
+                      <td style={{padding:"6px 10px",fontWeight:500,maxWidth:110,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{c?.name||(s.tipo==="palomitas"?"🍿 Palomitas":"—")}</td>
+                      <td style={{padding:"6px 10px",color:T.textSub,maxWidth:150,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{s.desc}{isAdmin&&s.bajoPrecio&&<div><Chip label="⚠ bajo precio lista" bg="rgba(232,128,32,0.12)" color="#B86010"/></div>}</td>
                       <td style={{padding:"6px 10px"}}>{label&&<Chip label={label} bg={pc.bg} color={pc.c}/>}</td>
                       <td style={{padding:"6px 10px",fontWeight:600,color:T.revenue,whiteSpace:"nowrap"}}>{$m(s.total)}</td>
                       <td style={{padding:"6px 10px",color:T.client,whiteSpace:"nowrap"}}>{(s.envio||0)>0?$m(s.envio):"—"}</td>
-                      <td style={{padding:"6px 10px",fontWeight:700,color:u>=0?T.profit:T.expense,whiteSpace:"nowrap"}}>{s.cost>0?$m(u):"—"}</td>
-                      <td style={{padding:"6px 10px",color:m>0?T.profit:T.expense,whiteSpace:"nowrap"}}>{s.cost>0?pct(m):"—"}</td>
-                      <td style={{padding:"6px 10px"}}>
-                        <OutBtn onClick={()=>setSales(sales.filter(x=>x.id!==s.id))} danger style={{fontSize:11,padding:"3px 8px"}}>🗑️</OutBtn>
-                      </td>
+                      {isAdmin&&<td style={{padding:"6px 10px",fontWeight:700,color:u>=0?T.profit:T.expense,whiteSpace:"nowrap"}}>{s.cost>0?$m(u):"—"}</td>}
+                      {isAdmin&&<td style={{padding:"6px 10px",color:m>0?T.profit:T.expense,whiteSpace:"nowrap"}}>{s.cost>0?pct(m):"—"}</td>}
+                      <td style={{padding:"6px 10px",color:T.textMuted,fontSize:11,whiteSpace:"nowrap"}}>{s.by||"—"}</td>
+                      {isAdmin&&<td style={{padding:"6px 10px",whiteSpace:"nowrap"}}>
+                        {confirmDel===s.id?(
+                          <>
+                            <button onClick={()=>{setSales(sales.filter(x=>x.id!==s.id));setConfirmDel(null);}} style={{fontSize:11,background:T.expense,color:"#fff",border:"none",fontWeight:600,padding:"3px 8px",minHeight:28}}>Borrar</button>
+                            <button onClick={()=>setConfirmDel(null)} style={{fontSize:11,padding:"3px 8px",minHeight:28,marginLeft:4}}>No</button>
+                          </>
+                        ):(
+                          <OutBtn onClick={()=>setConfirmDel(s.id)} danger style={{fontSize:11,padding:"3px 8px"}}>🗑️</OutBtn>
+                        )}
+                      </td>}
                     </tr>
                   );
                 })}
@@ -961,21 +1038,110 @@ function NuevaVenta({prods,setProds,pkgs,clients,setClients,sales,setSales}){
   );
 }
 
+// ── GASTOS FIJOS (solo socios) ────────────────────────────────────────────────
+function GastosFijos({fixed,setFixed,expenses,setExpenses,user}){
+  const hoy=today();
+  const[payWith,setPayWith]=useState({});
+  const[edit,setEdit]=useState(false);
+  const[rows,setRows]=useState([]);
+  const pend=fixedPending(fixed,expenses,hoy);
+  const mensual=(fixed||[]).reduce((a,f)=>a+fixedMonthly(f),0);
+  const pagar=f=>{
+    const per=fixedPeriod(f,hoy);
+    if(expenses.some(e=>e.fixedId===f.id&&e.period===per))return;
+    setExpenses(prev=>[...prev,{id:uid(),date:hoy,cat:f.cat,amount:+f.amount,desc:f.name+" · "+fixedPeriodLabel(f,hoy),pagadoCon:payWith[f.id]||"Efectivo",fixedId:f.id,period:per,by:user?.name||""}]);
+  };
+  const guardar=()=>{
+    setFixed(rows.filter(r=>r.name.trim()&&+r.amount>0).map(r=>({...r,name:r.name.trim(),amount:+r.amount})));
+    setEdit(false);
+  };
+  return(
+    <Card style={{borderColor:pend.length>0?T.expense:T.goldBorder,borderWidth:pend.length>0?1:0.5}}>
+      <STitle right={!edit&&<OutBtn onClick={()=>{setRows((fixed||[]).map(f=>({...f,amount:String(f.amount)})));setEdit(true);}} style={{fontSize:11}}>⚙️ Editar</OutBtn>}>Gastos fijos</STitle>
+      <div style={{display:"flex",gap:16,flexWrap:"wrap",marginBottom:12,fontSize:12,color:T.textSub}}>
+        <span>Al mes: <strong style={{color:T.expense}}>{$m(mensual)}</strong></span>
+        <span>Por día: <strong style={{color:T.expense}}>{$m(mensual/30)}</strong></span>
+      </div>
+      <p style={{margin:"0 0 12px",fontSize:11,color:T.textMuted}}>Es lo mínimo de utilidad que necesitan sacar al día solo para cubrir los fijos.</p>
+      {!edit?(
+        <div style={{display:"flex",flexDirection:"column",gap:8}}>
+          {(fixed||[]).map(f=>{
+            const paid=expenses.find(e=>e.fixedId===f.id&&e.period===fixedPeriod(f,hoy));
+            return(
+              <div key={f.id} style={{padding:"12px",borderRadius:10,border:`1px solid ${paid?"rgba(26,140,90,0.3)":"rgba(192,64,64,0.3)"}`,background:paid?"rgba(26,140,90,0.05)":"rgba(192,64,64,0.04)"}}>
+                <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:8}}>
+                  <div>
+                    <p style={{margin:0,fontSize:14,fontWeight:700,color:T.text}}>{f.name}</p>
+                    <p style={{margin:0,fontSize:11,color:T.textMuted}}>{$m(f.amount)} {f.freq==="semanal"?"por semana":"al mes"} · {fixedPeriodLabel(f,hoy)}</p>
+                  </div>
+                  {paid
+                    ? <Chip label={"✓ Pagado "+paid.date.slice(5)} bg="rgba(26,140,90,0.12)" color={T.profit}/>
+                    : <Chip label="Pendiente" bg="rgba(192,64,64,0.12)" color={T.expense}/>}
+                </div>
+                {!paid&&(
+                  <div style={{display:"flex",gap:8,marginTop:10}}>
+                    <select value={payWith[f.id]||"Efectivo"} onChange={e=>setPayWith({...payWith,[f.id]:e.target.value})} style={{flex:1}}>
+                      <option value="Efectivo">💵 Efectivo</option>
+                      <option value="SPIN Marcel">📱 SPIN Marcel</option>
+                      <option value="SPIN Gustavo">📱 SPIN Gustavo</option>
+                    </select>
+                    <GoldBtn onClick={()=>pagar(f)} style={{minHeight:44}}>✓ Ya se pagó</GoldBtn>
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      ):(
+        <>
+          {rows.map((r,i)=>(
+            <div key={r.id} style={{padding:10,borderRadius:10,border:`0.5px solid ${T.border}`,marginBottom:8,display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(130px,1fr))",gap:8}}>
+              <F label="Nombre"><input value={r.name} onChange={e=>{const a=[...rows];a[i]={...r,name:e.target.value};setRows(a);}}/></F>
+              <F label="Monto ($)"><input type="number" min="0" value={r.amount} onChange={e=>{const a=[...rows];a[i]={...r,amount:e.target.value};setRows(a);}}/></F>
+              <F label="Cada cuándo"><select value={r.freq} onChange={e=>{const a=[...rows];a[i]={...r,freq:e.target.value};setRows(a);}}><option value="mensual">Cada mes</option><option value="semanal">Cada semana</option></select></F>
+              <F label="Categoría"><select value={r.cat} onChange={e=>{const a=[...rows];a[i]={...r,cat:e.target.value};setRows(a);}}>{EXP_CATS.map(c=><option key={c}>{c}</option>)}</select></F>
+              <OutBtn onClick={()=>setRows(rows.filter((_,j)=>j!==i))} danger style={{alignSelf:"end",minHeight:44}}>Quitar</OutBtn>
+            </div>
+          ))}
+          <OutBtn onClick={()=>setRows([...rows,{id:uid(),name:"",cat:"Luz / agua / internet",amount:"",freq:"mensual"}])} style={{fontSize:12,marginBottom:12}}>+ Agregar gasto fijo</OutBtn>
+          <div style={{display:"flex",gap:8}}>
+            <GoldBtn onClick={guardar}>Guardar</GoldBtn>
+            <OutBtn onClick={()=>setEdit(false)}>Cancelar</OutBtn>
+          </div>
+        </>
+      )}
+    </Card>
+  );
+}
+
 // ── GASTOS ────────────────────────────────────────────────────────────────────
-function Gastos({expenses,setExpenses}){
-  const blank={date:today(),cat:"Importación",amount:"",desc:"",pagadoCon:"Efectivo"};
+function Gastos({expenses,setExpenses,user,isAdmin,fixed,setFixed}){
+  const cats=isAdmin?EXP_CATS:EXP_CATS.filter(c=>!FIXED_CATS.includes(c));
+  const blank={date:today(),cat:isAdmin?"Importación":"Insumos palomitas",amount:"",desc:"",pagadoCon:"Efectivo"};
   const[form,setForm]=useState(blank);
+  const[err,setErr]=useState("");
+  const[okMsg,setOkMsg]=useState("");
+  const[confirmDel,setConfirmDel]=useState(null);
+  // El empleado solo ve los gastos que él registró (nunca renta, sueldos ni totales)
+  const visibles=isAdmin?expenses:expenses.filter(e=>e.by===user?.name);
   const total=expenses.reduce((s,e)=>s+e.amount,0);
   const EXP_CLR=["#C4962A","#1A8C5A","#2860B0","#C04040","#7038D0","#9A6020"];
-  const byCat=EXP_CATS.map((c,i)=>({name:c,v:+expenses.filter(e=>e.cat===c).reduce((s,e)=>s+e.amount,0).toFixed(0),fill:EXP_CLR[i]})).filter(x=>x.v>0);
-  const save=()=>{if(!form.amount||!form.desc.trim())return;setExpenses([...expenses,{...form,id:uid(),amount:+form.amount}]);setForm({...blank,date:form.date,cat:form.cat});};
+  const byCat=EXP_CATS.map((c,i)=>({name:c,v:+expenses.filter(e=>e.cat===c).reduce((s,e)=>s+e.amount,0).toFixed(0),fill:EXP_CLR[i%EXP_CLR.length]})).filter(x=>x.v>0);
+  const save=()=>{
+    if(!form.amount||+form.amount<=0){setErr("Escribe el monto");return;}
+    if(!form.desc.trim()){setErr("Escribe en qué se gastó");return;}
+    setExpenses([...expenses,{...form,id:uid(),amount:+form.amount,by:user?.name||""}]);
+    setForm({...blank,date:form.date,cat:form.cat});setErr("");
+    setOkMsg("✓ Gasto de "+$m(+form.amount)+" registrado");setTimeout(()=>setOkMsg(""),3000);
+  };
   return(
     <div style={{display:"flex",flexDirection:"column",gap:"1.25rem"}}>
+      {isAdmin&&<GastosFijos fixed={fixed} setFixed={setFixed} expenses={expenses} setExpenses={setExpenses} user={user}/>}
       <Card>
         <STitle>Registrar gasto</STitle>
-        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr 2fr",gap:12}}>
+        <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(150px,1fr))",gap:12}}>
           <F label="Fecha"><input type="date" value={form.date} onChange={e=>setForm({...form,date:e.target.value})}/></F>
-          <F label="Categoría"><select value={form.cat} onChange={e=>setForm({...form,cat:e.target.value})}>{EXP_CATS.map(c=><option key={c}>{c}</option>)}</select></F>
+          <F label="Categoría"><select value={form.cat} onChange={e=>setForm({...form,cat:e.target.value})}>{cats.map(c=><option key={c}>{c}</option>)}</select></F>
           <F label="Monto ($)"><input type="number" min="0" step="0.01" value={form.amount} onChange={e=>setForm({...form,amount:e.target.value})} placeholder="0.00"/></F>
           <F label="Descripción"><input value={form.desc} onChange={e=>setForm({...form,desc:e.target.value})} placeholder="Detalle del gasto"/></F>
           <F label="¿Con qué se pagó?">
@@ -986,9 +1152,11 @@ function Gastos({expenses,setExpenses}){
             </select>
           </F>
         </div>
-        <GoldBtn onClick={save} style={{marginTop:12}}>Registrar gasto</GoldBtn>
+        <GoldBtn onClick={save} style={{marginTop:12,minHeight:44,width:"100%",fontSize:14}}>Registrar gasto</GoldBtn>
+        <ErrMsg msg={err}/>
+        {okMsg&&<div style={{marginTop:8,padding:"10px 14px",background:"rgba(26,140,90,0.1)",border:"1px solid rgba(26,140,90,0.3)",borderRadius:8,fontSize:13,color:T.profit,fontWeight:600}}>{okMsg}</div>}
       </Card>
-      {byCat.length>0 && (
+      {isAdmin && byCat.length>0 && (
         <Card>
           <STitle right={<span style={{fontSize:14,fontWeight:700,color:T.expense}}>{$m(total)}</span>}>Gastos por categoría</STitle>
           <div style={{height:160}}>
@@ -1004,22 +1172,35 @@ function Gastos({expenses,setExpenses}){
         </Card>
       )}
       <Card>
-        <STitle>Historial ({expenses.length})</STitle>
-        {expenses.length===0 ? <Empty icon="ti-wallet" text="Sin gastos registrados"/> : (
+        <STitle>{isAdmin?"Historial ("+expenses.length+")":"Gastos que registraste"}</STitle>
+        {visibles.length===0 ? <Empty icon="ti-wallet" text="Sin gastos registrados"/> : (
+          <div style={{overflowX:"auto"}}>
           <table style={{width:"100%",fontSize:12,borderCollapse:"collapse"}}>
-            <TH cols={["Fecha","Categoría","Descripción","Monto",""]}/>
+            <TH cols={isAdmin?["Fecha","Categoría","Descripción","Pagado con","Monto","Registró",""]:["Fecha","Categoría","Descripción","Monto"]}/>
             <tbody>
-              {[...expenses].sort((a,b)=>b.date.localeCompare(a.date)).map((e,i)=>(
+              {[...visibles].sort((a,b)=>b.date.localeCompare(a.date)).map((e,i)=>(
                 <tr key={e.id} style={{background:i%2===0?T.bg:T.bgRow,borderBottom:`0.5px solid ${T.border}`}}>
                   <td style={{padding:"7px 10px",color:T.textSub,whiteSpace:"nowrap"}}>{e.date}</td>
                   <td style={{padding:"7px 10px"}}><Chip label={e.cat} bg="rgba(192,64,64,0.1)" color={T.expense}/></td>
                   <td style={{padding:"7px 10px"}}>{e.desc}</td>
+                  {isAdmin&&<td style={{padding:"7px 10px",color:T.textSub,fontSize:11,whiteSpace:"nowrap"}}>{e.pagadoCon||"Efectivo"}</td>}
                   <td style={{padding:"7px 10px",fontWeight:700,color:T.expense,whiteSpace:"nowrap"}}>{$m(e.amount)}</td>
-                  <td style={{padding:"7px 10px"}}><OutBtn onClick={()=>setExpenses(expenses.filter(x=>x.id!==e.id))} danger style={{fontSize:11,padding:"3px 8px"}}>🗑️</OutBtn></td>
+                  {isAdmin&&<td style={{padding:"7px 10px",color:T.textMuted,fontSize:11}}>{e.by||"—"}</td>}
+                  {isAdmin&&<td style={{padding:"7px 10px",whiteSpace:"nowrap"}}>
+                    {confirmDel===e.id?(
+                      <>
+                        <button onClick={()=>{setExpenses(expenses.filter(x=>x.id!==e.id));setConfirmDel(null);}} style={{fontSize:11,background:T.expense,color:"#fff",border:"none",fontWeight:600,padding:"3px 8px",minHeight:28}}>Borrar</button>
+                        <button onClick={()=>setConfirmDel(null)} style={{fontSize:11,padding:"3px 8px",minHeight:28,marginLeft:4}}>No</button>
+                      </>
+                    ):(
+                      <OutBtn onClick={()=>setConfirmDel(e.id)} danger style={{fontSize:11,padding:"3px 8px"}}>🗑️</OutBtn>
+                    )}
+                  </td>}
                 </tr>
               ))}
             </tbody>
           </table>
+          </div>
         )}
       </Card>
     </div>
@@ -1027,7 +1208,8 @@ function Gastos({expenses,setExpenses}){
 }
 
 // ── INVENTARIO ────────────────────────────────────────────────────────────────
-function Inventario({prods,setProds,sales,stockMoves,setStockMoves}){
+function Inventario({prods,setProds,sales,stockMoves,setStockMoves,user,isAdmin}){
+  const by=user?.name||"";
   const[entForm,setEntForm]=useState({date:today(),pid:"",cajas:"",note:""});
   const[abrirForm,setAbrirForm]=useState({pid:"",cajas:1});
   const[invErr,setInvErr]=useState("");
@@ -1040,7 +1222,7 @@ function Inventario({prods,setProds,sales,stockMoves,setStockMoves}){
     if(!entForm.pid||!entForm.cajas||+entForm.cajas<=0)return;
     const qty=+entForm.cajas;
     setProds(prods.map(p=>p.id===entForm.pid?{...p,stockCajas:(p.stockCajas||0)+qty}:p));
-    setStockMoves([...stockMoves,{id:uid(),date:entForm.date,pid:entForm.pid,type:"entrada",cajas:qty,note:entForm.note||"+"+qty+" cajas"}]);
+    setStockMoves([...stockMoves,{id:uid(),date:entForm.date,pid:entForm.pid,type:"entrada",cajas:qty,note:entForm.note||"+"+qty+" cajas",by}]);
     setEntForm({date:today(),pid:"",cajas:"",note:""});
   };
 
@@ -1051,7 +1233,7 @@ function Inventario({prods,setProds,sales,stockMoves,setStockMoves}){
     if((prod.stockCajas||0)<qty){setInvErr("Solo tienes "+(prod.stockCajas||0)+" cajas de "+prod.name);return;}
     const nuevos=qty*(prod.spc||1);
     setProds(prods.map(p=>p.id===abrirForm.pid?{...p,stockCajas:(p.stockCajas||0)-qty,stockSobres:(p.stockSobres||0)+nuevos}:p));
-    setStockMoves([...stockMoves,{id:uid(),date:today(),pid:abrirForm.pid,type:"apertura",cajas:qty,sobres:nuevos,note:"Apertura menudeo: "+qty+" caja"+(qty>1?"s":"")+" → "+nuevos+" sobres"}]);
+    setStockMoves([...stockMoves,{id:uid(),date:today(),pid:abrirForm.pid,type:"apertura",cajas:qty,sobres:nuevos,note:"Apertura menudeo: "+qty+" caja"+(qty>1?"s":"")+" → "+nuevos+" sobres",by}]);
     setInvErr("");setAbrirForm({pid:"",cajas:1});
   };
 
@@ -1068,8 +1250,8 @@ function Inventario({prods,setProds,sales,stockMoves,setStockMoves}){
     setProds(prods.map(p=>{
       const cajas=+bulkMap[p.id]||0;
       const sobres=+bulkMapSobres[p.id]||0;
-      if(cajas>0)newMoves.push({id:uid(),date:today(),pid:p.id,type:"entrada",cajas,note:"Carga de stock: "+cajas+" cajas"});
-      if(sobres>0)newMoves.push({id:uid(),date:today(),pid:p.id,type:"apertura",cajas:0,sobres,note:"Carga de sueltos: "+sobres});
+      if(cajas>0)newMoves.push({id:uid(),date:today(),pid:p.id,type:"entrada",cajas,note:"Carga de stock: "+cajas+" cajas",by});
+      if(sobres>0)newMoves.push({id:uid(),date:today(),pid:p.id,type:"apertura",cajas:0,sobres,note:"Carga de sueltos: "+sobres,by});
       return {...p,stockCajas:(p.stockCajas||0)+cajas,stockSobres:(p.stockSobres||0)+sobres};
     }));
     setStockMoves([...stockMoves,...newMoves]);
@@ -1090,7 +1272,7 @@ function Inventario({prods,setProds,sales,stockMoves,setStockMoves}){
       <Card style={{borderColor:T.gold,borderWidth:1}}>
         <STitle right={
           <div style={{display:"flex",gap:8,alignItems:"center"}}>
-            {confirmReset?(
+            {isAdmin&&(confirmReset?(
               <>
                 <span style={{fontSize:11,color:T.expense,fontWeight:600}}>¿Resetear todo a cero?</span>
                 <button onClick={resetStock} style={{padding:"4px 12px",fontSize:11,background:T.expense,color:"#fff",border:"none",borderRadius:6,cursor:"pointer",fontWeight:600}}>Sí, resetear</button>
@@ -1098,7 +1280,7 @@ function Inventario({prods,setProds,sales,stockMoves,setStockMoves}){
               </>
             ):(
               <OutBtn onClick={()=>setConfirmReset(true)} danger style={{fontSize:11}}>🗑️ Resetear todo a cero</OutBtn>
-            )}
+            ))}
             <button onClick={()=>setShowBulk(!showBulk)} style={{fontSize:11,color:T.textSub,background:"none",border:"none",cursor:"pointer"}}>{showBulk?"▲ Ocultar":"▼ Cargar stock"}</button>
           </div>
         }>
@@ -1159,8 +1341,8 @@ function Inventario({prods,setProds,sales,stockMoves,setStockMoves}){
                 const spc=p.spc||1;
                 const cajas=p.stockCajas||0;
                 const sobres=p.stockSobres||0;
-                const soldC=sales.reduce((s,sl)=>{const it=sl.items?.find(i=>i.pid===p.id&&(i.su||"caja")==="caja");return s+(it?+it.qty:0);},0);
-                const soldS=sales.reduce((s,sl)=>{const it=sl.items?.find(i=>i.pid===p.id&&i.su==="sobre");return s+(it?+it.qty:0);},0);
+                const soldC=sales.reduce((s,sl)=>s+(sl.items||[]).filter(i=>i.pid===p.id&&(i.su||"caja")==="caja").reduce((a,i)=>a+(+i.qty||0),0),0);
+                const soldS=sales.reduce((s,sl)=>s+(sl.items||[]).filter(i=>i.pid===p.id&&i.su==="sobre").reduce((a,i)=>a+(+i.qty||0),0),0);
                 const pC=physCajas[p.id]!==undefined?parseInt(physCajas[p.id])||0:null;
                 const pS=physSobres[p.id]!==undefined?parseInt(physSobres[p.id])||0:null;
                 const dC=pC!==null?pC-cajas:null;
@@ -1238,7 +1420,7 @@ function Inventario({prods,setProds,sales,stockMoves,setStockMoves}){
         <Card>
           <STitle>Historial de movimientos ({stockMoves.length})</STitle>
           <table style={{width:"100%",fontSize:12,borderCollapse:"collapse"}}>
-            <TH cols={["Fecha","Tipo","Producto","Cantidad","Nota",""]}/>
+            <TH cols={["Fecha","Tipo","Producto","Cantidad","Nota","Registró",""]}/>
             <tbody>
               {[...stockMoves].sort((a,b)=>b.date.localeCompare(a.date)).map((m,i)=>{
                 const prod=prods.find(p=>p.id===m.pid);
@@ -1250,12 +1432,13 @@ function Inventario({prods,setProds,sales,stockMoves,setStockMoves}){
                     <td style={{padding:"7px 10px",fontWeight:500}}>{prod?.name||m.pid}</td>
                     <td style={{padding:"7px 10px",color:isE?T.profit:T.client,fontWeight:600}}>{isE?"+"+m.cajas+" caja"+(m.cajas!==1?"s":""):isA?"−"+m.cajas+"c → +"+m.sobres+"s":""}</td>
                     <td style={{padding:"7px 10px",color:T.textSub,fontSize:11}}>{m.note}</td>
+                    <td style={{padding:"7px 10px",color:T.textMuted,fontSize:11}}>{m.by||"—"}</td>
                     <td style={{padding:"7px 10px"}}>
-                      <OutBtn onClick={()=>{
+                      {isAdmin&&<OutBtn onClick={()=>{
                         if(isE)setProds(prods.map(p=>p.id===m.pid?{...p,stockCajas:Math.max(0,(p.stockCajas||0)-m.cajas)}:p));
                         if(isA)setProds(prods.map(p=>p.id===m.pid?{...p,stockCajas:(p.stockCajas||0)+m.cajas,stockSobres:Math.max(0,(p.stockSobres||0)-m.sobres)}:p));
                         setStockMoves(stockMoves.filter(x=>x.id!==m.id));
-                      }} danger style={{fontSize:11,padding:"3px 8px"}}>🗑️</OutBtn>
+                      }} danger style={{fontSize:11,padding:"3px 8px"}}>🗑️</OutBtn>}
                     </td>
                   </tr>
                 );
@@ -1269,14 +1452,14 @@ function Inventario({prods,setProds,sales,stockMoves,setStockMoves}){
 }
 
 // ── CORTE DE CAJA ─────────────────────────────────────────────────────────────
-function CorteCaja({sales,expenses,extras=[],setExtras}){
+function CorteCaja({sales,expenses,extras=[],setExtras,user}){
   const[period,setPeriod]=useState("semana");
   const[refDate,setRefDate]=useState(today());
   const[exForm,setExForm]=useState({date:today(),amount:"",desc:"",tipo:"utilidad",via:"Efectivo"});
   const[exSaved,setExSaved]=useState(false);
   const saveExtra=()=>{
     if(!exForm.amount||+exForm.amount<=0)return;
-    setExtras([...(extras||[]),{...exForm,id:uid(),amount:+exForm.amount,desc:exForm.desc||exForm.tipo}]);
+    setExtras([...(extras||[]),{...exForm,id:uid(),amount:+exForm.amount,desc:exForm.desc||exForm.tipo,by:user?.name||""}]);
     setExForm({date:today(),amount:"",desc:"",tipo:"utilidad",via:"Efectivo"});
     setExSaved(true);
     setTimeout(()=>setExSaved(false),3000);
@@ -1293,7 +1476,10 @@ function CorteCaja({sales,expenses,extras=[],setExtras}){
   const rev=fSales.reduce((s,v)=>s+v.total,0);
   const envTotal=fSales.reduce((s,v)=>s+(v.envio||0),0);
   const gastos=fExp.reduce((s,e)=>s+e.amount,0);
+  const costo=fSales.reduce((s,v)=>s+(v.cost||0),0);
   const fExtrasP=(extras||[]).filter(x=>x.date>=range.start&&x.date<=range.end);
+  const extrasTotal=fExtrasP.reduce((a,x)=>a+x.amount,0);
+  const utilNeta=rev-costo-gastos+extrasTotal;
   const extraEfectivo=fExtrasP.filter(x=>x.via==="Efectivo").reduce((a,x)=>a+x.amount,0);
   const extraMarcel=fExtrasP.filter(x=>x.via==="SPIN Marcel").reduce((a,x)=>a+x.amount,0);
   const extraGustavo=fExtrasP.filter(x=>x.via==="SPIN Gustavo").reduce((a,x)=>a+x.amount,0);
@@ -1332,7 +1518,7 @@ function CorteCaja({sales,expenses,extras=[],setExtras}){
         <KCard icon="ti-trending-up" label="Ingresos" value={$m(rev)} color={T.revenue}/>
         <KCard icon="ti-motorbike"   label="Envíos cobrados" value={$m(envTotal)} color={T.client}/>
         <KCard icon="ti-wallet"      label="Gastos" value={$m(gastos)} color={T.expense}/>
-        <KCard icon="ti-sparkles"    label="Utilidad estimada" value={$m(rev-gastos)} color={rev-gastos>=0?T.profit:T.expense}/>
+        <KCard icon="ti-sparkles"    label="Utilidad neta" value={$m(utilNeta)} sub="ventas − costo − gastos + extras" color={utilNeta>=0?T.profit:T.expense}/>
       </div>
       {sinMetodo>0 && <div style={{background:"rgba(192,64,64,0.08)",border:"1px solid rgba(192,64,64,0.25)",borderRadius:10,padding:"10px 16px",fontSize:13,color:T.expense,display:"flex",gap:8,alignItems:"center"}}><i className="ti ti-alert-triangle" style={{fontSize:18}}/><strong>{sinMetodo} venta{sinMetodo>1?"s":""}</strong> sin forma de pago. Ve a Ventas y corrígelas.</div>}
       <Card>
@@ -1382,66 +1568,6 @@ function CorteCaja({sales,expenses,extras=[],setExtras}){
         </Card>
       )}
 
-      {/* ── UTILIDAD EXTRA ── */}
-      <Card>
-        <STitle>Utilidad extra / negocios externos</STitle>
-        <p style={{margin:"0 0 12px",fontSize:12,color:T.textSub}}>
-          Registra ingresos que llegan por terceros — solo la utilidad que te corresponde como socio.
-        </p>
-        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr 1fr 2fr",gap:10,marginBottom:12}}>
-          <F label="Fecha"><input type="date" value={exForm.date} onChange={e=>setExForm({...exForm,date:e.target.value})}/></F>
-          <F label="Monto recibido ($)"><input type="number" min="0" value={exForm.amount} onChange={e=>setExForm({...exForm,amount:e.target.value})} placeholder="0.00"/></F>
-          <F label="Corresponde a">
-            <select value={exForm.socio} onChange={e=>setExForm({...exForm,socio:e.target.value})}>
-              <option>Marcel</option>
-              <option>Gustavo</option>
-              <option>Ambos</option>
-            </select>
-          </F>
-          <F label="Tipo">
-            <select value={exForm.tipo} onChange={e=>setExForm({...exForm,tipo:e.target.value})}>
-              <option value="utilidad">Utilidad de tercero</option>
-              <option value="comision">Comisión</option>
-              <option value="otro">Otro ingreso</option>
-            </select>
-          </F>
-          <F label="Descripción"><input value={exForm.desc} onChange={e=>setExForm({...exForm,desc:e.target.value})} placeholder="Ej. venta por Andrés, comisión envío…"/></F>
-        </div>
-        <GoldBtn onClick={()=>{
-          if(!exForm.amount||!exForm.desc.trim())return;
-          if(setExtras)setExtras([...(extras||[]),{...exForm,id:uid(),amount:+exForm.amount}]);
-          setExForm({date:today(),amount:"",desc:"",socio:"Marcel",tipo:"utilidad"});
-        }}>+ Registrar utilidad extra</GoldBtn>
-
-        {(extras||[]).length>0&&(()=>{
-          const fExtras=(extras||[]).filter(x=>x.date>=range.start&&x.date<=range.end);
-          const totalExtra=fExtras.reduce((s,x)=>s+x.amount,0);
-          if(fExtras.length===0)return <p style={{marginTop:12,fontSize:12,color:T.textMuted}}>Sin utilidades extra en este período.</p>;
-          return(
-            <div style={{marginTop:14}}>
-              <div style={{display:"flex",alignItems:"center",gap:12,marginBottom:10}}>
-                <p style={{margin:0,fontSize:12,fontWeight:600,color:T.text}}>En este período</p>
-                <Chip label={"Total: "+$m(totalExtra)} bg="rgba(26,140,90,0.1)" color={T.profit}/>
-              </div>
-              <table style={{width:"100%",fontSize:12,borderCollapse:"collapse"}}>
-                <TH cols={["Fecha","Tipo","Socio","Descripción","Monto",""]}/>
-                <tbody>
-                  {fExtras.map((x,i)=>(
-                    <tr key={x.id} style={{background:i%2===0?T.bg:T.bgRow,borderBottom:`0.5px solid ${T.border}`}}>
-                      <td style={{padding:"7px 10px",color:T.textSub,whiteSpace:"nowrap"}}>{x.date}</td>
-                      <td style={{padding:"7px 10px"}}><Chip label={x.tipo==="utilidad"?"Utilidad tercero":x.tipo==="comision"?"Comisión":"Otro"} bg="rgba(26,140,90,0.1)" color={T.profit}/></td>
-                      <td style={{padding:"7px 10px"}}><Chip label={x.socio} bg={x.socio==="Marcel"?T.goldBg:x.socio==="Gustavo"?"rgba(112,56,208,0.1)":"rgba(40,96,176,0.1)"} color={x.socio==="Marcel"?T.goldText:x.socio==="Gustavo"?T.pkg:T.client}/></td>
-                      <td style={{padding:"7px 10px",color:T.text}}>{x.desc}</td>
-                      <td style={{padding:"7px 10px",fontWeight:700,color:T.profit,whiteSpace:"nowrap"}}>{$m(x.amount)}</td>
-                      <td style={{padding:"7px 10px"}}><OutBtn onClick={()=>setExtras&&setExtras((extras||[]).filter(e=>e.id!==x.id))} danger style={{fontSize:11,padding:"3px 8px"}}>🗑️</OutBtn></td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          );
-        })()}
-      </Card>
       {/* ── UTILIDAD EXTRA ── */}
       <Card>
         <STitle>Utilidad extra / negocios externos</STitle>
@@ -1653,22 +1779,220 @@ function Reparto({sales,expenses,extras=[]}){
   );
 }
 
+// ── PALOMITAS (POS rápido) ────────────────────────────────────────────────────
+function Palomitas({sales,setSales,popCfg,setPopCfg,user,isAdmin}){
+  const[qty,setQty]=useState({s:0,m:0,l:0});
+  const[pay,setPay]=useState("Efectivo");
+  const[okMsg,setOkMsg]=useState("");
+  const[showCfg,setShowCfg]=useState(false);
+  const[cfgForm,setCfgForm]=useState(null);
+  const[confirmDel,setConfirmDel]=useState(null);
+
+  const count=POP_SIZES.reduce((a,k)=>a+qty[k],0);
+  const total=POP_SIZES.reduce((a,k)=>a+qty[k]*(+popCfg[k].price||0),0);
+  const cost=POP_SIZES.reduce((a,k)=>a+qty[k]*(+popCfg[k].cost||0),0);
+  const add=(k,d)=>setQty(q=>({...q,[k]:Math.max(0,q[k]+d)}));
+
+  const cobrar=()=>{
+    if(count===0)return;
+    const items=POP_SIZES.filter(k=>qty[k]>0).map(k=>({pid:"pop_"+k,qty:qty[k],su:"pieza",price:+popCfg[k].price||0}));
+    const desc="🍿 "+POP_SIZES.filter(k=>qty[k]>0).map(k=>qty[k]+"× "+popCfg[k].name).join(", ");
+    setSales(prev=>[...prev,{id:uid(),date:today(),tipo:"palomitas",clientId:"",pkgId:null,total,cost,desc,items,note:"",payMethod:pay,
+      mixEfectivo:0,mixTransferencia:0,mixCuenta:"",envio:0,costoEnvio:0,envioTipo:"ninguno",envioDesc:"",by:user?.name||""}]);
+    setQty({s:0,m:0,l:0});setPay("Efectivo");
+    setOkMsg("✓ Cobrado "+$m(total));
+    setTimeout(()=>setOkMsg(""),2500);
+  };
+
+  const hoy=today();
+  const mes=hoy.slice(0,7);
+  const popSales=sales.filter(s=>s.tipo==="palomitas");
+  const popHoy=popSales.filter(s=>s.date===hoy);
+  const popMes=popSales.filter(s=>s.date.slice(0,7)===mes);
+  const unidades=(arr,k)=>arr.reduce((a,s)=>a+(s.items||[]).filter(i=>i.pid==="pop_"+k).reduce((b,i)=>b+(+i.qty||0),0),0);
+  const sum=(arr,f)=>arr.reduce((a,s)=>a+(s[f]||0),0);
+  const hayCostos=POP_SIZES.some(k=>+popCfg[k].cost>0);
+  const SIZE_EMOJI={s:22,m:32,l:44};
+
+  return(
+    <div style={{display:"flex",flexDirection:"column",gap:"1.25rem"}}>
+      <Card>
+        <STitle>🍿 Vender palomitas</STitle>
+        <p style={{margin:"0 0 12px",fontSize:12,color:T.textSub}}>Toca el tamaño para agregar. Usa − para quitar.</p>
+        <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:8}}>
+          {POP_SIZES.map(k=>{
+            const c=popCfg[k];const on=qty[k]>0;
+            return(
+              <div key={k} style={{borderRadius:12,border:`2px solid ${on?T.gold:T.goldBorder}`,background:on?T.goldBg:T.bg,overflow:"hidden",display:"flex",flexDirection:"column"}}>
+                <button onClick={()=>add(k,1)} style={{border:"none",borderRadius:0,background:"transparent",padding:"14px 4px 10px",display:"flex",flexDirection:"column",alignItems:"center",gap:4,minHeight:120,justifyContent:"flex-end"}}>
+                  <span style={{fontSize:SIZE_EMOJI[k],lineHeight:1}}>🍿</span>
+                  <span style={{fontSize:13,fontWeight:700,color:T.text}}>{c.name}</span>
+                  <span style={{fontSize:15,fontWeight:700,color:T.revenue}}>{$m(c.price).replace(".00","")}</span>
+                </button>
+                <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",borderTop:`1px solid ${T.goldBorder}`}}>
+                  <button onClick={()=>add(k,-1)} disabled={!on} style={{border:"none",borderRadius:0,flex:1,fontSize:20,fontWeight:700,color:on?T.expense:T.textMuted,minHeight:44}}>−</button>
+                  <span style={{minWidth:28,textAlign:"center",fontSize:18,fontWeight:700,color:on?T.goldText:T.textMuted}}>{qty[k]}</span>
+                  <button onClick={()=>add(k,1)} style={{border:"none",borderRadius:0,flex:1,fontSize:20,fontWeight:700,color:T.profit,minHeight:44}}>+</button>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+
+        <p style={{margin:"16px 0 6px",fontSize:11,fontWeight:600,color:T.textSub,letterSpacing:"0.04em"}}>¿CÓMO PAGÓ?</p>
+        <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:6}}>
+          {["Efectivo","SPIN Marcel","SPIN Gustavo"].map(m=>{
+            const on=pay===m;const pc=PAY_CLR[m];
+            return <button key={m} onClick={()=>setPay(m)} style={{border:`2px solid ${on?pc.c:T.border}`,background:on?pc.bg:"transparent",color:on?pc.c:T.textSub,fontWeight:on?700:500,fontSize:12,minHeight:44,padding:"6px 4px"}}>{PAY_METHODS_LABEL[m]}</button>;
+          })}
+        </div>
+
+        <button onClick={cobrar} disabled={count===0} style={{marginTop:16,width:"100%",minHeight:56,border:"none",borderRadius:12,background:count>0?T.profit:"#E8E0D0",color:"#fff",fontSize:18,fontWeight:700}}>
+          {count>0?"Cobrar "+$m(total)+" · "+count+" pz":"Selecciona un tamaño"}
+        </button>
+        {okMsg&&<div style={{marginTop:8,padding:"10px 14px",background:"rgba(26,140,90,0.1)",border:"1px solid rgba(26,140,90,0.3)",borderRadius:8,fontSize:14,color:T.profit,fontWeight:700,textAlign:"center"}}>{okMsg}</div>}
+      </Card>
+
+      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
+        <KCard icon="ti-calendar" label="Vendido hoy" value={$m(sum(popHoy,"total"))} sub={POP_SIZES.map(k=>unidades(popHoy,k)+" "+popCfg[k].name.slice(0,3).toLowerCase()+".").join(" · ")} color={T.revenue}/>
+        <KCard icon="ti-calendar-month" label="Vendido este mes" value={$m(sum(popMes,"total"))} sub={POP_SIZES.map(k=>unidades(popMes,k)+" "+popCfg[k].name.slice(0,3).toLowerCase()+".").join(" · ")} color={T.client}/>
+        {isAdmin&&hayCostos&&<KCard icon="ti-sparkles" label="Utilidad hoy" value={$m(sum(popHoy,"total")-sum(popHoy,"cost"))} color={T.profit}/>}
+        {isAdmin&&hayCostos&&<KCard icon="ti-sparkles" label="Utilidad del mes" value={$m(sum(popMes,"total")-sum(popMes,"cost"))} color={T.profit}/>}
+      </div>
+
+      <Card>
+        <STitle>Ventas de hoy ({popHoy.length})</STitle>
+        {popHoy.length===0?<Empty icon="ti-receipt" text="Aún no hay ventas de palomitas hoy"/>:(
+          <div style={{display:"flex",flexDirection:"column",gap:6}}>
+            {[...popHoy].reverse().map(s=>{
+              const pc=PAY_CLR[s.payMethod]||{};
+              return(
+                <div key={s.id} style={{display:"flex",alignItems:"center",gap:8,padding:"8px 10px",borderRadius:8,border:`0.5px solid ${T.border}`,background:T.bgRow}}>
+                  <div style={{flex:1,minWidth:0}}>
+                    <p style={{margin:0,fontSize:13,color:T.text,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{s.desc}</p>
+                    <Chip label={s.payMethod} bg={pc.bg} color={pc.c}/>
+                    {s.by&&<span style={{fontSize:10,color:T.textMuted,marginLeft:6}}>{s.by}</span>}
+                  </div>
+                  <span style={{fontWeight:700,fontSize:15,color:T.revenue}}>{$m(s.total)}</span>
+                  {!isAdmin?null:confirmDel===s.id?(
+                    <>
+                      <button onClick={()=>{setSales(prev=>prev.filter(x=>x.id!==s.id));setConfirmDel(null);}} style={{fontSize:11,background:T.expense,color:"#fff",border:"none",fontWeight:600,padding:"4px 8px"}}>Borrar</button>
+                      <button onClick={()=>setConfirmDel(null)} style={{fontSize:11,padding:"4px 8px"}}>No</button>
+                    </>
+                  ):(
+                    <OutBtn onClick={()=>setConfirmDel(s.id)} danger style={{fontSize:11,padding:"4px 8px"}}>🗑️</OutBtn>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </Card>
+
+      {isAdmin&&<Card>
+        <STitle right={!showCfg&&<OutBtn onClick={()=>{setCfgForm(JSON.parse(JSON.stringify(popCfg)));setShowCfg(true);}} style={{fontSize:11}}>⚙️ Editar</OutBtn>}>Precios y costos</STitle>
+        {!showCfg?(
+          <table style={{width:"100%",fontSize:12,borderCollapse:"collapse"}}>
+            <TH cols={["Tamaño","Precio","Costo","Utilidad"]}/>
+            <tbody>
+              {POP_SIZES.map(k=>{const c=popCfg[k];const u=c.price-c.cost;return(
+                <tr key={k} style={{borderBottom:`0.5px solid ${T.border}`}}>
+                  <td style={{padding:"8px 10px",fontWeight:600}}>{c.name}</td>
+                  <td style={{padding:"8px 10px",color:T.revenue,fontWeight:600}}>{$m(c.price)}</td>
+                  <td style={{padding:"8px 10px",color:c.cost>0?T.cost:T.textMuted}}>{c.cost>0?$m(c.cost):"falta"}</td>
+                  <td style={{padding:"8px 10px",color:T.profit,fontWeight:700}}>{c.cost>0?$m(u)+" ("+pct(u/c.price*100)+")":"—"}</td>
+                </tr>
+              );})}
+            </tbody>
+          </table>
+        ):(
+          <>
+            {POP_SIZES.map(k=>(
+              <div key={k} style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:8,marginBottom:8}}>
+                <F label="Tamaño"><input value={cfgForm[k].name} onChange={e=>setCfgForm({...cfgForm,[k]:{...cfgForm[k],name:e.target.value}})}/></F>
+                <F label="Precio ($)"><input type="number" min="0" value={cfgForm[k].price} onChange={e=>setCfgForm({...cfgForm,[k]:{...cfgForm[k],price:e.target.value}})}/></F>
+                <F label="Costo ($)"><input type="number" min="0" step="0.01" value={cfgForm[k].cost} onChange={e=>setCfgForm({...cfgForm,[k]:{...cfgForm[k],cost:e.target.value}})}/></F>
+              </div>
+            ))}
+            <p style={{margin:"0 0 10px",fontSize:11,color:T.textMuted}}>El costo es lo que te cuesta cada vaso (maíz, aceite, vaso, sal…). Los cambios aplican a ventas nuevas.</p>
+            <div style={{display:"flex",gap:8}}>
+              <GoldBtn onClick={()=>{const n={};POP_SIZES.forEach(k=>{n[k]={name:cfgForm[k].name.trim()||INIT_POP[k].name,price:+cfgForm[k].price||0,cost:+cfgForm[k].cost||0};});setPopCfg(n);setShowCfg(false);}}>Guardar</GoldBtn>
+              <OutBtn onClick={()=>setShowCfg(false)}>Cancelar</OutBtn>
+            </div>
+          </>
+        )}
+      </Card>}
+    </div>
+  );
+}
+
 // ── TABS ──────────────────────────────────────────────────────────────────────
+// admin:true = solo socios. s = nombre corto para el menú de abajo. e = emoji en vez de ícono.
 const TABS=[
-  {k:"dash", l:"Dashboard",    icon:"ti-chart-bar",    color:T.revenue},
-  {k:"prod", l:"Productos",    icon:"ti-droplet-half-2",color:T.cost},
-  {k:"pkgs", l:"Paquetes",     icon:"ti-packages",     color:T.pkg},
-  {k:"cli",  l:"Clientes",     icon:"ti-users",        color:T.client},
-  {k:"venta",l:"Nueva venta",  icon:"ti-shopping-cart",color:T.profit},
-  {k:"gasto",l:"Gastos",       icon:"ti-wallet",       color:T.expense},
-  {k:"inv",  l:"Inventario",   icon:"ti-package",      color:T.client},
-  {k:"corte",l:"Corte de caja",icon:"ti-report-money", color:T.profit},
-  {k:"reparto",l:"Reparto de utilidades",icon:"ti-users-group", color:T.pkg},
+  {k:"dash", l:"Inicio",        s:"Inicio",  icon:"ti-home",          color:T.revenue, admin:true},
+  {k:"venta",l:"Nueva venta",   s:"Vender",  icon:"ti-shopping-cart", color:T.profit},
+  {k:"pop",  l:"Palomitas",     s:"Palomitas",e:"🍿",                 color:T.revenue},
+  {k:"corte",l:"Corte de caja", s:"Caja",    icon:"ti-report-money",  color:T.profit,  admin:true},
+  {k:"inv",  l:"Inventario",    s:"Inventario",icon:"ti-package",     color:T.client},
+  {k:"gasto",l:"Gastos",        s:"Gastos",  icon:"ti-wallet",        color:T.expense},
+  {k:"cli",  l:"Clientes",      s:"Clientes",icon:"ti-users",         color:T.client},
+  {k:"prod", l:"Productos y costos",s:"Productos",icon:"ti-droplet-half-2",color:T.cost,admin:true},
+  {k:"pkgs", l:"Paquetes",      s:"Paquetes",icon:"ti-packages",      color:T.pkg,     admin:true},
+  {k:"reparto",l:"Reparto de utilidades",s:"Reparto",icon:"ti-users-group",color:T.pkg,admin:true},
 ];
+// Qué va fijo en la barra de abajo; lo demás queda en "Más"
+const NAV_MAIN={admin:["dash","venta","pop","corte"],staff:["venta","pop","inv","gasto","cli"]};
+
+function TabIcon({t,size,color}){
+  if(t.e)return <span style={{fontSize:size-2,lineHeight:1}}>{t.e}</span>;
+  return <i className={"ti "+t.icon} style={{fontSize:size,color}}/>;
+}
+
+function BottomNav({tabs,mainKeys,tab,setTab}){
+  const[more,setMore]=useState(false);
+  const main=mainKeys.map(k=>tabs.find(t=>t.k===k)).filter(Boolean);
+  const rest=tabs.filter(t=>!mainKeys.includes(t.k));
+  const inRest=rest.some(t=>t.k===tab);
+  const go=k=>{setTab(k);setMore(false);window.scrollTo(0,0);};
+  return(
+    <>
+      {more&&(
+        <div onClick={()=>setMore(false)} style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.35)",zIndex:900}}>
+          <div onClick={e=>e.stopPropagation()} style={{position:"absolute",left:0,right:0,bottom:0,background:T.bg,borderRadius:"18px 18px 0 0",padding:"16px 16px calc(84px + env(safe-area-inset-bottom))",display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:10,maxWidth:600,margin:"0 auto"}}>
+            {rest.map(t=>(
+              <button key={t.k} onClick={()=>go(t.k)} style={{display:"flex",flexDirection:"column",alignItems:"center",gap:6,padding:"14px 4px",borderRadius:12,border:`1px solid ${tab===t.k?t.color:T.goldBorder}`,background:tab===t.k?T.goldBg:T.bgCard,color:T.text,fontSize:12,fontWeight:600}}>
+                <TabIcon t={t} size={24} color={t.color}/>
+                {t.l}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+      <nav style={{position:"fixed",left:0,right:0,bottom:0,zIndex:950,background:T.bg,borderTop:`1px solid ${T.goldBorder}`,boxShadow:"0 -2px 12px rgba(0,0,0,0.05)",paddingBottom:"env(safe-area-inset-bottom)"}}>
+        <div style={{display:"flex",maxWidth:600,margin:"0 auto"}}>
+          {main.map(t=>{const on=tab===t.k&&!more;return(
+            <button key={t.k} onClick={()=>go(t.k)} style={{flex:1,border:"none",borderRadius:0,background:"transparent",padding:"8px 2px 6px",minHeight:60,display:"flex",flexDirection:"column",alignItems:"center",gap:3,color:on?t.color:T.textMuted,fontSize:11,fontWeight:on?700:500,borderTop:on?`3px solid ${t.color}`:"3px solid transparent"}}>
+              <TabIcon t={t} size={22} color={on?t.color:T.textMuted}/>
+              {t.s}
+            </button>
+          );})}
+          {rest.length>0&&(
+            <button onClick={()=>setMore(!more)} style={{flex:1,border:"none",borderRadius:0,background:"transparent",padding:"8px 2px 6px",minHeight:60,display:"flex",flexDirection:"column",alignItems:"center",gap:3,color:more||inRest?T.gold:T.textMuted,fontSize:11,fontWeight:more||inRest?700:500,borderTop:more||inRest?`3px solid ${T.gold}`:"3px solid transparent"}}>
+              <i className="ti ti-dots" style={{fontSize:22}}/>
+              Más
+            </button>
+          )}
+        </div>
+      </nav>
+    </>
+  );
+}
 
 // ── APP ───────────────────────────────────────────────────────────────────────
-function Dashboard_App(){
-  const[tab,setTab]=useState("dash");
+function Dashboard_App({user,onLogout}){
+  const isAdmin=user.role==="admin";
+  const myTabs=TABS.filter(t=>isAdmin||!t.admin);
+  const[tab,setTab]=useState(isAdmin?"dash":"venta");
   const[prods,setProds]=useState([]);
   const[pkgs,setPkgs]=useState([]);
   const[clients,setClients]=useState([]);
@@ -1676,11 +2000,14 @@ function Dashboard_App(){
   const[expenses,setExpenses]=useState([]);
   const[stockMoves,setStockMoves]=useState([]);
   const[extras,setExtras]=useState([]);
+  const[popCfg,setPopCfg]=useState(INIT_POP);
+  const[fixed,setFixed]=useState(INIT_FIXED);
   const[ready,setReady]=useState(false);
+  const[leaving,setLeaving]=useState(false);
 
   useEffect(()=>{
     (async()=>{
-      let[p,pk,c,s,e,sm,ex]=await Promise.all([load(SK.p,INIT_PRODS),load(SK.pk,INIT_PKGS),load(SK.c,[]),load(SK.s,[]),load(SK.e,[]),load(SK.sm,[]),load(SK.ex,[])]);
+      let[p,pk,c,s,e,sm,ex,pop,fx]=await Promise.all([load(SK.p,INIT_PRODS),load(SK.pk,INIT_PKGS),load(SK.c,[]),load(SK.s,[]),load(SK.e,[]),load(SK.sm,[]),load(SK.ex,[]),load(SK.pop,INIT_POP),load(SK.fx,INIT_FIXED)]);
       // Merge new products
       const ids=new Set(p.map(x=>x.id));
       INIT_PRODS.forEach(ip=>{if(!ids.has(ip.id))p.push(ip);});
@@ -1694,6 +2021,8 @@ function Dashboard_App(){
       p=p.filter(x=>x.id!=="gom"&&x.id!=="pp12");
       p=p.map(x=>fix.has(x.id)?{...x,cat:"Miel"}:x);
       setProds(p);setPkgs(pk);setClients(c);setSales(s);setExpenses(e);setStockMoves(sm);setExtras(ex);
+      setPopCfg({...INIT_POP,...(pop||{})});
+      setFixed(Array.isArray(fx)?fx:INIT_FIXED);
       setReady(true);
     })();
   },[]);
@@ -1705,6 +2034,8 @@ function Dashboard_App(){
   useEffect(()=>{if(ready){const t=setTimeout(()=>save(SK.e,expenses),800);return()=>clearTimeout(t);}},[expenses,ready]);
   useEffect(()=>{if(ready){const t=setTimeout(()=>save(SK.sm,stockMoves),800);return()=>clearTimeout(t);}},[stockMoves,ready]);
   useEffect(()=>{if(ready){const t=setTimeout(()=>save(SK.ex,extras),800);return()=>clearTimeout(t);}},[extras,ready]);
+  useEffect(()=>{if(ready){const t=setTimeout(()=>save(SK.pop,popCfg),800);return()=>clearTimeout(t);}},[popCfg,ready]);
+  useEffect(()=>{if(ready){const t=setTimeout(()=>save(SK.fx,fixed),800);return()=>clearTimeout(t);}},[fixed,ready]);
 
   if(!ready)return(
     <div style={{display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",padding:"3rem",gap:12,color:T.textSub}}>
@@ -1713,49 +2044,59 @@ function Dashboard_App(){
     </div>
   );
 
-  const props={prods,setProds,pkgs,setPkgs,clients,setClients,sales,setSales,expenses,setExpenses,stockMoves,setStockMoves,extras,setExtras};
-  const warn=prods.some(p=>p.cost===0);
+  const props={prods,setProds,pkgs,setPkgs,clients,setClients,sales,setSales,expenses,setExpenses,stockMoves,setStockMoves,extras,setExtras,user,isAdmin,fixed,setFixed,goTab:setTab};
+  const warn=isAdmin&&prods.some(p=>p.cost===0);
+  const cur=myTabs.find(t=>t.k===tab)||myTabs[0];
+  const can=k=>myTabs.some(t=>t.k===k);
+  // Al salir se desmonta todo y el debounce de 800 ms se cancelaría: guardamos todo antes
+  const logout=async()=>{
+    if(leaving)return;
+    setLeaving(true);
+    await Promise.all([save(SK.p,prods),save(SK.pk,pkgs),save(SK.c,clients),save(SK.s,sales),save(SK.e,expenses),save(SK.sm,stockMoves),save(SK.ex,extras),save(SK.pop,popCfg),save(SK.fx,fixed)]);
+    onLogout();
+  };
 
   return(
-    <div style={{fontFamily:"-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif",background:T.bg}}>
-      <div style={{borderBottom:`2px solid ${T.goldBorder}`,marginBottom:"1.25rem"}}>
-        <div style={{display:"flex",alignItems:"center",gap:12,padding:"12px 0 10px"}}>
-          <Logo size={38}/>
-          <div>
-            <p style={{margin:0,fontWeight:700,fontSize:15,color:T.text,letterSpacing:"0.05em"}}>MY SECRET PASSION MX</p>
-            <p style={{margin:0,fontSize:10,color:T.gold,fontWeight:600,letterSpacing:"0.12em",textTransform:"uppercase"}}>Dashboard de control · guardado automático</p>
+    <div style={{fontFamily:"-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif",background:T.bg,paddingBottom:"calc(84px + env(safe-area-inset-bottom))"}}>
+      <div style={{borderBottom:`2px solid ${T.goldBorder}`,marginBottom:"1rem"}}>
+        <div style={{display:"flex",alignItems:"center",gap:10,padding:"10px 0 8px"}}>
+          <Logo size={32}/>
+          <div style={{minWidth:0}}>
+            <p style={{margin:0,fontWeight:700,fontSize:14,color:T.text,letterSpacing:"0.05em"}}>MY SECRET PASSION MX</p>
+            <p style={{margin:0,fontSize:17,color:cur.color,fontWeight:700}}>{cur.l}</p>
           </div>
-          {warn&&tab!=="prod"&&(
-            <button onClick={()=>setTab("prod")} style={{marginLeft:"auto",fontSize:11,background:T.goldBg,color:T.goldText,border:`1px solid ${T.goldBorder}`,borderRadius:20,padding:"4px 12px",cursor:"pointer",fontWeight:600}}>
-              ⚠️ Faltan costos
+          <div style={{marginLeft:"auto",display:"flex",alignItems:"center",gap:6}}>
+            {warn&&tab!=="prod"&&(
+              <button onClick={()=>setTab("prod")} style={{fontSize:11,background:T.goldBg,color:T.goldText,border:`1px solid ${T.goldBorder}`,borderRadius:20,padding:"4px 10px",fontWeight:600,minHeight:30}}>
+                ⚠️ Costos
+              </button>
+            )}
+            <button onClick={logout} title="Cambiar de usuario" style={{fontSize:11,color:T.textSub,border:`1px solid ${T.border}`,borderRadius:20,padding:"4px 10px",minHeight:30,whiteSpace:"nowrap"}}>
+              {leaving?"Guardando…":user.name+" · Salir"}
             </button>
-          )}
-        </div>
-        <div style={{display:"flex",overflowX:"auto"}}>
-          {TABS.map(t=>(
-            <button key={t.k} onClick={()=>setTab(t.k)} style={{padding:"8px 14px",border:"none",borderBottom:tab===t.k?"2.5px solid "+t.color:"2.5px solid transparent",background:"transparent",cursor:"pointer",fontSize:12,whiteSpace:"nowrap",color:tab===t.k?t.color:T.textMuted,fontWeight:tab===t.k?700:400,display:"flex",alignItems:"center",gap:5}}>
-              <i className={"ti "+t.icon} style={{fontSize:14,color:tab===t.k?t.color:T.textMuted}}/>
-              {t.l}
-            </button>
-          ))}
+          </div>
         </div>
       </div>
-      {tab==="dash"  && <Dashboard  {...props}/>}
-      {tab==="prod"  && <Productos  {...props}/>}
-      {tab==="pkgs"  && <Paquetes   {...props}/>}
-      {tab==="cli"   && <Clientes   {...props}/>}
-      {tab==="venta" && <NuevaVenta {...props}/>}
-      {tab==="gasto" && <Gastos     {...props}/>}
-      {tab==="inv"   && <Inventario {...props}/>}
-      {tab==="corte" && <CorteCaja  sales={sales} expenses={expenses} extras={extras} setExtras={setExtras}/>}
-      {tab==="reparto" && <Reparto sales={sales} expenses={expenses} extras={extras}/>}
+      {cur.k==="dash"  && <Dashboard  {...props}/>}
+      {cur.k==="prod"  && <Productos  {...props}/>}
+      {cur.k==="pkgs"  && <Paquetes   {...props}/>}
+      {cur.k==="cli"   && <Clientes   {...props}/>}
+      {cur.k==="venta" && <NuevaVenta {...props}/>}
+      {cur.k==="pop"   && <Palomitas sales={sales} setSales={setSales} popCfg={popCfg} setPopCfg={setPopCfg} user={user} isAdmin={isAdmin}/>}
+      {cur.k==="gasto" && <Gastos     {...props}/>}
+      {cur.k==="inv"   && <Inventario {...props}/>}
+      {cur.k==="corte" && can("corte") && <CorteCaja  sales={sales} expenses={expenses} extras={extras} setExtras={setExtras} user={user}/>}
+      {cur.k==="reparto" && can("reparto") && <Reparto sales={sales} expenses={expenses} extras={extras}/>}
+      <BottomNav tabs={myTabs} mainKeys={NAV_MAIN[user.role]||NAV_MAIN.staff} tab={cur.k} setTab={setTab}/>
     </div>
   );
 }
 
 
 export default function App() {
-  const [authed, setAuthed] = useState(()=>sessionStorage.getItem("msp_auth")==="1");
-  if (!authed) return <LoginScreen onLogin={()=>{ sessionStorage.setItem("msp_auth","1"); setAuthed(true); }}/>;
-  return <Dashboard_App/>;
+  const [user, setUser] = useState(()=>{
+    try { const id=sessionStorage.getItem("msp_user"); return USERS.find(u=>u.id===id)||null; } catch { return null; }
+  });
+  if (!user) return <LoginScreen onLogin={u=>{ try{sessionStorage.setItem("msp_user",u.id);}catch{} setUser(u); }}/>;
+  return <Dashboard_App key={user.id} user={user} onLogout={()=>{ try{sessionStorage.removeItem("msp_user");}catch{} setUser(null); }}/>;
 }
