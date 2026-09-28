@@ -138,14 +138,20 @@ const INIT_PKGS=[
   {id:"dist",name:"Paquete Distribuidor", price:9400, items:[{pid:"bh",qty:5},{pid:"rhv",qty:4},{pid:"rh",qty:5},{pid:"pp24",qty:3},{pid:"hs",qty:3}]},
   {id:"may", name:"Paquete Mayorista",    price:39400,items:[{pid:"bh",qty:20},{pid:"rhv",qty:15},{pid:"rhp",qty:15},{pid:"hs",qty:10},{pid:"pp24",qty:5}]},
 ];
-const EXP_CATS=["Renta local","Luz / agua / internet","Sueldos","Insumos palomitas","Gasolina","Repartidores","Importación","Transporte","Almacén","Marketing","Gastos generales","Otro"];
+const EXP_CATS=["Renta local","Sueldos","Aguinaldo (apartado)","Plan celular","Repartidor fijo","Comisiones terminal","Insumos palomitas","Bolsas / empaques","Merma / regalos","Gasolina","Repartidores","Importación","Transporte","Almacén","Marketing","Gastos generales","Otro"];
 
 // Gastos fijos: solo los socios los ven y registran
-const FIXED_CATS=["Renta local","Luz / agua / internet","Sueldos"];
+const FIXED_CATS=["Renta local","Sueldos","Aguinaldo (apartado)","Plan celular","Repartidor fijo"];
+// Aguinaldo: ley = mínimo 15 días de sueldo. $2,000/7 días × 15 = $4,285.71 al año → se aparta cada mes
 const INIT_FIXED=[
-  {id:"renta", name:"Renta del local", cat:"Renta local", amount:7859, freq:"mensual"},
-  {id:"sueldo",name:"Sueldo empleado", cat:"Sueldos",     amount:2000, freq:"semanal"},
+  {id:"renta",     name:"Renta del local",       cat:"Renta local",          amount:7859,   freq:"mensual"},
+  {id:"sueldo",    name:"Sueldo empleado",       cat:"Sueldos",              amount:2000,   freq:"semanal"},
+  {id:"repartidor",name:"Repartidor fijo",       cat:"Repartidor fijo",      amount:1000,   freq:"semanal"},
+  {id:"celular",   name:"Plan celular",          cat:"Plan celular",         amount:150,    freq:"mensual"},
+  {id:"aguinaldo", name:"Apartado aguinaldo",    cat:"Aguinaldo (apartado)", amount:357.14, freq:"mensual"},
 ];
+// Versión de la lista de fijos: al subirla, se agregan los fijos nuevos por default una sola vez
+const FIXED_VER=2;
 const ymd=d=>d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0");
 const weekStartOf=ds=>{const d=new Date(ds+"T12:00:00");const w=d.getDay();d.setDate(d.getDate()-(w===0?6:w-1));return ymd(d);};
 // Periodo actual de un gasto fijo: "2026-09" (mensual) o el lunes de la semana (semanal)
@@ -159,10 +165,16 @@ const fixedPending=(fixed,expenses,ds)=>(fixed||[]).filter(f=>!expenses.some(e=>
 
 // ── PALOMITAS ─────────────────────────────────────────────────────────────────
 const POP_SIZES=["s","m","l"];
-const INIT_POP={s:{name:"Pequeño",price:20,cost:0},m:{name:"Mediano",price:35,cost:0},l:{name:"Grande",price:50,cost:0}};
-const PAY_METHODS=["Efectivo","SPIN Marcel","SPIN Gustavo","Tercero","Mixto"];
-const PAY_METHODS_LABEL={"Efectivo":"💵 Efectivo","SPIN Marcel":"📱 SPIN Marcel","SPIN Gustavo":"📱 SPIN Gustavo","Tercero":"🤝 Tercero","Mixto":"💳 Mixto"};
-const PAY_CLR={"Efectivo":{bg:"rgba(26,140,90,0.12)",c:"#1A8C5A"},"SPIN Marcel":{bg:"rgba(196,150,42,0.12)",c:"#8B6716"},"SPIN Gustavo":{bg:"rgba(112,56,208,0.12)",c:"#7038D0"},"Tercero":{bg:"rgba(40,96,176,0.12)",c:"#2860B0"},"Mixto":{bg:"rgba(100,100,100,0.1)",c:"#555555"}};
+// cost = insumos (maíz, aceite, sal…) · vaso = bolsita/vaso donde se sirve
+const INIT_POP={s:{name:"Pequeño",price:20,cost:0,vaso:5},m:{name:"Mediano",price:35,cost:0,vaso:5},l:{name:"Grande",price:50,cost:0,vaso:5}};
+const popUnitCost=c=>(+c.cost||0)+(+c.vaso||0);
+const PAY_METHODS=["Efectivo","SPIN Marcel","SPIN Gustavo","Terminal MP","Tercero","Mixto"];
+const PAY_METHODS_LABEL={"Efectivo":"💵 Efectivo","SPIN Marcel":"📱 SPIN Marcel","SPIN Gustavo":"📱 SPIN Gustavo","Terminal MP":"💳 Terminal MP","Tercero":"🤝 Tercero","Mixto":"🔀 Mixto"};
+// Comisión de Mercado Pago por cobro con terminal. Se descuenta de la utilidad de cada venta.
+const TERMINAL_FEE=0.035;
+// Cuánto de una venta pasó por la terminal (directo o la parte de un pago mixto)
+const terminalAmt=(payMethod,total,mixCuenta,mixTransferencia)=>payMethod==="Terminal MP"?total:(payMethod==="Mixto"&&mixCuenta==="Terminal MP"?(+mixTransferencia||0):0);
+const PAY_CLR={"Efectivo":{bg:"rgba(26,140,90,0.12)",c:"#1A8C5A"},"SPIN Marcel":{bg:"rgba(196,150,42,0.12)",c:"#8B6716"},"SPIN Gustavo":{bg:"rgba(112,56,208,0.12)",c:"#7038D0"},"Terminal MP":{bg:"rgba(0,158,227,0.12)",c:"#0077B6"},"Tercero":{bg:"rgba(40,96,176,0.12)",c:"#2860B0"},"Mixto":{bg:"rgba(100,100,100,0.1)",c:"#555555"}};
 
 // ── THEME ─────────────────────────────────────────────────────────────────────
 const T={
@@ -723,7 +735,9 @@ function NuevaVenta({prods,setProds,pkgs,clients,setClients,sales,setSales,user,
     }
     const envioNum=+envio||0;
     const regaloC=envioTipo==="sobres"?(parseInt(envioDesc)||1)*SOBRE_COST:0;
-    const sale={id:uid(),date,clientId,pkgId:mode==="paquete"?pkgId:null,total,cost:cost+regaloC,desc,items,note,payMethod,
+    // Comisión de la terminal: va dentro de cost para que baje la utilidad en todos los reportes
+    const comision=+(terminalAmt(payMethod,total,mixCuenta,mixTransferencia)*TERMINAL_FEE).toFixed(2);
+    const sale={id:uid(),date,clientId,pkgId:mode==="paquete"?pkgId:null,total,cost:cost+regaloC+comision,comision,desc,items,note,payMethod,
       mixEfectivo:payMethod==="Mixto"?+mixEfectivo||0:0,
       mixTransferencia:payMethod==="Mixto"?+mixTransferencia||0:0,
       mixCuenta:payMethod==="Mixto"?mixCuenta:"",
@@ -934,6 +948,12 @@ function NuevaVenta({prods,setProds,pkgs,clients,setClients,sales,setSales,user,
               {PAY_METHODS.map(m=><option key={m} value={m}>{PAY_METHODS_LABEL[m]||m}</option>)}
             </select>
           </F>
+          {isAdmin&&terminalAmt(payMethod,mode==="paquete"?pkgTotal:lineTotal,mixCuenta,mixTransferencia)>0&&(()=>{
+            const base=terminalAmt(payMethod,mode==="paquete"?pkgTotal:lineTotal,mixCuenta,mixTransferencia);
+            return <div style={{gridColumn:"1/-1",padding:"8px 12px",background:PAY_CLR["Terminal MP"].bg,borderRadius:8,fontSize:12,color:PAY_CLR["Terminal MP"].c}}>
+              💳 Comisión Mercado Pago ({(TERMINAL_FEE*100).toFixed(1)}%): <strong>−{$m(base*TERMINAL_FEE)}</strong> · Te llega: <strong>{$m(base*(1-TERMINAL_FEE))}</strong>
+            </div>;
+          })()}
           {payMethod==="Mixto"&&(
             <div style={{gridColumn:"1/-1",background:"rgba(100,100,100,0.06)",borderRadius:10,padding:"14px",border:"1px solid rgba(100,100,100,0.15)"}}>
               <p style={{margin:"0 0 12px",fontSize:12,fontWeight:600,color:T.text}}>💳 Desglose del pago mixto</p>
@@ -941,13 +961,14 @@ function NuevaVenta({prods,setProds,pkgs,clients,setClients,sales,setSales,user,
                 <F label="💵 ¿Cuánto pagó en efectivo? ($)">
                   <input type="number" min="0" value={mixEfectivo} onChange={e=>setMixEfectivo(e.target.value)} placeholder="0.00"/>
                 </F>
-                <F label="📱 ¿A qué cuenta se transfirió?">
+                <F label="📱 ¿El resto a dónde se pagó?">
                   <select value={mixCuenta} onChange={e=>setMixCuenta(e.target.value)}>
                     <option value="SPIN Marcel">SPIN Marcel</option>
                     <option value="SPIN Gustavo">SPIN Gustavo</option>
+                    <option value="Terminal MP">💳 Terminal Mercado Pago</option>
                   </select>
                 </F>
-                <F label={"💰 ¿Cuánto se transfirió a "+mixCuenta+"? ($)"}>
+                <F label={"💰 ¿Cuánto se pagó con "+mixCuenta+"? ($)"}>
                   <input type="number" min="0" value={mixTransferencia} onChange={e=>setMixTransferencia(e.target.value)} placeholder="0.00"/>
                 </F>
                 {(+mixEfectivo>0||+mixTransferencia>0)&&(
@@ -1103,7 +1124,7 @@ function GastosFijos({fixed,setFixed,expenses,setExpenses,user}){
               <OutBtn onClick={()=>setRows(rows.filter((_,j)=>j!==i))} danger style={{alignSelf:"end",minHeight:44}}>Quitar</OutBtn>
             </div>
           ))}
-          <OutBtn onClick={()=>setRows([...rows,{id:uid(),name:"",cat:"Luz / agua / internet",amount:"",freq:"mensual"}])} style={{fontSize:12,marginBottom:12}}>+ Agregar gasto fijo</OutBtn>
+          <OutBtn onClick={()=>setRows([...rows,{id:uid(),name:"",cat:"Plan celular",amount:"",freq:"mensual"}])} style={{fontSize:12,marginBottom:12}}>+ Agregar gasto fijo</OutBtn>
           <div style={{display:"flex",gap:8}}>
             <GoldBtn onClick={guardar}>Guardar</GoldBtn>
             <OutBtn onClick={()=>setEdit(false)}>Cancelar</OutBtn>
@@ -1490,13 +1511,15 @@ function CorteCaja({sales,expenses,extras=[],setExtras,user}){
   const byMethod=PAY_METHODS.filter(m=>m!=="Mixto").map(m=>{
     const direct=fSales.filter(s=>s.payMethod===m);
     const ventasTotal=direct.reduce((a,s)=>a+s.total,0);
-    const mixAmt=m==="Efectivo"?mixEfectivoTotal:m==="SPIN Marcel"?mixMarcelTotal:m==="SPIN Gustavo"?mixGustavoTotal:0;
+    const mixAmt=m==="Efectivo"?mixEfectivoTotal:m==="SPIN Marcel"?mixMarcelTotal:m==="SPIN Gustavo"?mixGustavoTotal:m==="Terminal MP"?mixSales.filter(s=>s.mixCuenta==="Terminal MP").reduce((a,s)=>a+(s.mixTransferencia||0),0):0;
+    // Mercado Pago deposita ya descontada su comisión
+    const comisionAmt=m==="Terminal MP"?fSales.reduce((a,s)=>a+(s.comision||0),0):0;
     const extraAmt=m==="Efectivo"?extraEfectivo:m==="SPIN Marcel"?extraMarcel:m==="SPIN Gustavo"?extraGustavo:0;
     const gastosDeEsta=fExp.filter(e=>(e.pagadoCon||"Efectivo")===m).reduce((a,e)=>a+e.amount,0);
     const entradas=ventasTotal+mixAmt+extraAmt;
-    const neto=entradas-gastosDeEsta;
+    const neto=entradas-gastosDeEsta-comisionAmt;
     const pc=PAY_CLR[m]||{};
-    return{method:m,ventasTotal,mixAmt,extraAmt,entradas,gastosDeEsta,neto,count:direct.length,env:direct.reduce((a,s)=>a+(s.envio||0),0),bg:pc.bg,c:pc.c};
+    return{method:m,ventasTotal,mixAmt,extraAmt,entradas,gastosDeEsta,comisionAmt,neto,count:direct.length,env:direct.reduce((a,s)=>a+(s.envio||0),0),bg:pc.bg,c:pc.c};
   });
   const DAYS=["Lunes","Martes","Miércoles","Jueves","Viernes","Sábado","Domingo"];
   const byDay=DAYS.map((d,i)=>{const dn=(i+1)%7;const ds=fSales.filter(s=>{const w=new Date(s.date+"T12:00:00").getDay();return w===dn||(i===6&&w===0);});return{day:d,total:ds.reduce((a,s)=>a+s.total,0),util:ds.reduce((a,s)=>a+s.total-s.cost,0),count:ds.length};});
@@ -1531,6 +1554,7 @@ function CorteCaja({sales,expenses,extras=[],setExtras,user}){
               {bm.mixAmt>0&&<p style={{margin:"2px 0",fontSize:12,color:T.textSub}}>Mixto: <strong style={{color:bm.c||T.gold}}>+{$m(bm.mixAmt)}</strong></p>}
               {bm.extraAmt>0&&<p style={{margin:"2px 0",fontSize:12,color:T.textSub}}>Extra: <strong style={{color:T.profit}}>+{$m(bm.extraAmt)}</strong></p>}
               {bm.gastosDeEsta>0&&<p style={{margin:"2px 0",fontSize:12,color:T.textSub}}>Gastos: <strong style={{color:T.expense}}>−{$m(bm.gastosDeEsta)}</strong></p>}
+              {bm.comisionAmt>0&&<p style={{margin:"2px 0",fontSize:12,color:T.textSub}}>Comisión MP: <strong style={{color:T.expense}}>−{$m(bm.comisionAmt)}</strong></p>}
               {bm.env>0&&<p style={{margin:"2px 0",fontSize:11,color:T.textMuted}}>Envíos: {$m(bm.env)}</p>}
               <div style={{borderTop:`1px solid ${bm.c||T.gold}30`,marginTop:8,paddingTop:8}}>
                 <p style={{margin:0,fontSize:20,fontWeight:700,color:bm.neto>=0?T.profit:T.expense}}>{$m(bm.neto)}</p>
@@ -1540,7 +1564,7 @@ function CorteCaja({sales,expenses,extras=[],setExtras,user}){
           ))}
         </div>
         <div style={{marginTop:12,padding:"10px 14px",background:T.goldBg,borderRadius:8,fontSize:12,color:T.goldText}}>
-          🛡️ <strong>Verifica:</strong> Efectivo debe estar en caja física · SPIN Marcel debe coincidir con la app de Marcel · SPIN Gustavo con la de Gustavo
+          🛡️ <strong>Verifica:</strong> Efectivo debe estar en caja física · SPIN Marcel debe coincidir con la app de Marcel · SPIN Gustavo con la de Gustavo · Terminal MP con lo que te depositó Mercado Pago
         </div>
       </Card>
       {period==="semana" && (
@@ -1639,7 +1663,7 @@ function RepartoCard({data,label,sublabel}){
           <span style={{fontWeight:600,color:T.revenue}}>{$m(data.ingresos)}</span>
         </div>
         <div style={{display:"flex",justifyContent:"space-between",padding:"4px 0",fontSize:13}}>
-          <span style={{color:T.textSub}}>− Costo de productos</span>
+          <span style={{color:T.textSub}}>− Costo de productos y comisiones</span>
           <span style={{fontWeight:600,color:T.cost}}>−{$m(data.costo)}</span>
         </div>
         <div style={{display:"flex",justifyContent:"space-between",padding:"4px 0",fontSize:13}}>
@@ -1790,14 +1814,15 @@ function Palomitas({sales,setSales,popCfg,setPopCfg,user,isAdmin}){
 
   const count=POP_SIZES.reduce((a,k)=>a+qty[k],0);
   const total=POP_SIZES.reduce((a,k)=>a+qty[k]*(+popCfg[k].price||0),0);
-  const cost=POP_SIZES.reduce((a,k)=>a+qty[k]*(+popCfg[k].cost||0),0);
+  const cost=POP_SIZES.reduce((a,k)=>a+qty[k]*popUnitCost(popCfg[k]),0);
   const add=(k,d)=>setQty(q=>({...q,[k]:Math.max(0,q[k]+d)}));
 
   const cobrar=()=>{
     if(count===0)return;
     const items=POP_SIZES.filter(k=>qty[k]>0).map(k=>({pid:"pop_"+k,qty:qty[k],su:"pieza",price:+popCfg[k].price||0}));
     const desc="🍿 "+POP_SIZES.filter(k=>qty[k]>0).map(k=>qty[k]+"× "+popCfg[k].name).join(", ");
-    setSales(prev=>[...prev,{id:uid(),date:today(),tipo:"palomitas",clientId:"",pkgId:null,total,cost,desc,items,note:"",payMethod:pay,
+    const comision=pay==="Terminal MP"?+(total*TERMINAL_FEE).toFixed(2):0;
+    setSales(prev=>[...prev,{id:uid(),date:today(),tipo:"palomitas",clientId:"",pkgId:null,total,cost:cost+comision,comision,desc,items,note:"",payMethod:pay,
       mixEfectivo:0,mixTransferencia:0,mixCuenta:"",envio:0,costoEnvio:0,envioTipo:"ninguno",envioDesc:"",by:user?.name||""}]);
     setQty({s:0,m:0,l:0});setPay("Efectivo");
     setOkMsg("✓ Cobrado "+$m(total));
@@ -1811,7 +1836,7 @@ function Palomitas({sales,setSales,popCfg,setPopCfg,user,isAdmin}){
   const popMes=popSales.filter(s=>s.date.slice(0,7)===mes);
   const unidades=(arr,k)=>arr.reduce((a,s)=>a+(s.items||[]).filter(i=>i.pid==="pop_"+k).reduce((b,i)=>b+(+i.qty||0),0),0);
   const sum=(arr,f)=>arr.reduce((a,s)=>a+(s[f]||0),0);
-  const hayCostos=POP_SIZES.some(k=>+popCfg[k].cost>0);
+  const hayCostos=POP_SIZES.some(k=>popUnitCost(popCfg[k])>0);
   const SIZE_EMOJI={s:22,m:32,l:44};
 
   return(
@@ -1840,8 +1865,8 @@ function Palomitas({sales,setSales,popCfg,setPopCfg,user,isAdmin}){
         </div>
 
         <p style={{margin:"16px 0 6px",fontSize:11,fontWeight:600,color:T.textSub,letterSpacing:"0.04em"}}>¿CÓMO PAGÓ?</p>
-        <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:6}}>
-          {["Efectivo","SPIN Marcel","SPIN Gustavo"].map(m=>{
+        <div style={{display:"grid",gridTemplateColumns:"repeat(2,1fr)",gap:6}}>
+          {["Efectivo","Terminal MP","SPIN Marcel","SPIN Gustavo"].map(m=>{
             const on=pay===m;const pc=PAY_CLR[m];
             return <button key={m} onClick={()=>setPay(m)} style={{border:`2px solid ${on?pc.c:T.border}`,background:on?pc.bg:"transparent",color:on?pc.c:T.textSub,fontWeight:on?700:500,fontSize:12,minHeight:44,padding:"6px 4px"}}>{PAY_METHODS_LABEL[m]}</button>;
           })}
@@ -1893,14 +1918,15 @@ function Palomitas({sales,setSales,popCfg,setPopCfg,user,isAdmin}){
         <STitle right={!showCfg&&<OutBtn onClick={()=>{setCfgForm(JSON.parse(JSON.stringify(popCfg)));setShowCfg(true);}} style={{fontSize:11}}>⚙️ Editar</OutBtn>}>Precios y costos</STitle>
         {!showCfg?(
           <table style={{width:"100%",fontSize:12,borderCollapse:"collapse"}}>
-            <TH cols={["Tamaño","Precio","Costo","Utilidad"]}/>
+            <TH cols={["Tamaño","Precio","Vaso","Insumos","Utilidad"]}/>
             <tbody>
-              {POP_SIZES.map(k=>{const c=popCfg[k];const u=c.price-c.cost;return(
+              {POP_SIZES.map(k=>{const c=popCfg[k];const u=c.price-popUnitCost(c);return(
                 <tr key={k} style={{borderBottom:`0.5px solid ${T.border}`}}>
                   <td style={{padding:"8px 10px",fontWeight:600}}>{c.name}</td>
                   <td style={{padding:"8px 10px",color:T.revenue,fontWeight:600}}>{$m(c.price)}</td>
+                  <td style={{padding:"8px 10px",color:T.cost}}>{$m(c.vaso||0)}</td>
                   <td style={{padding:"8px 10px",color:c.cost>0?T.cost:T.textMuted}}>{c.cost>0?$m(c.cost):"falta"}</td>
-                  <td style={{padding:"8px 10px",color:T.profit,fontWeight:700}}>{c.cost>0?$m(u)+" ("+pct(u/c.price*100)+")":"—"}</td>
+                  <td style={{padding:"8px 10px",color:T.profit,fontWeight:700}}>{$m(u)+" ("+pct(u/c.price*100)+")"}{!(c.cost>0)&&<div style={{fontSize:10,color:T.textMuted,fontWeight:400}}>solo con vaso</div>}</td>
                 </tr>
               );})}
             </tbody>
@@ -1908,15 +1934,16 @@ function Palomitas({sales,setSales,popCfg,setPopCfg,user,isAdmin}){
         ):(
           <>
             {POP_SIZES.map(k=>(
-              <div key={k} style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:8,marginBottom:8}}>
+              <div key={k} style={{display:"grid",gridTemplateColumns:"repeat(2,1fr)",gap:8,marginBottom:12,paddingBottom:12,borderBottom:`0.5px solid ${T.border}`}}>
                 <F label="Tamaño"><input value={cfgForm[k].name} onChange={e=>setCfgForm({...cfgForm,[k]:{...cfgForm[k],name:e.target.value}})}/></F>
                 <F label="Precio ($)"><input type="number" min="0" value={cfgForm[k].price} onChange={e=>setCfgForm({...cfgForm,[k]:{...cfgForm[k],price:e.target.value}})}/></F>
-                <F label="Costo ($)"><input type="number" min="0" step="0.01" value={cfgForm[k].cost} onChange={e=>setCfgForm({...cfgForm,[k]:{...cfgForm[k],cost:e.target.value}})}/></F>
+                <F label="Vaso / bolsita ($)"><input type="number" min="0" step="0.01" value={cfgForm[k].vaso} onChange={e=>setCfgForm({...cfgForm,[k]:{...cfgForm[k],vaso:e.target.value}})}/></F>
+                <F label="Insumos ($)"><input type="number" min="0" step="0.01" value={cfgForm[k].cost} onChange={e=>setCfgForm({...cfgForm,[k]:{...cfgForm[k],cost:e.target.value}})}/></F>
               </div>
             ))}
-            <p style={{margin:"0 0 10px",fontSize:11,color:T.textMuted}}>El costo es lo que te cuesta cada vaso (maíz, aceite, vaso, sal…). Los cambios aplican a ventas nuevas.</p>
+            <p style={{margin:"0 0 10px",fontSize:11,color:T.textMuted}}>Insumos = lo que se va en cada tamaño de maíz, aceite, sal, mantequilla… Los cambios aplican a ventas nuevas.</p>
             <div style={{display:"flex",gap:8}}>
-              <GoldBtn onClick={()=>{const n={};POP_SIZES.forEach(k=>{n[k]={name:cfgForm[k].name.trim()||INIT_POP[k].name,price:+cfgForm[k].price||0,cost:+cfgForm[k].cost||0};});setPopCfg(n);setShowCfg(false);}}>Guardar</GoldBtn>
+              <GoldBtn onClick={()=>{const n={};POP_SIZES.forEach(k=>{n[k]={name:cfgForm[k].name.trim()||INIT_POP[k].name,price:+cfgForm[k].price||0,cost:+cfgForm[k].cost||0,vaso:+cfgForm[k].vaso||0};});setPopCfg(n);setShowCfg(false);}}>Guardar</GoldBtn>
               <OutBtn onClick={()=>setShowCfg(false)}>Cancelar</OutBtn>
             </div>
           </>
@@ -2021,8 +2048,13 @@ function Dashboard_App({user,onLogout}){
       p=p.filter(x=>x.id!=="gom"&&x.id!=="pp12");
       p=p.map(x=>fix.has(x.id)?{...x,cat:"Miel"}:x);
       setProds(p);setPkgs(pk);setClients(c);setSales(s);setExpenses(e);setStockMoves(sm);setExtras(ex);
-      setPopCfg({...INIT_POP,...(pop||{})});
-      setFixed(Array.isArray(fx)?fx:INIT_FIXED);
+      const popM={};POP_SIZES.forEach(k=>{popM[k]={...INIT_POP[k],...((pop||{})[k]||{})};});
+      setPopCfg(popM);
+      // Fijos: guardado como {v,items}. Si viene de una versión anterior, se agregan los fijos nuevos
+      // por default que falten (sin tocar montos que ya editaron). Después se respetan tal cual.
+      const fxItems=Array.isArray(fx)?fx:(fx&&Array.isArray(fx.items)?fx.items:INIT_FIXED);
+      const fxVer=Array.isArray(fx)?1:(fx&&fx.v)||1;
+      setFixed(fxVer>=FIXED_VER?fxItems:[...fxItems,...INIT_FIXED.filter(d=>!fxItems.some(x=>x.id===d.id))]);
       setReady(true);
     })();
   },[]);
@@ -2035,7 +2067,7 @@ function Dashboard_App({user,onLogout}){
   useEffect(()=>{if(ready){const t=setTimeout(()=>save(SK.sm,stockMoves),800);return()=>clearTimeout(t);}},[stockMoves,ready]);
   useEffect(()=>{if(ready){const t=setTimeout(()=>save(SK.ex,extras),800);return()=>clearTimeout(t);}},[extras,ready]);
   useEffect(()=>{if(ready){const t=setTimeout(()=>save(SK.pop,popCfg),800);return()=>clearTimeout(t);}},[popCfg,ready]);
-  useEffect(()=>{if(ready){const t=setTimeout(()=>save(SK.fx,fixed),800);return()=>clearTimeout(t);}},[fixed,ready]);
+  useEffect(()=>{if(ready){const t=setTimeout(()=>save(SK.fx,{v:FIXED_VER,items:fixed}),800);return()=>clearTimeout(t);}},[fixed,ready]);
 
   if(!ready)return(
     <div style={{display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",padding:"3rem",gap:12,color:T.textSub}}>
@@ -2052,7 +2084,7 @@ function Dashboard_App({user,onLogout}){
   const logout=async()=>{
     if(leaving)return;
     setLeaving(true);
-    await Promise.all([save(SK.p,prods),save(SK.pk,pkgs),save(SK.c,clients),save(SK.s,sales),save(SK.e,expenses),save(SK.sm,stockMoves),save(SK.ex,extras),save(SK.pop,popCfg),save(SK.fx,fixed)]);
+    await Promise.all([save(SK.p,prods),save(SK.pk,pkgs),save(SK.c,clients),save(SK.s,sales),save(SK.e,expenses),save(SK.sm,stockMoves),save(SK.ex,extras),save(SK.pop,popCfg),save(SK.fx,{v:FIXED_VER,items:fixed})]);
     onLogout();
   };
 

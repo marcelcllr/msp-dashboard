@@ -27,7 +27,8 @@ Contexto para Claude Code. Léelo antes de tocar cualquier cosa.
 - Menú inferior fijo (`BottomNav`); lo que no cabe va en "Más". `NAV_MAIN` define qué va fijo por rol.
 
 ## Gastos fijos
-- `msp-fx4`: lista de fijos (default: Renta $7,859 mensual, Sueldo empleado $2,000 semanal).
+- `msp-fx4`: guardado como `{v, items}`. Defaults: Renta $7,859/mes, Sueldo empleado $2,000/semana, Repartidor fijo $1,000/semana, Plan celular $150/mes, Apartado aguinaldo $357.14/mes (15 días de sueldo ÷ 12). Al subir `FIXED_VER` se agregan una sola vez los defaults que falten, sin tocar los editados.
+- Luz, agua e internet los paga la plaza: no son gasto.
 - Al marcar "Ya se pagó" se crea un gasto normal con `fixedId` + `period` ("YYYY-MM" o lunes de la semana). Pendientes salen como aviso en Inicio.
 
 ## Correr local
@@ -45,7 +46,10 @@ Antes de hacer push SIEMPRE correr `npm run build` y confirmar que compila.
 - **Envíos**: "cobro al cliente" y "costo del repartidor" separados, con ganancia/pérdida en tiempo real.
 - **Utilidades Extra**: se suman a los totales por cuenta.
 - **Palomitas** (pestaña 🍿): POS rápido para el local. 3 tamaños (Pequeño $20 / Mediano $35 / Grande $50), precios y costos editables guardados en `msp-pop4`. Cada cobro se guarda como venta normal en `sales` con `tipo:"palomitas"` y `clientId:""`, así entra solo en Corte, Reparto y Dashboard. No toca inventario.
-- **Gastos del local**: categorías "Renta local", "Luz / agua / internet", "Sueldos", "Insumos palomitas".
+- **Gastos del local**: categorías en `EXP_CATS`; las de `FIXED_CATS` solo las ven los socios.
+- **Terminal Mercado Pago**: forma de pago "Terminal MP" (también como parte de un Mixto). Comisión `TERMINAL_FEE` = 3.5% (confirmar si MP cobra IVA encima). La comisión se guarda en `sale.comision` y se suma a `sale.cost`, así baja la utilidad en todos los reportes; en el Corte la tarjeta de Terminal resta la comisión.
+- **Palomitas**: costo por pieza = `vaso` ($5 los tres tamaños) + `cost` (insumos, pendiente).
+- **Envíos**: pendiente de rediseño. Hoy `sale.envio` (lo que paga el cliente) NO entra al total ni al corte, `costoEnvio` no tiene campo en pantalla y "mitad" es solo nota.
 - Equipo: 2 socios (Marcel, Gustavo) + 1 empleado usan la app.
 - **Reparto de utilidades**: vista semanal (principal) y mensual, split 33% Marcel / 33% Gustavo / 34% Reinversión MSP, con gráficas de barras.
 - **KPI**: tarjeta "Utilidad Neta del Mes" con borde verde/rojo.
