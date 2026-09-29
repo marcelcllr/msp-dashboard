@@ -170,6 +170,16 @@ const INIT_POP={s:{name:"Pequeño",price:20,cost:0,vaso:5},m:{name:"Mediano",pri
 const popUnitCost=c=>(+c.cost||0)+(+c.vaso||0);
 const PAY_METHODS=["Efectivo","SPIN Marcel","SPIN Gustavo","Terminal MP","Tercero","Mixto"];
 const PAY_METHODS_LABEL={"Efectivo":"💵 Efectivo","SPIN Marcel":"📱 SPIN Marcel","SPIN Gustavo":"📱 SPIN Gustavo","Terminal MP":"💳 Terminal MP","Tercero":"🤝 Tercero","Mixto":"🔀 Mixto"};
+// ── ENVÍOS ──
+// Cada viaje se le paga al repartidor por kilómetro. La cuota semanal de la plataforma va en gastos fijos.
+const ENVIO_TARIFA_KM=10;
+const ENVIO_PCTS=[["100","Paga todo"],["50","Paga la mitad"],["0","Gratis"],["otro","Otro monto"]];
+// Lo que se le paga al repartidor y lo que paga el cliente
+function envioCalc(km,costoOver,pct,otro){
+  const costo=costoOver!==""&&costoOver!=null?(+costoOver||0):(+km||0)*ENVIO_TARIFA_KM;
+  const cliente=pct==="otro"?(+otro||0):+(costo*(+pct||0)/100).toFixed(2);
+  return{costo,cliente,absorbe:costo-cliente};
+}
 // Comisión de Mercado Pago por cobro con terminal. Se descuenta de la utilidad de cada venta.
 const TERMINAL_FEE=0.035;
 // Cuánto de una venta pasó por la terminal (directo o la parte de un pago mixto)
@@ -675,6 +685,70 @@ function ProdSearch({prods,value,onChange}){
   );
 }
 
+// ── FORMULARIO DE ENVÍO (dentro de Nueva venta) ───────────────────────────────
+function EnvioForm({conEnvio,setConEnvio,envKm,setEnvKm,envCostoOver,setEnvCostoOver,envPct,setEnvPct,envOtro,setEnvOtro,envRep,setEnvRep,envDir,setEnvDir,envPagado,setEnvPagado,envPagadoCon,setEnvPagadoCon,isAdmin,repartidores}){
+  const ev=envioCalc(envKm,envCostoOver,envPct,envOtro);
+  const pill=(on,c)=>({border:`2px solid ${on?c:T.border}`,background:on?c+"18":"transparent",color:on?c:T.textSub,fontWeight:on?700:500,fontSize:12,minHeight:42,padding:"6px 4px",borderRadius:10});
+  return(
+    <div style={{borderTop:`1px solid ${T.goldBorder}`,paddingTop:12,marginTop:4,marginBottom:12}}>
+      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:6}}>
+        <button onClick={()=>setConEnvio(false)} style={pill(!conEnvio,T.textSub)}>🏪 Se lo lleva / sin envío</button>
+        <button onClick={()=>setConEnvio(true)} style={pill(conEnvio,T.client)}>🛵 Con envío</button>
+      </div>
+      {conEnvio&&(
+        <div style={{marginTop:10,padding:12,borderRadius:10,background:"rgba(40,96,176,0.05)",border:"1px solid rgba(40,96,176,0.2)",display:"flex",flexDirection:"column",gap:10}}>
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
+            <F label="Kilómetros">
+              <input type="number" min="0" step="0.1" value={envKm} onChange={e=>setEnvKm(e.target.value)} placeholder="Ej. 10"/>
+            </F>
+            <F label={"Repartidor cobra ($)"}>
+              <input type="number" min="0" value={envCostoOver} onChange={e=>setEnvCostoOver(e.target.value)} placeholder={envKm?String((+envKm||0)*ENVIO_TARIFA_KM):"$"+ENVIO_TARIFA_KM+" × km"}/>
+            </F>
+          </div>
+          <p style={{margin:"-4px 0 0",fontSize:11,color:T.textMuted}}>Se calcula solo a ${ENVIO_TARIFA_KM} por km. Escribe el monto solo si cobró distinto.</p>
+          <div>
+            <p style={{margin:"0 0 6px",fontSize:11,fontWeight:600,color:T.textSub}}>¿CUÁNTO PAGA EL CLIENTE DE ENVÍO?</p>
+            <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:4}}>
+              {ENVIO_PCTS.map(([v,l])=><button key={v} onClick={()=>setEnvPct(v)} style={pill(envPct===v,T.client)}>{l}</button>)}
+            </div>
+            {envPct==="otro"&&<input type="number" min="0" value={envOtro} onChange={e=>setEnvOtro(e.target.value)} placeholder="¿Cuánto paga el cliente?" style={{marginTop:6}}/>}
+          </div>
+          {ev.costo>0&&(
+            <div style={{padding:"10px 12px",borderRadius:8,background:T.bg,border:`1px solid ${T.border}`,fontSize:13,display:"flex",flexDirection:"column",gap:3}}>
+              <span>👤 Cliente paga: <strong style={{color:T.revenue}}>{$m(ev.cliente)}</strong></span>
+              <span>🛵 Repartidor cobra: <strong style={{color:T.cost}}>{$m(ev.costo)}</strong></span>
+              {isAdmin&&<span>{ev.absorbe>0?"📉 Absorbes: ":"📈 Te queda: "}<strong style={{color:ev.absorbe>0?T.expense:T.profit}}>{$m(Math.abs(ev.absorbe))}</strong></span>}
+            </div>
+          )}
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
+            <F label="Repartidor">
+              <input list="msp-repartidores" value={envRep} onChange={e=>setEnvRep(e.target.value)} placeholder="Nombre"/>
+              <datalist id="msp-repartidores">{repartidores.map(r=><option key={r} value={r}/>)}</datalist>
+            </F>
+            <F label="Colonia / dirección">
+              <input value={envDir} onChange={e=>setEnvDir(e.target.value)} placeholder="Opcional"/>
+            </F>
+          </div>
+          <div>
+            <p style={{margin:"0 0 6px",fontSize:11,fontWeight:600,color:T.textSub}}>¿YA SE LE PAGÓ AL REPARTIDOR?</p>
+            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:6}}>
+              <button onClick={()=>setEnvPagado("no")} style={pill(envPagado==="no",T.expense)}>⏳ No, después</button>
+              <button onClick={()=>setEnvPagado("si")} style={pill(envPagado==="si",T.profit)}>✓ Sí, ya se le pagó</button>
+            </div>
+            {envPagado==="si"&&(
+              <select value={envPagadoCon} onChange={e=>setEnvPagadoCon(e.target.value)} style={{marginTop:6}}>
+                <option value="Efectivo">💵 Se le pagó en efectivo (de la caja)</option>
+                <option value="SPIN Marcel">📱 Se le pagó con SPIN Marcel</option>
+                <option value="SPIN Gustavo">📱 Se le pagó con SPIN Gustavo</option>
+              </select>
+            )}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ── NUEVA VENTA ───────────────────────────────────────────────────────────────
 function NuevaVenta({prods,setProds,pkgs,clients,setClients,sales,setSales,user,isAdmin}){
   const[confirmDel,setConfirmDel]=useState(null);
@@ -689,10 +763,15 @@ function NuevaVenta({prods,setProds,pkgs,clients,setClients,sales,setSales,user,
   const[mixEfectivo,setMixEfectivo]=useState("");
   const[mixTransferencia,setMixTransferencia]=useState("");
   const[mixCuenta,setMixCuenta]=useState("SPIN Marcel");
-  const[costoEnvio,setCostoEnvio]=useState("");
-  const[envio,setEnvio]=useState("");
-  const[envioTipo,setEnvioTipo]=useState("ninguno");
-  const[envioDesc,setEnvioDesc]=useState("");
+  const[conEnvio,setConEnvio]=useState(false);
+  const[envKm,setEnvKm]=useState("");
+  const[envCostoOver,setEnvCostoOver]=useState("");
+  const[envPct,setEnvPct]=useState("100");
+  const[envOtro,setEnvOtro]=useState("");
+  const[envRep,setEnvRep]=useState("");
+  const[envDir,setEnvDir]=useState("");
+  const[envPagado,setEnvPagado]=useState("no");
+  const[envPagadoCon,setEnvPagadoCon]=useState("Efectivo");
   const[note,setNote]=useState("");
   const[err,setErr]=useState("");
   const[okMsg,setOkMsg]=useState("");
@@ -733,15 +812,21 @@ function NuevaVenta({prods,setProds,pkgs,clients,setClients,sales,setSales,user,
       items=valid.map(l=>({pid:l.pid,qty:+l.qty,su:l.su||"caja",price:getLP(l),std:getStd(l)}));
       bajoPrecio=items.some(it=>it.price<it.std);
     }
-    const envioNum=+envio||0;
-    const regaloC=envioTipo==="sobres"?(parseInt(envioDesc)||1)*SOBRE_COST:0;
-    // Comisión de la terminal: va dentro de cost para que baje la utilidad en todos los reportes
-    const comision=+(terminalAmt(payMethod,total,mixCuenta,mixTransferencia)*TERMINAL_FEE).toFixed(2);
-    const sale={id:uid(),date,clientId,pkgId:mode==="paquete"?pkgId:null,total,cost:cost+regaloC+comision,comision,desc,items,note,payMethod,
+    // Envío: el cliente paga "envio", al repartidor se le paga "costoEnvio".
+    // La diferencia (lo que absorbemos) va dentro de cost para que la utilidad sea real en todos los reportes.
+    const ev=conEnvio?envioCalc(envKm,envCostoOver,envPct,envOtro):{costo:0,cliente:0,absorbe:0};
+    if(conEnvio&&ev.costo<=0){setErr("Pon los kilómetros o lo que cobra el repartidor");return;}
+    // Comisión de la terminal (sobre productos + envío que pagó el cliente)
+    const comision=+(terminalAmt(payMethod,total+ev.cliente,mixCuenta,mixTransferencia)*TERMINAL_FEE).toFixed(2);
+    const envioFields=conEnvio?{conEnvio:true,envio:ev.cliente,costoEnvio:ev.costo,envioNeto:ev.absorbe,envioKm:+envKm||0,envioPct:envPct,
+      repartidor:envRep.trim(),envioDir:envDir.trim(),envioStatus:"pendiente",envioSalio:"",envioEntregado:"",
+      envioPagado:envPagado==="si",envioPagadoCon:envPagado==="si"?envPagadoCon:"",envioPagadoFecha:envPagado==="si"?date:""}
+      :{conEnvio:false,envio:0,costoEnvio:0,envioNeto:0};
+    const sale={id:uid(),date,clientId,pkgId:mode==="paquete"?pkgId:null,total,cost:cost+comision+ev.absorbe,comision,desc,items,note,payMethod,
       mixEfectivo:payMethod==="Mixto"?+mixEfectivo||0:0,
       mixTransferencia:payMethod==="Mixto"?+mixTransferencia||0:0,
       mixCuenta:payMethod==="Mixto"?mixCuenta:"",
-      envio:envioNum,costoEnvio:+costoEnvio||0,envioTipo,envioDesc,by:user?.name||"",bajoPrecio};
+      ...envioFields,by:user?.name||"",bajoPrecio};
     setSales([...sales,sale]);
     // deduct stock (suma todas las líneas del mismo producto: cajas y sobres por separado)
     setProds(prev=>prev.map(prod=>{
@@ -754,9 +839,9 @@ function NuevaVenta({prods,setProds,pkgs,clients,setClients,sales,setSales,user,
     setErr("");
     setPkgId("");setPkgQty(1);setPkgOver("");
     setLines([{pid:"",qty:1,price:"",su:"caja"}]);
-    setEnvio("");setEnvioTipo("ninguno");setEnvioDesc("");setNote("");
-    setPayMethod("Efectivo");setMixEfectivo("");setMixTransferencia("");setMixCuenta("SPIN Marcel");setCostoEnvio("");
-    setOkMsg("✓ Venta de "+$m(total)+" registrada");
+    setConEnvio(false);setEnvKm("");setEnvCostoOver("");setEnvPct("100");setEnvOtro("");setEnvRep("");setEnvDir("");setEnvPagado("no");setNote("");
+    setPayMethod("Efectivo");setMixEfectivo("");setMixTransferencia("");setMixCuenta("SPIN Marcel");
+    setOkMsg("✓ Venta de "+$m(total+ev.cliente)+" registrada"+(conEnvio?" · envío pendiente en 🛵 Envíos":""));
     setTimeout(()=>setOkMsg(""),3000);
   };
 
@@ -941,7 +1026,10 @@ function NuevaVenta({prods,setProds,pkgs,clients,setClients,sales,setSales,user,
           </div>
         )}
 
-        {/* PAGO Y ENVÍO */}
+        {/* ENVÍO */}
+        <EnvioForm {...{conEnvio,setConEnvio,envKm,setEnvKm,envCostoOver,setEnvCostoOver,envPct,setEnvPct,envOtro,setEnvOtro,envRep,setEnvRep,envDir,setEnvDir,envPagado,setEnvPagado,envPagadoCon,setEnvPagadoCon,isAdmin}} repartidores={[...new Set(sales.map(s=>s.repartidor).filter(Boolean))]}/>
+
+        {/* PAGO */}
         <div style={{borderTop:`1px solid ${T.goldBorder}`,paddingTop:12,marginTop:4,display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(140px,1fr))",gap:12}}>
           <F label="¿Cómo pagó?">
             <select value={payMethod} onChange={e=>setPayMethod(e.target.value)}>
@@ -982,23 +1070,10 @@ function NuevaVenta({prods,setProds,pkgs,clients,setClients,sales,setSales,user,
             </div>
           )}
 
-          <F label="Cobro de envío ($)">
-            <input type="number" min="0" value={envio} onChange={e=>setEnvio(e.target.value)} placeholder="0 = sin envío"/>
-          </F>
-          {+envio>0 && (
-            <F label="Descuento en envío">
-              <select value={envioTipo} onChange={e=>setEnvioTipo(e.target.value)}>
-                <option value="ninguno">Sin descuento</option>
-                <option value="mitad">Mitad de regreso</option>
-                <option value="sobres">Sobres de regalo</option>
-              </select>
-            </F>
-          )}
-          {+envio>0 && envioTipo!=="ninguno" && (
-            <F label={envioTipo==="mitad"?"Nota del descuento":"¿Qué sobres de regalo?"}>
-              <input value={envioDesc} onChange={e=>setEnvioDesc(e.target.value)} placeholder={envioTipo==="mitad"?"Ej. regresé $60":"Ej. 2 sobres BH"}/>
-            </F>
-          )}
+          <div style={{gridColumn:"1/-1",padding:"10px 12px",background:T.goldBg,borderRadius:8,fontSize:13,color:T.goldText,display:"flex",justifyContent:"space-between",flexWrap:"wrap",gap:6}}>
+            <span>Total a cobrar al cliente{conEnvio?" (con envío)":""}:</span>
+            <strong style={{fontSize:16}}>{$m((mode==="paquete"?pkgTotal:lineTotal)+(conEnvio?envioCalc(envKm,envCostoOver,envPct,envOtro).cliente:0))}</strong>
+          </div>
         </div>
 
         <div style={{display:"flex",gap:12,alignItems:"flex-end",marginTop:12}}>
@@ -1511,15 +1586,19 @@ function CorteCaja({sales,expenses,extras=[],setExtras,user}){
   const byMethod=PAY_METHODS.filter(m=>m!=="Mixto").map(m=>{
     const direct=fSales.filter(s=>s.payMethod===m);
     const ventasTotal=direct.reduce((a,s)=>a+s.total,0);
+    // Envío que pagó el cliente: entra a la misma cuenta que la venta (en Mixto ya viene dentro del desglose)
+    const envCobrado=direct.reduce((a,s)=>a+(s.envio||0),0);
+    // Pagos a repartidores hechos en este periodo desde esta cuenta
+    const repPagado=sales.filter(s=>s.envioPagado&&s.envioPagadoCon===m&&s.envioPagadoFecha>=range.start&&s.envioPagadoFecha<=range.end).reduce((a,s)=>a+(s.costoEnvio||0),0);
     const mixAmt=m==="Efectivo"?mixEfectivoTotal:m==="SPIN Marcel"?mixMarcelTotal:m==="SPIN Gustavo"?mixGustavoTotal:m==="Terminal MP"?mixSales.filter(s=>s.mixCuenta==="Terminal MP").reduce((a,s)=>a+(s.mixTransferencia||0),0):0;
     // Mercado Pago deposita ya descontada su comisión
     const comisionAmt=m==="Terminal MP"?fSales.reduce((a,s)=>a+(s.comision||0),0):0;
     const extraAmt=m==="Efectivo"?extraEfectivo:m==="SPIN Marcel"?extraMarcel:m==="SPIN Gustavo"?extraGustavo:0;
     const gastosDeEsta=fExp.filter(e=>(e.pagadoCon||"Efectivo")===m).reduce((a,e)=>a+e.amount,0);
-    const entradas=ventasTotal+mixAmt+extraAmt;
-    const neto=entradas-gastosDeEsta-comisionAmt;
+    const entradas=ventasTotal+envCobrado+mixAmt+extraAmt;
+    const neto=entradas-gastosDeEsta-comisionAmt-repPagado;
     const pc=PAY_CLR[m]||{};
-    return{method:m,ventasTotal,mixAmt,extraAmt,entradas,gastosDeEsta,comisionAmt,neto,count:direct.length,env:direct.reduce((a,s)=>a+(s.envio||0),0),bg:pc.bg,c:pc.c};
+    return{method:m,ventasTotal,envCobrado,repPagado,mixAmt,extraAmt,entradas,gastosDeEsta,comisionAmt,neto,count:direct.length,env:direct.reduce((a,s)=>a+(s.envio||0),0),bg:pc.bg,c:pc.c};
   });
   const DAYS=["Lunes","Martes","Miércoles","Jueves","Viernes","Sábado","Domingo"];
   const byDay=DAYS.map((d,i)=>{const dn=(i+1)%7;const ds=fSales.filter(s=>{const w=new Date(s.date+"T12:00:00").getDay();return w===dn||(i===6&&w===0);});return{day:d,total:ds.reduce((a,s)=>a+s.total,0),util:ds.reduce((a,s)=>a+s.total-s.cost,0),count:ds.length};});
@@ -1539,7 +1618,7 @@ function CorteCaja({sales,expenses,extras=[],setExtras,user}){
       </Card>
       <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(140px,1fr))",gap:10}}>
         <KCard icon="ti-trending-up" label="Ingresos" value={$m(rev)} color={T.revenue}/>
-        <KCard icon="ti-motorbike"   label="Envíos cobrados" value={$m(envTotal)} color={T.client}/>
+        <KCard icon="ti-motorbike"   label="Envíos cobrados" value={$m(envTotal)} sub={"Repartidores: "+$m(fSales.reduce((a,v)=>a+(v.costoEnvio||0),0))} color={T.client}/>
         <KCard icon="ti-wallet"      label="Gastos" value={$m(gastos)} color={T.expense}/>
         <KCard icon="ti-sparkles"    label="Utilidad neta" value={$m(utilNeta)} sub="ventas − costo − gastos + extras" color={utilNeta>=0?T.profit:T.expense}/>
       </div>
@@ -1554,8 +1633,9 @@ function CorteCaja({sales,expenses,extras=[],setExtras,user}){
               {bm.mixAmt>0&&<p style={{margin:"2px 0",fontSize:12,color:T.textSub}}>Mixto: <strong style={{color:bm.c||T.gold}}>+{$m(bm.mixAmt)}</strong></p>}
               {bm.extraAmt>0&&<p style={{margin:"2px 0",fontSize:12,color:T.textSub}}>Extra: <strong style={{color:T.profit}}>+{$m(bm.extraAmt)}</strong></p>}
               {bm.gastosDeEsta>0&&<p style={{margin:"2px 0",fontSize:12,color:T.textSub}}>Gastos: <strong style={{color:T.expense}}>−{$m(bm.gastosDeEsta)}</strong></p>}
+              {bm.envCobrado>0&&<p style={{margin:"2px 0",fontSize:12,color:T.textSub}}>Envíos cobrados: <strong style={{color:bm.c||T.gold}}>+{$m(bm.envCobrado)}</strong></p>}
+              {bm.repPagado>0&&<p style={{margin:"2px 0",fontSize:12,color:T.textSub}}>Pagado a repartidores: <strong style={{color:T.expense}}>−{$m(bm.repPagado)}</strong></p>}
               {bm.comisionAmt>0&&<p style={{margin:"2px 0",fontSize:12,color:T.textSub}}>Comisión MP: <strong style={{color:T.expense}}>−{$m(bm.comisionAmt)}</strong></p>}
-              {bm.env>0&&<p style={{margin:"2px 0",fontSize:11,color:T.textMuted}}>Envíos: {$m(bm.env)}</p>}
               <div style={{borderTop:`1px solid ${bm.c||T.gold}30`,marginTop:8,paddingTop:8}}>
                 <p style={{margin:0,fontSize:20,fontWeight:700,color:bm.neto>=0?T.profit:T.expense}}>{$m(bm.neto)}</p>
                 <p style={{margin:"2px 0 0",fontSize:10,color:T.textMuted}}>neto en esta cuenta</p>
@@ -1663,7 +1743,7 @@ function RepartoCard({data,label,sublabel}){
           <span style={{fontWeight:600,color:T.revenue}}>{$m(data.ingresos)}</span>
         </div>
         <div style={{display:"flex",justifyContent:"space-between",padding:"4px 0",fontSize:13}}>
-          <span style={{color:T.textSub}}>− Costo de productos y comisiones</span>
+          <span style={{color:T.textSub}}>− Costo de productos, comisiones y envíos absorbidos</span>
           <span style={{fontWeight:600,color:T.cost}}>−{$m(data.costo)}</span>
         </div>
         <div style={{display:"flex",justifyContent:"space-between",padding:"4px 0",fontSize:13}}>
@@ -1802,6 +1882,107 @@ function Reparto({sales,expenses,extras=[]}){
     </div>
   );
 }
+
+// ── ENVÍOS: seguimiento y pago a repartidores ─────────────────────────────────
+const horaAhora=()=>{const d=new Date();return String(d.getHours()).padStart(2,"0")+":"+String(d.getMinutes()).padStart(2,"0");};
+function Envios({sales,setSales,clients,isAdmin,user}){
+  const[period,setPeriod]=useState("dia");
+  const[refDate,setRefDate]=useState(today());
+  const[payCon,setPayCon]=useState({});
+  const cuentasPago=isAdmin?["Efectivo","SPIN Marcel","SPIN Gustavo"]:["Efectivo"];
+  const range=period==="dia"?{start:refDate,end:refDate}:period==="semana"?(()=>{const st=weekStartOf(refDate);const e=new Date(st+"T12:00:00");e.setDate(e.getDate()+6);return{start:st,end:ymd(e)};})():{start:refDate.slice(0,7)+"-01",end:refDate.slice(0,7)+"-31"};
+  const envAll=sales.filter(s=>s.conEnvio);
+  const env=envAll.filter(s=>s.date>=range.start&&s.date<=range.end).sort((a,b)=>b.date.localeCompare(a.date));
+  const pend=envAll.filter(s=>!s.envioPagado);
+  const upd=(id,patch)=>setSales(prev=>prev.map(s=>s.id===id?{...s,...patch}:s));
+  const pagar=(ids,con)=>{const set=new Set(ids);setSales(prev=>prev.map(s=>set.has(s.id)?{...s,envioPagado:true,envioPagadoCon:con,envioPagadoFecha:today(),envioPagadoPor:user?.name||""}:s));};
+  const porRep={};pend.forEach(s=>{const k=s.repartidor||"Sin nombre";(porRep[k]=porRep[k]||[]).push(s);});
+  const sum=(arr,f)=>arr.reduce((a,s)=>a+(+s[f]||0),0);
+  const cobrado=sum(env,"envio"),costo=sum(env,"costoEnvio"),absorbido=costo-cobrado;
+  const ST={pendiente:{l:"⏳ Por salir",c:"#B86010"},salio:{l:"🛵 En camino",c:T.client},entregado:{l:"✓ Entregado",c:T.profit}};
+  return(
+    <div style={{display:"flex",flexDirection:"column",gap:"1.25rem"}}>
+      {pend.length>0&&(
+        <Card style={{borderColor:T.expense,borderWidth:1}}>
+          <STitle right={<span style={{fontWeight:700,color:T.expense}}>{$m(sum(pend,"costoEnvio"))}</span>}>Por pagar a repartidores</STitle>
+          <div style={{display:"flex",flexDirection:"column",gap:8}}>
+            {Object.entries(porRep).map(([rep,arr])=>(
+              <div key={rep} style={{padding:10,borderRadius:10,border:"1px solid rgba(192,64,64,0.25)",background:"rgba(192,64,64,0.04)"}}>
+                <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+                  <div><p style={{margin:0,fontWeight:700,fontSize:14}}>🛵 {rep}</p><p style={{margin:0,fontSize:11,color:T.textMuted}}>{arr.length} viaje{arr.length!==1?"s":""} · {sum(arr,"envioKm")} km</p></div>
+                  <span style={{fontWeight:700,fontSize:16,color:T.expense}}>{$m(sum(arr,"costoEnvio"))}</span>
+                </div>
+                <div style={{display:"flex",gap:6,marginTop:8}}>
+                  <select value={payCon[rep]||"Efectivo"} onChange={e=>setPayCon({...payCon,[rep]:e.target.value})} style={{flex:1}}>
+                    {cuentasPago.map(c=><option key={c} value={c}>{PAY_METHODS_LABEL[c]}</option>)}
+                  </select>
+                  <GoldBtn onClick={()=>pagar(arr.map(s=>s.id),payCon[rep]||"Efectivo")} style={{minHeight:44}}>✓ Pagar todo</GoldBtn>
+                </div>
+              </div>
+            ))}
+          </div>
+        </Card>
+      )}
+
+      <Card>
+        <div style={{display:"flex",gap:8,alignItems:"center",flexWrap:"wrap"}}>
+          {[["dia","Día"],["semana","Semana"],["mes","Mes"]].map(([v,l])=>(
+            <button key={v} onClick={()=>setPeriod(v)} style={{padding:"6px 14px",borderRadius:20,border:`1px solid ${period===v?T.client:T.border}`,background:period===v?T.client:"transparent",color:period===v?"#fff":T.textSub,fontSize:12,fontWeight:period===v?600:400}}>{l}</button>
+          ))}
+          <input type="date" value={refDate} onChange={e=>setRefDate(e.target.value)} style={{flex:1,minWidth:140}}/>
+        </div>
+      </Card>
+
+      {isAdmin&&(
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
+          <KCard icon="ti-motorbike" label="Envíos" value={env.length} sub={sum(env,"envioKm")+" km en total"} color={T.client}/>
+          <KCard icon="ti-cash" label="Cobrado a clientes" value={$m(cobrado)} color={T.revenue}/>
+          <KCard icon="ti-receipt" label="Costo repartidores" value={$m(costo)} color={T.cost}/>
+          <KCard icon="ti-trending-down" label={absorbido>=0?"Absorbido por ustedes":"Ganancia en envíos"} value={$m(Math.abs(absorbido))} sub={costo>0?pct(Math.max(0,absorbido)/costo*100)+" del costo":""} color={absorbido>0?T.expense:T.profit}/>
+        </div>
+      )}
+
+      <Card>
+        <STitle>Envíos ({env.length})</STitle>
+        {env.length===0?<Empty icon="ti-motorbike" text="Sin envíos en este periodo"/>:(
+          <div style={{display:"flex",flexDirection:"column",gap:8}}>
+            {env.map(s=>{
+              const cl=clients.find(c=>c.id===s.clientId);const st=ST[s.envioStatus||"pendiente"]||ST.pendiente;
+              return(
+                <div key={s.id} style={{padding:12,borderRadius:10,border:`1px solid ${T.border}`,background:T.bgRow}}>
+                  <div style={{display:"flex",justifyContent:"space-between",gap:8}}>
+                    <div style={{minWidth:0}}>
+                      <p style={{margin:0,fontWeight:700,fontSize:14}}>{cl?.name||"Cliente"}</p>
+                      <p style={{margin:0,fontSize:11,color:T.textMuted}}>{s.date}{s.envioDir?" · "+s.envioDir:""}</p>
+                      <p style={{margin:"2px 0 0",fontSize:12,color:T.textSub}}>🛵 {s.repartidor||"Sin nombre"} · {s.envioKm||0} km</p>
+                    </div>
+                    <Chip label={st.l} bg={st.c+"18"} color={st.c}/>
+                  </div>
+                  <div style={{display:"flex",gap:12,flexWrap:"wrap",marginTop:8,fontSize:12}}>
+                    <span>Cliente pagó: <strong style={{color:T.revenue}}>{$m(s.envio||0)}</strong></span>
+                    <span>Repartidor: <strong style={{color:T.cost}}>{$m(s.costoEnvio||0)}</strong></span>
+                    {isAdmin&&(s.envioNeto||0)>0&&<span>Absorbes: <strong style={{color:T.expense}}>{$m(s.envioNeto)}</strong></span>}
+                  </div>
+                  <div style={{fontSize:11,color:T.textMuted,marginTop:4}}>
+                    {s.envioSalio&&<span>Salió {s.envioSalio} </span>}{s.envioEntregado&&<span>· Entregado {s.envioEntregado} </span>}
+                    <span>· {s.envioPagado?"✓ Repartidor pagado"+(s.envioPagadoCon?" ("+s.envioPagadoCon+")":""):"⏳ Falta pagar al repartidor"}</span>
+                  </div>
+                  <div style={{display:"flex",gap:6,marginTop:8}}>
+                    {(s.envioStatus||"pendiente")==="pendiente"&&<GoldBtn onClick={()=>upd(s.id,{envioStatus:"salio",envioSalio:horaAhora()})} style={{flex:1,minHeight:40,background:T.client}}>🛵 Ya salió</GoldBtn>}
+                    {s.envioStatus==="salio"&&<GoldBtn onClick={()=>upd(s.id,{envioStatus:"entregado",envioEntregado:horaAhora()})} style={{flex:1,minHeight:40,background:T.profit}}>✓ Entregado</GoldBtn>}
+                    {!s.envioPagado&&<OutBtn onClick={()=>pagar([s.id],"Efectivo")} style={{flex:1,minHeight:40}}>💵 Pagarle en efectivo</OutBtn>}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </Card>
+      <p style={{margin:0,fontSize:11,color:T.textMuted,textAlign:"center"}}>La cuota semanal de la plataforma de repartidores está en Gastos → Gastos fijos.</p>
+    </div>
+  );
+}
+
 
 // ── PALOMITAS (POS rápido) ────────────────────────────────────────────────────
 function Palomitas({sales,setSales,popCfg,setPopCfg,user,isAdmin}){
@@ -1960,6 +2141,7 @@ const TABS=[
   {k:"venta",l:"Nueva venta",   s:"Vender",  icon:"ti-shopping-cart", color:T.profit},
   {k:"pop",  l:"Palomitas",     s:"Palomitas",e:"🍿",                 color:T.revenue},
   {k:"corte",l:"Corte de caja", s:"Caja",    icon:"ti-report-money",  color:T.profit,  admin:true},
+  {k:"envios",l:"Envíos",       s:"Envíos",  icon:"ti-motorbike",     color:T.client},
   {k:"inv",  l:"Inventario",    s:"Inventario",icon:"ti-package",     color:T.client},
   {k:"gasto",l:"Gastos",        s:"Gastos",  icon:"ti-wallet",        color:T.expense},
   {k:"cli",  l:"Clientes",      s:"Clientes",icon:"ti-users",         color:T.client},
@@ -2116,6 +2298,7 @@ function Dashboard_App({user,onLogout}){
       {cur.k==="venta" && <NuevaVenta {...props}/>}
       {cur.k==="pop"   && <Palomitas sales={sales} setSales={setSales} popCfg={popCfg} setPopCfg={setPopCfg} user={user} isAdmin={isAdmin}/>}
       {cur.k==="gasto" && <Gastos     {...props}/>}
+      {cur.k==="envios"&& <Envios     {...props}/>}
       {cur.k==="inv"   && <Inventario {...props}/>}
       {cur.k==="corte" && can("corte") && <CorteCaja  sales={sales} expenses={expenses} extras={extras} setExtras={setExtras} user={user}/>}
       {cur.k==="reparto" && can("reparto") && <Reparto sales={sales} expenses={expenses} extras={extras}/>}

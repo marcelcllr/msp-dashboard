@@ -49,7 +49,12 @@ Antes de hacer push SIEMPRE correr `npm run build` y confirmar que compila.
 - **Gastos del local**: categorías en `EXP_CATS`; las de `FIXED_CATS` solo las ven los socios.
 - **Terminal Mercado Pago**: forma de pago "Terminal MP" (también como parte de un Mixto). Comisión `TERMINAL_FEE` = 3.5% (confirmar si MP cobra IVA encima). La comisión se guarda en `sale.comision` y se suma a `sale.cost`, así baja la utilidad en todos los reportes; en el Corte la tarjeta de Terminal resta la comisión.
 - **Palomitas**: costo por pieza = `vaso` ($5 los tres tamaños) + `cost` (insumos, pendiente).
-- **Envíos**: pendiente de rediseño. Hoy `sale.envio` (lo que paga el cliente) NO entra al total ni al corte, `costoEnvio` no tiene campo en pantalla y "mitad" es solo nota.
+- **Envíos** (`EnvioForm` en Nueva venta + pestaña `Envios`):
+  - Dos costos: cuota de la plataforma $1,000/semana (gasto fijo "Repartidor fijo") + cada viaje se le paga al repartidor a `ENVIO_TARIFA_KM` = $10/km.
+  - Venta con envío guarda: `conEnvio`, `envio` (lo que paga el cliente), `costoEnvio` (lo que cobra el repartidor), `envioNeto` = costo − cliente (lo que absorbemos, va DENTRO de `cost`), `envioKm`, `envioPct` (100/50/0/otro), `repartidor`, `envioDir`, `envioStatus` (pendiente/salio/entregado + horas), `envioPagado`, `envioPagadoCon`, `envioPagadoFecha`.
+  - `sale.total` sigue siendo solo productos. En el Corte, `envio` entra a la cuenta de la venta (en Mixto ya viene dentro del desglose) y el pago al repartidor sale de `envioPagadoCon` en la fecha `envioPagadoFecha`. El pago al repartidor NO se registra como gasto (ya está en `cost`): así no se cuenta doble.
+  - Pendiente de confirmar con Marcel: quién recibe el dinero del cliente y cuándo se paga cada viaje. Hoy: cada viaje queda "por pagar" hasta que se marca.
+  - Regalos (sobres): se registran como línea de producto con precio $0 (descuenta stock y usa el costSobre real).
 - Equipo: 2 socios (Marcel, Gustavo) + 1 empleado usan la app.
 - **Reparto de utilidades**: vista semanal (principal) y mensual, split 33% Marcel / 33% Gustavo / 34% Reinversión MSP, con gráficas de barras.
 - **KPI**: tarjeta "Utilidad Neta del Mes" con borde verde/rojo.
