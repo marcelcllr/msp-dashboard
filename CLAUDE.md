@@ -47,6 +47,7 @@ Antes de hacer push SIEMPRE correr `npm run build` y confirmar que compila.
 - **Utilidades Extra**: se suman a los totales por cuenta.
 - **Palomitas** (pestaña 🍿): POS rápido para el local. 3 tamaños (Pequeño $20 / Mediano $35 / Grande $50), precios y costos editables guardados en `msp-pop4`. Cada cobro se guarda como venta normal en `sales` con `tipo:"palomitas"` y `clientId:""`, así entra solo en Corte, Reparto y Dashboard. No toca inventario.
 - **Gastos del local**: categorías en `EXP_CATS`; las de `FIXED_CATS` solo las ven los socios.
+- **Cuentas del negocio** (`CUENTAS`): Efectivo, SPIN Marcel, SPIN Gustavo y Transferencia MP (cuenta Mercado Pago, sin comisión). Todas las listas de "con qué se pagó" usan `CUENTAS`/`CUENTA_LABEL`. En el Corte, Transferencia MP + Terminal MP (neto de comisión) = lo que entró a Mercado Pago.
 - **Terminal Mercado Pago**: forma de pago "Terminal MP" (también como parte de un Mixto). Comisión `TERMINAL_FEE` = 3.5% (confirmar si MP cobra IVA encima). La comisión se guarda en `sale.comision` y se suma a `sale.cost`, así baja la utilidad en todos los reportes; en el Corte la tarjeta de Terminal resta la comisión.
 - **Palomitas**: costo por pieza = `vaso` ($5 los tres tamaños) + `cost` (insumos, pendiente).
 - **Envíos** (`EnvioForm` en Nueva venta + pestaña `Envios`):

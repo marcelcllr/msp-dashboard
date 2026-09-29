@@ -175,8 +175,12 @@ const POP_SIZES=["s","m","l"];
 // cost = insumos (maíz, aceite, sal…) · vaso = bolsita/vaso donde se sirve
 const INIT_POP={s:{name:"Pequeño",price:20,cost:3,vaso:5},m:{name:"Mediano",price:35,cost:4,vaso:5},l:{name:"Grande",price:50,cost:6,vaso:5}};
 const popUnitCost=c=>(+c.cost||0)+(+c.vaso||0);
-const PAY_METHODS=["Efectivo","SPIN Marcel","SPIN Gustavo","Terminal MP","Tercero","Mixto"];
-const PAY_METHODS_LABEL={"Efectivo":"💵 Efectivo","SPIN Marcel":"📱 SPIN Marcel","SPIN Gustavo":"📱 SPIN Gustavo","Terminal MP":"💳 Terminal MP","Tercero":"🤝 Tercero","Mixto":"🔀 Mixto"};
+const PAY_METHODS=["Efectivo","SPIN Marcel","SPIN Gustavo","Transferencia MP","Terminal MP","Tercero","Mixto"];
+// Cuentas de dinero del negocio (de dónde se paga un gasto, un fijo o a un repartidor).
+// "Transferencia MP" = la cuenta de Mercado Pago (ahí también cae lo de la terminal).
+const CUENTAS=["Efectivo","SPIN Marcel","SPIN Gustavo","Transferencia MP"];
+const CUENTA_LABEL={"Efectivo":"💵 Efectivo","SPIN Marcel":"📱 SPIN Marcel","SPIN Gustavo":"📱 SPIN Gustavo","Transferencia MP":"🏦 Mercado Pago"};
+const PAY_METHODS_LABEL={"Efectivo":"💵 Efectivo","SPIN Marcel":"📱 SPIN Marcel","SPIN Gustavo":"📱 SPIN Gustavo","Transferencia MP":"🏦 Transferencia Mercado Pago","Terminal MP":"💳 Terminal MP","Tercero":"🤝 Tercero","Mixto":"🔀 Mixto"};
 // ── ENVÍOS ──
 // Cada viaje se le paga al repartidor por kilómetro. La cuota semanal de la plataforma va en gastos fijos.
 const ENVIO_TARIFA_KM=10;
@@ -191,7 +195,7 @@ function envioCalc(km,costoOver,pct,otro){
 const TERMINAL_FEE=0.035;
 // Cuánto de una venta pasó por la terminal (directo o la parte de un pago mixto)
 const terminalAmt=(payMethod,total,mixCuenta,mixTransferencia)=>payMethod==="Terminal MP"?total:(payMethod==="Mixto"&&mixCuenta==="Terminal MP"?(+mixTransferencia||0):0);
-const PAY_CLR={"Efectivo":{bg:"rgba(26,140,90,0.12)",c:"#1A8C5A"},"SPIN Marcel":{bg:"rgba(196,150,42,0.12)",c:"#8B6716"},"SPIN Gustavo":{bg:"rgba(112,56,208,0.12)",c:"#7038D0"},"Terminal MP":{bg:"rgba(0,158,227,0.12)",c:"#0077B6"},"Tercero":{bg:"rgba(40,96,176,0.12)",c:"#2860B0"},"Mixto":{bg:"rgba(100,100,100,0.1)",c:"#555555"}};
+const PAY_CLR={"Efectivo":{bg:"rgba(26,140,90,0.12)",c:"#1A8C5A"},"SPIN Marcel":{bg:"rgba(196,150,42,0.12)",c:"#8B6716"},"SPIN Gustavo":{bg:"rgba(112,56,208,0.12)",c:"#7038D0"},"Transferencia MP":{bg:"rgba(0,158,227,0.10)",c:"#005F8F"},"Terminal MP":{bg:"rgba(0,158,227,0.12)",c:"#0077B6"},"Tercero":{bg:"rgba(40,96,176,0.12)",c:"#2860B0"},"Mixto":{bg:"rgba(100,100,100,0.1)",c:"#555555"}};
 
 // ── THEME ─────────────────────────────────────────────────────────────────────
 const T={
@@ -792,9 +796,7 @@ function EnvioForm({conEnvio,setConEnvio,envKm,setEnvKm,envCostoOver,setEnvCosto
             </div>
             {envPagado==="si"&&(
               <select value={envPagadoCon} onChange={e=>setEnvPagadoCon(e.target.value)} style={{marginTop:6}}>
-                <option value="Efectivo">💵 Se le pagó en efectivo (de la caja)</option>
-                <option value="SPIN Marcel">📱 Se le pagó con SPIN Marcel</option>
-                <option value="SPIN Gustavo">📱 Se le pagó con SPIN Gustavo</option>
+                {CUENTAS.map(c=><option key={c} value={c}>{c==="Efectivo"?"💵 Se le pagó en efectivo (de la caja)":"Se le pagó con "+CUENTA_LABEL[c]}</option>)}
               </select>
             )}
           </div>
@@ -1126,8 +1128,9 @@ function NuevaVenta({prods,setProds,pkgs,clients,setClients,sales,setSales,user,
                 </F>
                 <F label="📱 ¿El resto a dónde se pagó?">
                   <select value={mixCuenta} onChange={e=>setMixCuenta(e.target.value)}>
-                    <option value="SPIN Marcel">SPIN Marcel</option>
-                    <option value="SPIN Gustavo">SPIN Gustavo</option>
+                    <option value="SPIN Marcel">📱 SPIN Marcel</option>
+                    <option value="SPIN Gustavo">📱 SPIN Gustavo</option>
+                    <option value="Transferencia MP">🏦 Transferencia Mercado Pago</option>
                     <option value="Terminal MP">💳 Terminal Mercado Pago</option>
                   </select>
                 </F>
@@ -1257,9 +1260,7 @@ function GastosFijos({fixed,setFixed,expenses,setExpenses,user}){
                 {!paid&&!antes&&(
                   <div style={{display:"flex",gap:8,marginTop:10}}>
                     <select value={payWith[f.id]||"Efectivo"} onChange={e=>setPayWith({...payWith,[f.id]:e.target.value})} style={{flex:1}}>
-                      <option value="Efectivo">💵 Efectivo</option>
-                      <option value="SPIN Marcel">📱 SPIN Marcel</option>
-                      <option value="SPIN Gustavo">📱 SPIN Gustavo</option>
+                      {CUENTAS.map(c=><option key={c} value={c}>{CUENTA_LABEL[c]}</option>)}
                     </select>
                     <GoldBtn onClick={()=>pagar(f)} style={{minHeight:44}}>✓ Ya se pagó</GoldBtn>
                   </div>
@@ -1322,9 +1323,7 @@ function Gastos({expenses,setExpenses,user,isAdmin,fixed,setFixed}){
           <F label="Descripción"><input value={form.desc} onChange={e=>setForm({...form,desc:e.target.value})} placeholder="Detalle del gasto"/></F>
           <F label="¿Con qué se pagó?">
             <select value={form.pagadoCon||"Efectivo"} onChange={e=>setForm({...form,pagadoCon:e.target.value})}>
-              <option value="Efectivo">💵 Efectivo</option>
-              <option value="SPIN Marcel">📱 SPIN Marcel</option>
-              <option value="SPIN Gustavo">📱 SPIN Gustavo</option>
+              {CUENTAS.map(c=><option key={c} value={c}>{CUENTA_LABEL[c]}</option>)}
             </select>
           </F>
         </div>
@@ -1670,10 +1669,10 @@ function CorteCaja({sales,expenses,extras=[],setExtras,user}){
     const envCobrado=direct.reduce((a,s)=>a+(s.envio||0),0);
     // Pagos a repartidores hechos en este periodo desde esta cuenta
     const repPagado=sales.filter(s=>s.envioPagado&&s.envioPagadoCon===m&&s.envioPagadoFecha>=range.start&&s.envioPagadoFecha<=range.end).reduce((a,s)=>a+(s.costoEnvio||0),0);
-    const mixAmt=m==="Efectivo"?mixEfectivoTotal:m==="SPIN Marcel"?mixMarcelTotal:m==="SPIN Gustavo"?mixGustavoTotal:m==="Terminal MP"?mixSales.filter(s=>s.mixCuenta==="Terminal MP").reduce((a,s)=>a+(s.mixTransferencia||0),0):0;
+    const mixAmt=m==="Efectivo"?mixEfectivoTotal:mixSales.filter(s=>s.mixCuenta===m).reduce((a,s)=>a+(s.mixTransferencia||0),0);
     // Mercado Pago deposita ya descontada su comisión
     const comisionAmt=m==="Terminal MP"?fSales.reduce((a,s)=>a+(s.comision||0),0):0;
-    const extraAmt=m==="Efectivo"?extraEfectivo:m==="SPIN Marcel"?extraMarcel:m==="SPIN Gustavo"?extraGustavo:0;
+    const extraAmt=fExtrasP.filter(x=>(x.via||"Efectivo")===m).reduce((a,x)=>a+x.amount,0);
     const gastosDeEsta=fExp.filter(e=>(e.pagadoCon||"Efectivo")===m).reduce((a,e)=>a+e.amount,0);
     const entradas=ventasTotal+envCobrado+mixAmt+extraAmt;
     const neto=entradas-gastosDeEsta-comisionAmt-repPagado;
@@ -1726,7 +1725,7 @@ function CorteCaja({sales,expenses,extras=[],setExtras,user}){
         <div style={{marginTop:12,padding:"10px 14px",background:T.goldBg,borderRadius:8,fontSize:12,color:T.goldText}}>
           {(()=>{const x=fSales.filter(s=>s.envioContra&&!s.envioDineroRecibido).reduce((a,s)=>a+(s.envioDebe||0),0);
             return x>0?<div style={{marginBottom:6,color:T.expense,fontWeight:600}}>⚠ De tu efectivo, {$m(x)} todavía lo traen los repartidores (ve a 🛵 Envíos).</div>:null;})()}
-          🛡️ <strong>Verifica:</strong> Efectivo debe estar en caja física · SPIN Marcel debe coincidir con la app de Marcel · SPIN Gustavo con la de Gustavo · Terminal MP con lo que te depositó Mercado Pago
+          🛡️ <strong>Verifica:</strong> Efectivo debe estar en caja física · SPIN Marcel debe coincidir con la app de Marcel · SPIN Gustavo con la de Gustavo · Transferencia MP + Terminal MP (ya sin comisión) = lo que entró a tu Mercado Pago
         </div>
       </Card>
       {period==="semana" && (
@@ -1769,9 +1768,7 @@ function CorteCaja({sales,expenses,extras=[],setExtras,user}){
           </F>
           <F label="¿Cómo llegó el dinero?">
             <select value={exForm.via||"Efectivo"} onChange={e=>setExForm({...exForm,via:e.target.value})}>
-              <option value="Efectivo">💵 Efectivo</option>
-              <option value="SPIN Marcel">📱 SPIN Marcel</option>
-              <option value="SPIN Gustavo">📱 SPIN Gustavo</option>
+              {CUENTAS.map(c=><option key={c} value={c}>{CUENTA_LABEL[c]}</option>)}
             </select>
           </F>
           <F label="Descripción (opcional)"><input value={exForm.desc} onChange={e=>setExForm({...exForm,desc:e.target.value})} placeholder="Ej. comisión por venta de Andrés…"/></F>
@@ -1971,7 +1968,7 @@ function Envios({sales,setSales,clients,isAdmin,user}){
   const[period,setPeriod]=useState("dia");
   const[refDate,setRefDate]=useState(today());
   const[payCon,setPayCon]=useState({});
-  const cuentasPago=isAdmin?["Efectivo","SPIN Marcel","SPIN Gustavo"]:["Efectivo"];
+  const cuentasPago=isAdmin?CUENTAS:["Efectivo"];
   const range=period==="dia"?{start:refDate,end:refDate}:period==="semana"?(()=>{const st=weekStartOf(refDate);const e=new Date(st+"T12:00:00");e.setDate(e.getDate()+6);return{start:st,end:ymd(e)};})():{start:refDate.slice(0,7)+"-01",end:refDate.slice(0,7)+"-31"};
   const envAll=sales.filter(s=>s.conEnvio);
   const env=envAll.filter(s=>s.date>=range.start&&s.date<=range.end).sort((a,b)=>b.date.localeCompare(a.date));
@@ -2017,7 +2014,7 @@ function Envios({sales,setSales,clients,isAdmin,user}){
                 </div>
                 <div style={{display:"flex",gap:6,marginTop:8}}>
                   <select value={payCon[rep]||"Efectivo"} onChange={e=>setPayCon({...payCon,[rep]:e.target.value})} style={{flex:1}}>
-                    {cuentasPago.map(c=><option key={c} value={c}>{PAY_METHODS_LABEL[c]}</option>)}
+                    {cuentasPago.map(c=><option key={c} value={c}>{CUENTA_LABEL[c]}</option>)}
                   </select>
                   <GoldBtn onClick={()=>pagar(arr.map(s=>s.id),payCon[rep]||"Efectivo")} style={{minHeight:44}}>✓ Pagar todo</GoldBtn>
                 </div>
@@ -2152,7 +2149,7 @@ function Palomitas({sales,setSales,popCfg,setPopCfg,user,isAdmin}){
 
         <p style={{margin:"16px 0 6px",fontSize:11,fontWeight:600,color:T.textSub,letterSpacing:"0.04em"}}>¿CÓMO PAGÓ?</p>
         <div style={{display:"grid",gridTemplateColumns:"repeat(2,1fr)",gap:6}}>
-          {["Efectivo","Terminal MP","SPIN Marcel","SPIN Gustavo"].map(m=>{
+          {["Efectivo","Terminal MP","SPIN Marcel","SPIN Gustavo","Transferencia MP"].map(m=>{
             const on=pay===m;const pc=PAY_CLR[m];
             return <button key={m} onClick={()=>setPay(m)} style={{border:`2px solid ${on?pc.c:T.border}`,background:on?pc.bg:"transparent",color:on?pc.c:T.textSub,fontWeight:on?700:500,fontSize:12,minHeight:44,padding:"6px 4px"}}>{PAY_METHODS_LABEL[m]}</button>;
           })}
