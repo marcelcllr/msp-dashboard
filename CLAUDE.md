@@ -20,7 +20,8 @@ Contexto para Claude Code. Léelo antes de tocar cualquier cosa.
 
 ## Usuarios y permisos
 - `USERS` en App.jsx: Marcel y Gustavo = `admin`, empleado = `staff`. Sesión en `sessionStorage` (`msp_user`).
-- Staff solo ve: Nueva venta, Palomitas, Inventario, Gastos, Clientes. No ve Inicio, Corte, Reparto, Productos (costos) ni Paquetes.
+- Staff ve: Vender, Palomitas, Envíos, Inventario, Cierre (+ Gastos y Clientes en "Más"). No ve Inicio, Corte, Reparto, Productos (costos) ni Paquetes.
+- Staff NO ve cantidades de inventario del sistema (para que el conteo del Cierre sea a ciegas): en Inventario solo tiene "Registrar entrada" y "Abrir caja". Tampoco puede cambiar la fecha de ventas ni de gastos.
 - Dentro de las pantallas, staff NO ve utilidad/margen/costos, no puede borrar ventas, gastos, movimientos ni clientes, no pone precios especiales, no ve ni registra gastos fijos (`FIXED_CATS`), solo ve sus propios gastos y las ventas de hoy.
 - Todo registro nuevo guarda `by` (quién lo hizo). Las ventas guardan `bajoPrecio` si se cobró debajo del precio de lista/cliente.
 - OJO: es control de pantalla, no seguridad real. La llave de Supabase es pública y las contraseñas `VITE_*` van dentro del JS. Seguridad real = Supabase Auth + RLS (pendiente).
@@ -31,12 +32,26 @@ Contexto para Claude Code. Léelo antes de tocar cualquier cosa.
 - Luz, agua e internet los paga la plaza: no son gasto.
 - Al marcar "Ya se pagó" se crea un gasto normal con `fixedId` + `period` ("YYYY-MM" o el día que empieza su semana de cobro). Las semanas de cobro son bloques de 7 días desde `INICIO_OPERACION` (1–7 oct, 8–14 oct…), no lunes. Antes del arranque no hay pendientes ni se puede pagar. Pendientes salen como aviso en Inicio.
 
+## Cierre del día (`CierreDia`, key `msp-ci4`)
+- Lo hace el empleado después de las 7:30 pm. Cuenta efectivo por billetes (`DENOMS`) + monedas y TODO el inventario (`contables()`: productos cajas/sobres o piezas + vasos de palomitas) a ciegas.
+- Esperado = `FONDO_CAJA` ($500) + efectivo que pasa por la caja (`efectivoEsperado`): ventas/envíos/mixtos en efectivo − gastos con `deCaja:true` − pagos a repartidores en efectivo − contra entrega que el repartidor aún no entrega + contra entrega de días anteriores entregada hoy. Gastos que paga un socio (`deCaja:false`, default para socios y siempre en fijos) y utilidades extra NO cuentan.
+- Empleado ve solo: cuánto contó y cuánto entregar al socio (contado − fondo). Socios ven esperado, diferencia, inventario que no cuadró (valor a precio y a costo), y pueden: marcar revisado, "Ajustar inventario al conteo" (crea movimientos `type:"ajuste"`), o reabrir el día (borra el cierre).
+- Día cerrado = no se pueden registrar ventas ni palomitas de esa fecha (prop `cerrados`). Inicio avisa si falta el cierre de ayer o hay cierres con diferencias sin revisar.
+- `cuentaResumen(m,range,…)` es el cálculo por cuenta compartido por Corte y Cierre.
+
+## Candados de ventas
+- Pago mixto tiene que sumar exacto (productos + envío del cliente).
+- `sale.sinStock`: productos vendidos sin stock suficiente en sistema (se marca, no se bloquea).
+- Borrar venta regresa productos/regalos al inventario y deja movimiento `type:"devolucion"`.
+- Inventario incluye productos por pieza (Sex Shop) en el cargador y en `OtrosTable`.
+
 ## Correr local
 ```
 npm install
 npm run dev
 ```
 Antes de hacer push SIEMPRE correr `npm run build` y confirmar que compila.
+- Local usa la base REAL. Para probar sin escribir nada: `VITE_NO_SAVE=1` en `.env.local` (solo aplica en `npm run dev`; `dbSave` no guarda). `.env.local` no se sube.
 
 ## Módulos actuales
 - **POS / Nueva Venta**: selección de producto con precio de mayoreo automático por niveles; modo precio especial para clientes fijos (se guarda en su perfil); alta rápida de cliente con precios especiales colapsables.
@@ -45,7 +60,7 @@ Antes de hacer push SIEMPRE correr `npm run build` y confirmar que compila.
 - **Corte de Caja**: desglose por cuenta (ventas + transferencias mixtas + extras − gastos = neto). Pago "Mixto" se reparte entre cuentas y NO aparece como categoría aparte.
 - **Envíos**: "cobro al cliente" y "costo del repartidor" separados, con ganancia/pérdida en tiempo real.
 - **Utilidades Extra**: se suman a los totales por cuenta.
-- **Palomitas** (pestaña 🍿): POS rápido para el local. 3 tamaños (Pequeño $20 / Mediano $35 / Grande $50), precios y costos editables guardados en `msp-pop4`. Cada cobro se guarda como venta normal en `sales` con `tipo:"palomitas"` y `clientId:""`, así entra solo en Corte, Reparto y Dashboard. No toca inventario.
+- **Palomitas** (pestaña 🍿): POS rápido para el local. 3 tamaños (Pequeño $20 / Mediano $35 / Grande $50), precios y costos editables guardados en `msp-pop4`. Cada cobro se guarda como venta normal en `sales` con `tipo:"palomitas"` y `clientId:""`, así entra solo en Corte, Reparto y Dashboard. Cada palomita descuenta un vaso de su tamaño (`popCfg[k].stock`, puede quedar negativo para evidenciar faltantes); se cargan en Inventario → Vasos de palomitas.
 - **Gastos del local**: categorías en `EXP_CATS`; las de `FIXED_CATS` solo las ven los socios.
 - **Cuentas del negocio** (`CUENTAS`): Efectivo, SPIN Marcel, SPIN Gustavo y Transferencia MP (cuenta Mercado Pago, sin comisión). Todas las listas de "con qué se pagó" usan `CUENTAS`/`CUENTA_LABEL`. En el Corte, Transferencia MP + Terminal MP (neto de comisión) = lo que entró a Mercado Pago.
 - **Terminal Mercado Pago**: forma de pago "Terminal MP" (también como parte de un Mixto). Comisión `TERMINAL_FEE` = 3.5% (confirmar si MP cobra IVA encima). La comisión se guarda en `sale.comision` y se suma a `sale.cost`, así baja la utilidad en todos los reportes; en el Corte la tarjeta de Terminal resta la comisión.

@@ -19,6 +19,8 @@ async function dbLoad(key, def) {
 }
 
 async function dbSave(key, value) {
+  // Solo en pruebas locales: con VITE_NO_SAVE=1 en .env.local no se escribe nada en Supabase
+  if (import.meta.env.DEV && import.meta.env.VITE_NO_SAVE === "1") return;
   try {
     const { error } = await _supabase.from("msp_store")
       .upsert({ key, value: JSON.stringify(value), updated_at: new Date().toISOString() },
@@ -82,7 +84,7 @@ function LoginScreen({ onLogin }) {
 
 
 // ── STORAGE ──────────────────────────────────────────────────────────────────
-const SK = { p:"msp-p4",pk:"msp-pk4",c:"msp-c4",s:"msp-s4",e:"msp-e4",sm:"msp-sm4",ex:"msp-ex4",pop:"msp-pop4",fx:"msp-fx4" };
+const SK = { p:"msp-p4",pk:"msp-pk4",c:"msp-c4",s:"msp-s4",e:"msp-e4",sm:"msp-sm4",ex:"msp-ex4",pop:"msp-pop4",fx:"msp-fx4",ci:"msp-ci4" };
 const load = dbLoad;
 const save = dbSave;
 
@@ -230,7 +232,7 @@ function pkgCost(pkg,prods){return pkg.items.reduce((s,it)=>{const p=prods.find(
 function pkgDesc(pkg,prods){return pkg.items.map(it=>{const p=prods.find(x=>x.id===it.pid);return it.qty+"× "+(p?p.name:it.pid);}).join(" · ");}
 
 // ── DASHBOARD ─────────────────────────────────────────────────────────────────
-function Dashboard({prods,pkgs,clients,sales,expenses,fixed,goTab}){
+function Dashboard({prods,pkgs,clients,sales,expenses,fixed,goTab,cierres=[]}){
   const now      = new Date();
   const todayStr = today();
   const curMonth = todayStr.slice(0,7);
@@ -266,9 +268,23 @@ function Dashboard({prods,pkgs,clients,sales,expenses,fixed,goTab}){
   const nomMes=now.toLocaleDateString("es-MX",{month:"long"}).replace(/^\w/,c=>c.toUpperCase());
 
   const pendFijos=fixedPending(fixed,expenses,todayStr);
+  const ayer=(()=>{const d=new Date(todayStr+"T12:00:00");d.setDate(d.getDate()-1);return ymd(d);})();
+  const faltaCierreAyer=ayer>=INICIO_OPERACION&&!cierres.some(c=>c.date===ayer);
+  const porRevisar=cierres.filter(c=>!c.revisado&&!cierreCuadra(c));
 
   return(
     <div style={{display:"flex",flexDirection:"column",gap:"1.25rem"}}>
+
+      {(faltaCierreAyer||porRevisar.length>0)&&(
+        <button onClick={()=>goTab&&goTab("cierre")} style={{textAlign:"left",background:"rgba(192,64,64,0.07)",border:"1px solid rgba(192,64,64,0.3)",borderRadius:12,padding:"12px 14px",display:"flex",alignItems:"center",gap:10}}>
+          <i className="ti ti-lock-exclamation" style={{fontSize:22,color:T.expense}}/>
+          <div style={{flex:1}}>
+            {faltaCierreAyer&&<p style={{margin:0,fontSize:13,fontWeight:700,color:T.expense}}>No se hizo el cierre de ayer</p>}
+            {porRevisar.length>0&&<p style={{margin:0,fontSize:13,fontWeight:700,color:T.expense}}>{porRevisar.length} cierre{porRevisar.length>1?"s":""} con diferencias por revisar</p>}
+          </div>
+          <i className="ti ti-chevron-right" style={{fontSize:18,color:T.textMuted}}/>
+        </button>
+      )}
 
       {pendFijos.length>0&&(
         <button onClick={()=>goTab&&goTab("gasto")} style={{textAlign:"left",background:"rgba(192,64,64,0.07)",border:"1px solid rgba(192,64,64,0.3)",borderRadius:12,padding:"12px 14px",display:"flex",alignItems:"center",gap:10}}>
@@ -808,7 +824,7 @@ function EnvioForm({conEnvio,setConEnvio,envKm,setEnvKm,envCostoOver,setEnvCosto
 }
 
 // ── NUEVA VENTA ───────────────────────────────────────────────────────────────
-function NuevaVenta({prods,setProds,pkgs,clients,setClients,sales,setSales,user,isAdmin}){
+function NuevaVenta({prods,setProds,pkgs,clients,setClients,sales,setSales,user,isAdmin,stockMoves,setStockMoves,cerrados=[]}){
   const[confirmDel,setConfirmDel]=useState(null);
   const[date,setDate]=useState(today());
   const[clientId,setClientId]=useState("");
@@ -856,6 +872,7 @@ function NuevaVenta({prods,setProds,pkgs,clients,setClients,sales,setSales,user,
   const lineCostCalc=lines.reduce((s,l)=>{if(!l.pid)return s;return s+getLC(l)*(+l.qty||1);},0);
 
   const register=()=>{
+    if(cerrados.includes(date)){setErr("Ese día ya se cerró. Un socio lo tiene que reabrir en 🔒 Cierre para registrar ventas.");return;}
     if(!clientId){setErr("Selecciona un cliente");return;}
     let total,cost,desc,items,bajoPrecio=false;
     if(mode==="paquete"){
@@ -876,6 +893,9 @@ function NuevaVenta({prods,setProds,pkgs,clients,setClients,sales,setSales,user,
     // La diferencia (lo que absorbemos) va dentro de cost para que la utilidad sea real en todos los reportes.
     const ev=conEnvio?envioCalc(envKm,envCostoOver,envPct,envOtro):{costo:0,cliente:0,absorbe:0};
     if(conEnvio&&ev.costo<=0){setErr("Pon los kilómetros o lo que cobra el repartidor");return;}
+    // El pago mixto tiene que sumar exactamente lo que se cobra
+    if(payMethod==="Mixto"){const suma=(+mixEfectivo||0)+(+mixTransferencia||0);const debe=total+ev.cliente;
+      if(Math.abs(suma-debe)>0.5){setErr("El pago mixto suma "+$m(suma)+" pero hay que cobrar "+$m(debe));return;}}
     // Comisión de la terminal (sobre productos + envío que pagó el cliente)
     const comision=+(terminalAmt(payMethod,total+ev.cliente,mixCuenta,mixTransferencia)*TERMINAL_FEE).toFixed(2);
     // Contra entrega: el repartidor cobra en efectivo, se queda con su envío (queda pagado ese mismo día, en efectivo)
@@ -892,7 +912,12 @@ function NuevaVenta({prods,setProds,pkgs,clients,setClients,sales,setSales,user,
     const regaloCosto=regaloN*SOBRE_COST;
     if(regaloN>0)desc+=" + 🎁 "+regaloN+" regalo"+(regaloN!==1?"s":"");
     const stockItems=[...items,...regaloItems.filter(r=>r.pid).map(r=>({pid:r.pid,qty:r.qty,su:"sobre"}))];
-    const sale={id:uid(),date,clientId,pkgId:mode==="paquete"?pkgId:null,total,cost:cost+comision+ev.absorbe+regaloCosto,comision,regalos:regaloItems,regaloCosto,desc,items,note,payMethod,
+    // Productos que se vendieron sin tener stock suficiente en el sistema (se marcan para que los socios revisen)
+    const sinStock=[];
+    [...new Set(stockItems.map(it=>it.pid))].forEach(pid=>{const p=prods.find(x=>x.id===pid);if(!p)return;const its=stockItems.filter(it=>it.pid===pid);
+      const qS=its.filter(it=>it.su==="sobre").reduce((a,it)=>a+(+it.qty||0),0);const qC=its.filter(it=>it.su!=="sobre").reduce((a,it)=>a+(+it.qty||0),0);
+      if(qC>(p.stockCajas||0)||qS>(p.stockSobres||0))sinStock.push(p.name);});
+    const sale={sinStock,id:uid(),date,clientId,pkgId:mode==="paquete"?pkgId:null,total,cost:cost+comision+ev.absorbe+regaloCosto,comision,regalos:regaloItems,regaloCosto,desc,items,note,payMethod,
       mixEfectivo:payMethod==="Mixto"?+mixEfectivo||0:0,
       mixTransferencia:payMethod==="Mixto"?+mixTransferencia||0:0,
       mixCuenta:payMethod==="Mixto"?mixCuenta:"",
@@ -911,8 +936,19 @@ function NuevaVenta({prods,setProds,pkgs,clients,setClients,sales,setSales,user,
     setLines([{pid:"",qty:1,price:"",su:"caja"}]);
     setRegalos([]);setConEnvio(false);setEnvKm("");setEnvCostoOver("");setEnvPct("100");setEnvOtro("");setEnvRep("");setEnvDir("");setEnvPagado("no");setEnvCobro("transfer");setNote("");
     setPayMethod("Efectivo");setMixEfectivo("");setMixTransferencia("");setMixCuenta("SPIN Marcel");
-    setOkMsg("✓ Venta de "+$m(total+ev.cliente)+" registrada"+(conEnvio?" · envío pendiente en 🛵 Envíos":""));
+    setOkMsg("✓ Venta de "+$m(total+ev.cliente)+" registrada"+(conEnvio?" · envío pendiente en 🛵 Envíos":"")+(sinStock.length?" · ⚠ en el sistema no había suficiente de: "+sinStock.join(", "):""));
     setTimeout(()=>setOkMsg(""),3000);
+  };
+
+  const borrarVenta=s=>{
+    const back=[...(s.items||[]),...(s.regalos||[]).filter(r=>r.pid).map(r=>({pid:r.pid,qty:r.qty,su:"sobre"}))];
+    setProds(prev=>prev.map(p=>{const its=back.filter(it=>it.pid===p.id);if(!its.length)return p;
+      const qS=its.filter(it=>it.su==="sobre").reduce((a,it)=>a+(+it.qty||0),0);const qC=its.filter(it=>it.su!=="sobre").reduce((a,it)=>a+(+it.qty||0),0);
+      return{...p,stockCajas:(p.stockCajas||0)+qC,stockSobres:(p.stockSobres||0)+qS};}));
+    const cl=clients.find(c=>c.id===s.clientId);
+    if(setStockMoves&&back.length)setStockMoves(prev=>[...prev,{id:uid(),date:today(),pid:back[0].pid,type:"devolucion",cajas:0,sobres:0,
+      note:"Venta borrada ("+s.date+" · "+(cl?.name||"cliente")+" · "+$m(s.total)+"): se regresó al inventario "+s.desc,by:user?.name||""}]);
+    setSales(prev=>prev.filter(x=>x.id!==s.id));
   };
 
   const updLine=(i,k,v)=>{
@@ -925,9 +961,10 @@ function NuevaVenta({prods,setProds,pkgs,clients,setClients,sales,setSales,user,
     <div style={{display:"flex",flexDirection:"column",gap:"1.25rem"}}>
       <Card>
         <STitle>Registrar venta</STitle>
+        {cerrados.includes(today())&&<div style={{marginBottom:12,padding:"10px 12px",borderRadius:8,background:"rgba(192,64,64,0.08)",border:"1px solid rgba(192,64,64,0.3)",fontSize:13,color:T.expense,fontWeight:600}}>🔒 El día de hoy ya se cerró. Para vender, un socio tiene que reabrirlo.</div>}
         {/* ROW 1: fecha, modo */}
         <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12,marginBottom:12}}>
-          <F label="Fecha"><input type="date" value={date} onChange={e=>setDate(e.target.value)}/></F>
+          <F label="Fecha"><input type="date" value={date} onChange={e=>setDate(e.target.value)} disabled={!isAdmin}/></F>
           <F label="Modo de venta">
             <div style={{display:"flex",gap:10,paddingTop:6}}>
               {[["paquete","📦 Paquete"],["custom","🛒 Productos"]].map(([v,l])=>(
@@ -1183,7 +1220,7 @@ function NuevaVenta({prods,setProds,pkgs,clients,setClients,sales,setSales,user,
                     <tr key={s.id} style={{background:i%2===0?T.bg:T.bgRow,borderBottom:`0.5px solid ${T.border}`}}>
                       <td style={{padding:"6px 10px",color:T.textSub,whiteSpace:"nowrap"}}>{s.date}</td>
                       <td style={{padding:"6px 10px",fontWeight:500,maxWidth:110,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{c?.name||(s.tipo==="palomitas"?"🍿 Palomitas":"—")}</td>
-                      <td style={{padding:"6px 10px",color:T.textSub,maxWidth:150,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{s.desc}{isAdmin&&s.bajoPrecio&&<div><Chip label="⚠ bajo precio lista" bg="rgba(232,128,32,0.12)" color="#B86010"/></div>}</td>
+                      <td style={{padding:"6px 10px",color:T.textSub,maxWidth:150,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{s.desc}{isAdmin&&s.bajoPrecio&&<div><Chip label="⚠ bajo precio lista" bg="rgba(232,128,32,0.12)" color="#B86010"/></div>}{isAdmin&&(s.sinStock||[]).length>0&&<div><Chip label="⚠ vendido sin stock en sistema" bg="rgba(192,64,64,0.1)" color={T.expense}/></div>}</td>
                       <td style={{padding:"6px 10px"}}>{label&&<Chip label={label} bg={pc.bg} color={pc.c}/>}</td>
                       <td style={{padding:"6px 10px",fontWeight:600,color:T.revenue,whiteSpace:"nowrap"}}>{$m(s.total)}</td>
                       <td style={{padding:"6px 10px",color:T.client,whiteSpace:"nowrap"}}>{(s.envio||0)>0?$m(s.envio):"—"}</td>
@@ -1193,7 +1230,7 @@ function NuevaVenta({prods,setProds,pkgs,clients,setClients,sales,setSales,user,
                       {isAdmin&&<td style={{padding:"6px 10px",whiteSpace:"nowrap"}}>
                         {confirmDel===s.id?(
                           <>
-                            <button onClick={()=>{setSales(sales.filter(x=>x.id!==s.id));setConfirmDel(null);}} style={{fontSize:11,background:T.expense,color:"#fff",border:"none",fontWeight:600,padding:"3px 8px",minHeight:28}}>Borrar</button>
+                            <button onClick={()=>{borrarVenta(s);setConfirmDel(null);}} style={{fontSize:11,background:T.expense,color:"#fff",border:"none",fontWeight:600,padding:"3px 8px",minHeight:28}}>Borrar</button>
                             <button onClick={()=>setConfirmDel(null)} style={{fontSize:11,padding:"3px 8px",minHeight:28,marginLeft:4}}>No</button>
                           </>
                         ):(
@@ -1226,7 +1263,7 @@ function GastosFijos({fixed,setFixed,expenses,setExpenses,user}){
   const pagar=f=>{
     const per=fixedPeriod(f,hoy);
     if(antes||expenses.some(e=>e.fixedId===f.id&&e.period===per))return;
-    setExpenses(prev=>[...prev,{id:uid(),date:hoyReal,cat:f.cat,amount:+f.amount,desc:f.name+" · "+fixedPeriodLabel(f,hoy),pagadoCon:payWith[f.id]||"Efectivo",fixedId:f.id,period:per,by:user?.name||""}]);
+    setExpenses(prev=>[...prev,{id:uid(),date:hoyReal,cat:f.cat,amount:+f.amount,desc:f.name+" · "+fixedPeriodLabel(f,hoy),pagadoCon:payWith[f.id]||"Efectivo",deCaja:false,fixedId:f.id,period:per,by:user?.name||""}]);
   };
   const guardar=()=>{
     setFixed(rows.filter(r=>r.name.trim()&&+r.amount>0).map(r=>({...r,name:r.name.trim(),amount:+r.amount})));
@@ -1294,7 +1331,8 @@ function GastosFijos({fixed,setFixed,expenses,setExpenses,user}){
 // ── GASTOS ────────────────────────────────────────────────────────────────────
 function Gastos({expenses,setExpenses,user,isAdmin,fixed,setFixed}){
   const cats=isAdmin?EXP_CATS:EXP_CATS.filter(c=>!FIXED_CATS.includes(c));
-  const blank={date:today(),cat:isAdmin?"Importación":"Insumos palomitas",amount:"",desc:"",pagadoCon:"Efectivo"};
+  // deCaja: el efectivo salió de la caja del local (cuenta en el Cierre del día). Si lo pagó un socio, no.
+  const blank={date:today(),cat:isAdmin?"Importación":"Insumos palomitas",amount:"",desc:"",pagadoCon:"Efectivo",deCaja:!isAdmin};
   const[form,setForm]=useState(blank);
   const[err,setErr]=useState("");
   const[okMsg,setOkMsg]=useState("");
@@ -1307,7 +1345,7 @@ function Gastos({expenses,setExpenses,user,isAdmin,fixed,setFixed}){
   const save=()=>{
     if(!form.amount||+form.amount<=0){setErr("Escribe el monto");return;}
     if(!form.desc.trim()){setErr("Escribe en qué se gastó");return;}
-    setExpenses([...expenses,{...form,id:uid(),amount:+form.amount,by:user?.name||""}]);
+    setExpenses([...expenses,{...form,id:uid(),amount:+form.amount,deCaja:form.pagadoCon==="Efectivo"&&(!isAdmin||!!form.deCaja),by:user?.name||""}]);
     setForm({...blank,date:form.date,cat:form.cat});setErr("");
     setOkMsg("✓ Gasto de "+$m(+form.amount)+" registrado");setTimeout(()=>setOkMsg(""),3000);
   };
@@ -1317,7 +1355,7 @@ function Gastos({expenses,setExpenses,user,isAdmin,fixed,setFixed}){
       <Card>
         <STitle>Registrar gasto</STitle>
         <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(150px,1fr))",gap:12}}>
-          <F label="Fecha"><input type="date" value={form.date} onChange={e=>setForm({...form,date:e.target.value})}/></F>
+          <F label="Fecha"><input type="date" value={form.date} onChange={e=>setForm({...form,date:e.target.value})} disabled={!isAdmin}/></F>
           <F label="Categoría"><select value={form.cat} onChange={e=>setForm({...form,cat:e.target.value})}>{cats.map(c=><option key={c}>{c}</option>)}</select></F>
           <F label="Monto ($)"><input type="number" min="0" step="0.01" value={form.amount} onChange={e=>setForm({...form,amount:e.target.value})} placeholder="0.00"/></F>
           <F label="Descripción"><input value={form.desc} onChange={e=>setForm({...form,desc:e.target.value})} placeholder="Detalle del gasto"/></F>
@@ -1326,6 +1364,14 @@ function Gastos({expenses,setExpenses,user,isAdmin,fixed,setFixed}){
               {CUENTAS.map(c=><option key={c} value={c}>{CUENTA_LABEL[c]}</option>)}
             </select>
           </F>
+          {isAdmin&&(form.pagadoCon||"Efectivo")==="Efectivo"&&(
+            <F label="¿De dónde salió el efectivo?">
+              <select value={form.deCaja?"caja":"socio"} onChange={e=>setForm({...form,deCaja:e.target.value==="caja"})}>
+                <option value="socio">🧑 Lo pagó un socio</option>
+                <option value="caja">🏪 De la caja del local</option>
+              </select>
+            </F>
+          )}
         </div>
         <GoldBtn onClick={save} style={{marginTop:12,minHeight:44,width:"100%",fontSize:14}}>Registrar gasto</GoldBtn>
         <ErrMsg msg={err}/>
@@ -1358,7 +1404,7 @@ function Gastos({expenses,setExpenses,user,isAdmin,fixed,setFixed}){
                   <td style={{padding:"7px 10px",color:T.textSub,whiteSpace:"nowrap"}}>{e.date}</td>
                   <td style={{padding:"7px 10px"}}><Chip label={e.cat} bg="rgba(192,64,64,0.1)" color={T.expense}/></td>
                   <td style={{padding:"7px 10px"}}>{e.desc}</td>
-                  {isAdmin&&<td style={{padding:"7px 10px",color:T.textSub,fontSize:11,whiteSpace:"nowrap"}}>{e.pagadoCon||"Efectivo"}</td>}
+                  {isAdmin&&<td style={{padding:"7px 10px",color:T.textSub,fontSize:11,whiteSpace:"nowrap"}}>{e.pagadoCon||"Efectivo"}{(e.pagadoCon||"Efectivo")==="Efectivo"&&<div style={{fontSize:10,color:T.textMuted}}>{e.deCaja?"de la caja":"socio"}</div>}</td>}
                   <td style={{padding:"7px 10px",fontWeight:700,color:T.expense,whiteSpace:"nowrap"}}>{$m(e.amount)}</td>
                   {isAdmin&&<td style={{padding:"7px 10px",color:T.textMuted,fontSize:11}}>{e.by||"—"}</td>}
                   {isAdmin&&<td style={{padding:"7px 10px",whiteSpace:"nowrap"}}>
@@ -1383,7 +1429,7 @@ function Gastos({expenses,setExpenses,user,isAdmin,fixed,setFixed}){
 }
 
 // ── INVENTARIO ────────────────────────────────────────────────────────────────
-function Inventario({prods,setProds,sales,stockMoves,setStockMoves,user,isAdmin}){
+function Inventario({prods,setProds,sales,stockMoves,setStockMoves,user,isAdmin,popCfg,setPopCfg}){
   const by=user?.name||"";
   const[entForm,setEntForm]=useState({date:today(),pid:"",cajas:"",note:""});
   const[abrirForm,setAbrirForm]=useState({pid:"",cajas:1});
@@ -1405,7 +1451,7 @@ function Inventario({prods,setProds,sales,stockMoves,setStockMoves,user,isAdmin}
     const prod=prods.find(p=>p.id===abrirForm.pid);
     if(!prod||!abrirForm.cajas||+abrirForm.cajas<=0)return;
     const qty=+abrirForm.cajas;
-    if((prod.stockCajas||0)<qty){setInvErr("Solo tienes "+(prod.stockCajas||0)+" cajas de "+prod.name);return;}
+    if((prod.stockCajas||0)<qty){setInvErr(isAdmin?"Solo tienes "+(prod.stockCajas||0)+" cajas de "+prod.name:"En el sistema no hay suficientes cajas cerradas de "+prod.name+". Avísale a un socio.");return;}
     const nuevos=qty*(prod.spc||1);
     setProds(prods.map(p=>p.id===abrirForm.pid?{...p,stockCajas:(p.stockCajas||0)-qty,stockSobres:(p.stockSobres||0)+nuevos}:p));
     setStockMoves([...stockMoves,{id:uid(),date:today(),pid:abrirForm.pid,type:"apertura",cajas:qty,sobres:nuevos,note:"Apertura menudeo: "+qty+" caja"+(qty>1?"s":"")+" → "+nuevos+" sobres",by}]);
@@ -1443,6 +1489,8 @@ function Inventario({prods,setProds,sales,stockMoves,setStockMoves,user,isAdmin}
   return(
     <div style={{display:"flex",flexDirection:"column",gap:"1.25rem"}}>
 
+      {!isAdmin&&<Card><p style={{margin:0,fontSize:12,color:T.textSub}}>📦 Aquí registras la mercancía que llega y las cajas que abres para vender por sobre. El conteo se hace en 🔒 Cierre.</p></Card>}
+      {isAdmin&&<>
       {/* ── STOCK EN MASA ── */}
       <Card style={{borderColor:T.gold,borderWidth:1}}>
         <STitle right={
@@ -1467,7 +1515,7 @@ function Inventario({prods,setProds,sales,stockMoves,setStockMoves,user,isAdmin}
               📦 <strong>Cajas</strong> = cajas selladas · 🔓 <strong>Sobres</strong> = sobres sueltos que ya tienes abiertos
             </p>
             <div style={{display:"flex",flexDirection:"column",gap:10,marginBottom:14}}>
-              {prods.filter(p=>p.cat==="Miel"&&p.id!=="sob").map(p=>(
+              {prods.filter(p=>p.id!=="sob").map(p=>(
                 <div key={p.id} style={{background:T.bgAlt,borderRadius:10,padding:"12px 14px",border:`0.5px solid ${T.border}`}}>
                   <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:10,flexWrap:"wrap",gap:6}}>
                     <div>
@@ -1481,7 +1529,7 @@ function Inventario({prods,setProds,sales,stockMoves,setStockMoves,user,isAdmin}
                     </div>
                   </div>
                   <div style={{display:"grid",gridTemplateColumns:p.spc>1?"1fr 1fr":"1fr",gap:10}}>
-                    <F label={"📦 Cajas"+(p.spc>1?" ("+p.spc+" "+(p.spcu||"sobres")+" c/u)":"")}>
+                    <F label={(p.spc>1?"📦 Cajas":"📦 Piezas")+(p.spc>1?" ("+p.spc+" "+(p.spcu||"sobres")+" c/u)":"")}>
                       <input type="number" min="0" step="1" value={bulkMap[p.id]||""} onChange={e=>setBulkMap({...bulkMap,[p.id]:e.target.value})} placeholder="0" style={{textAlign:"center",fontWeight:700,fontSize:18}}/>
                     </F>
                     {p.spc>1&&(
@@ -1553,6 +1601,10 @@ function Inventario({prods,setProds,sales,stockMoves,setStockMoves,user,isAdmin}
         </div>
       </Card>
 
+      <OtrosTable prods={prods} sales={sales}/>
+      <VasosCard popCfg={popCfg} setPopCfg={setPopCfg} stockMoves={stockMoves} setStockMoves={setStockMoves} user={user}/>
+      </>}
+
       <Card>
         <STitle>Abrir caja para menudeo</STitle>
         <p style={{margin:"0 0 12px",fontSize:12,color:T.textSub}}>Descuenta cajas selladas y agrega los sobres al stock de menudeo.</p>
@@ -1560,7 +1612,7 @@ function Inventario({prods,setProds,sales,stockMoves,setStockMoves,user,isAdmin}
           <F label="Producto">
             <select value={abrirForm.pid} onChange={e=>{setInvErr("");setAbrirForm({...abrirForm,pid:e.target.value});}}>
               <option value="">Selecciona…</option>
-              {mielProds.map(p=><option key={p.id} value={p.id} disabled={(p.stockCajas||0)===0}>{p.name} — {p.stockCajas||0} cajas</option>)}
+              {mielProds.map(p=><option key={p.id} value={p.id} disabled={isAdmin&&(p.stockCajas||0)===0}>{p.name}{isAdmin?" — "+(p.stockCajas||0)+" cajas":""}</option>)}
             </select>
           </F>
           <F label="Cajas a abrir">
@@ -1587,11 +1639,11 @@ function Inventario({prods,setProds,sales,stockMoves,setStockMoves,user,isAdmin}
           <F label="Fecha"><input type="date" value={entForm.date} onChange={e=>setEntForm({...entForm,date:e.target.value})}/></F>
           <F label="Nota (factura, proveedor…)"><input value={entForm.note} onChange={e=>setEntForm({...entForm,note:e.target.value})} placeholder="Opcional"/></F>
         </div>
-        {entForm.pid&&+entForm.cajas>0&&(()=>{const prod=prods.find(p=>p.id===entForm.pid);return <div style={{marginTop:8,padding:"8px 12px",background:T.goldBg,borderRadius:8,fontSize:12,color:T.goldText}}>Stock actual: <strong>{prod?.stockCajas||0}</strong> → Nuevo total: <strong style={{color:T.profit}}>{(prod?.stockCajas||0)+(+entForm.cajas||0)} cajas</strong></div>;})()}
+        {entForm.pid&&+entForm.cajas>0&&(()=>{const prod=prods.find(p=>p.id===entForm.pid);return <div style={{marginTop:8,padding:"8px 12px",background:T.goldBg,borderRadius:8,fontSize:12,color:T.goldText}}>{isAdmin?<>Stock actual: <strong>{prod?.stockCajas||0}</strong> → Nuevo total: <strong style={{color:T.profit}}>{(prod?.stockCajas||0)+(+entForm.cajas||0)} cajas</strong></>:<>Se van a agregar <strong>{+entForm.cajas||0}</strong> de {prod?.name}</>}</div>;})()}
         <GoldBtn onClick={addEntrada} style={{marginTop:12}}>📦 Registrar entrada</GoldBtn>
       </Card>
 
-      {stockMoves.length>0 && (
+      {isAdmin&&stockMoves.length>0 && (
         <Card>
           <STitle>Historial de movimientos ({stockMoves.length})</STitle>
           <table style={{width:"100%",fontSize:12,borderCollapse:"collapse"}}>
@@ -1599,18 +1651,20 @@ function Inventario({prods,setProds,sales,stockMoves,setStockMoves,user,isAdmin}
             <tbody>
               {[...stockMoves].sort((a,b)=>b.date.localeCompare(a.date)).map((m,i)=>{
                 const prod=prods.find(p=>p.id===m.pid);
-                const isE=m.type==="entrada",isA=m.type==="apertura";
+                const isE=m.type==="entrada",isA=m.type==="apertura",isAj=m.type==="ajuste",isD=m.type==="devolucion";
+                const isPop=(m.pid||"").startsWith("pop_");const popK=isPop?m.pid.slice(4):"";
                 return(
                   <tr key={m.id} style={{background:i%2===0?T.bg:T.bgRow,borderBottom:`0.5px solid ${T.border}`}}>
                     <td style={{padding:"7px 10px",color:T.textSub,whiteSpace:"nowrap"}}>{m.date}</td>
-                    <td style={{padding:"7px 10px"}}><Chip label={isE?"Entrada":isA?"Apertura menudeo":"Otro"} bg={isE?"rgba(26,140,90,0.1)":isA?"rgba(40,96,176,0.1)":T.goldBg} color={isE?T.profit:isA?T.client:T.gold}/></td>
-                    <td style={{padding:"7px 10px",fontWeight:500}}>{prod?.name||m.pid}</td>
-                    <td style={{padding:"7px 10px",color:isE?T.profit:T.client,fontWeight:600}}>{isE?"+"+m.cajas+" caja"+(m.cajas!==1?"s":""):isA?"−"+m.cajas+"c → +"+m.sobres+"s":""}</td>
+                    <td style={{padding:"7px 10px"}}><Chip label={isE?"Entrada":isA?"Apertura menudeo":isAj?"Ajuste de conteo":isD?"Venta borrada":"Otro"} bg={isE?"rgba(26,140,90,0.1)":isA?"rgba(40,96,176,0.1)":T.goldBg} color={isE?T.profit:isA?T.client:T.gold}/></td>
+                    <td style={{padding:"7px 10px",fontWeight:500}}>{isPop?"Vasos "+(popCfg?.[popK]?.name||popK):isD?"—":(prod?.name||m.pid)}</td>
+                    <td style={{padding:"7px 10px",color:isE?T.profit:T.client,fontWeight:600}}>{isE?"+"+m.cajas+(isPop?" vasos":(prod&&(prod.spc||1)===1?" pz":" caja"+(m.cajas!==1?"s":""))):isA?"−"+m.cajas+"c → +"+m.sobres+"s":isAj?[m.cajas?(m.cajas>0?"+":"")+m.cajas:"",m.sobres?(m.sobres>0?"+":"")+m.sobres+"s":""].filter(Boolean).join(" · "):""}</td>
                     <td style={{padding:"7px 10px",color:T.textSub,fontSize:11}}>{m.note}</td>
                     <td style={{padding:"7px 10px",color:T.textMuted,fontSize:11}}>{m.by||"—"}</td>
                     <td style={{padding:"7px 10px"}}>
-                      {isAdmin&&<OutBtn onClick={()=>{
-                        if(isE)setProds(prods.map(p=>p.id===m.pid?{...p,stockCajas:Math.max(0,(p.stockCajas||0)-m.cajas)}:p));
+                      {isAdmin&&(isE||isA)&&<OutBtn onClick={()=>{
+                        if(isE&&isPop)setPopCfg(prev=>({...prev,[popK]:{...prev[popK],stock:(+prev[popK].stock||0)-m.cajas}}));
+                        else if(isE)setProds(prods.map(p=>p.id===m.pid?{...p,stockCajas:Math.max(0,(p.stockCajas||0)-m.cajas)}:p));
                         if(isA)setProds(prods.map(p=>p.id===m.pid?{...p,stockCajas:(p.stockCajas||0)+m.cajas,stockSobres:Math.max(0,(p.stockSobres||0)-m.sobres)}:p));
                         setStockMoves(stockMoves.filter(x=>x.id!==m.id));
                       }} danger style={{fontSize:11,padding:"3px 8px"}}>🗑️</OutBtn>}
@@ -1623,6 +1677,283 @@ function Inventario({prods,setProds,sales,stockMoves,setStockMoves,user,isAdmin}
         </Card>
       )}
     </div>
+  );
+}
+
+// ── RESUMEN POR CUENTA (lo usan el Corte de caja y el Cierre del día) ─────────
+// Lo que entró y salió de una cuenta (Efectivo, SPIN, Mercado Pago…) en un rango de fechas.
+function cuentaResumen(m,range,sales,expenses,extras){
+  const fSales=sales.filter(s=>s.date>=range.start&&s.date<=range.end);
+  const fExp=expenses.filter(e=>e.date>=range.start&&e.date<=range.end);
+  const fExtrasP=(extras||[]).filter(x=>x.date>=range.start&&x.date<=range.end);
+  const mixSales=fSales.filter(s=>s.payMethod==="Mixto");
+  const direct=fSales.filter(s=>s.payMethod===m);
+  const ventasTotal=direct.reduce((a,s)=>a+s.total,0);
+  // Envío que pagó el cliente: entra a la misma cuenta que la venta (en Mixto ya viene dentro del desglose)
+  const envCobrado=direct.reduce((a,s)=>a+(s.envio||0),0);
+  // Pagos a repartidores hechos en este periodo desde esta cuenta
+  const repPagado=sales.filter(s=>s.envioPagado&&s.envioPagadoCon===m&&s.envioPagadoFecha>=range.start&&s.envioPagadoFecha<=range.end).reduce((a,s)=>a+(s.costoEnvio||0),0);
+  const mixAmt=m==="Efectivo"?mixSales.reduce((a,s)=>a+(s.mixEfectivo||0),0):mixSales.filter(s=>s.mixCuenta===m).reduce((a,s)=>a+(s.mixTransferencia||0),0);
+  // Mercado Pago deposita ya descontada su comisión
+  const comisionAmt=m==="Terminal MP"?fSales.reduce((a,s)=>a+(s.comision||0),0):0;
+  const extraAmt=fExtrasP.filter(x=>(x.via||"Efectivo")===m).reduce((a,x)=>a+x.amount,0);
+  const gastosDeEsta=fExp.filter(e=>(e.pagadoCon||"Efectivo")===m).reduce((a,e)=>a+e.amount,0);
+  const entradas=ventasTotal+envCobrado+mixAmt+extraAmt;
+  const neto=entradas-gastosDeEsta-comisionAmt-repPagado;
+  const pc=PAY_CLR[m]||{};
+  return{method:m,ventasTotal,envCobrado,repPagado,mixAmt,extraAmt,entradas,gastosDeEsta,comisionAmt,neto,count:direct.length,bg:pc.bg,c:pc.c};
+}
+
+// ── CIERRE DEL DÍA ────────────────────────────────────────────────────────────
+// Fondo de cambio que se queda siempre en la caja. Lo demás se lo lleva un socio.
+const FONDO_CAJA=500;
+const DENOMS=[1000,500,200,100,50,20];
+// Efectivo que debería haber en la caja al cerrar un día
+// Solo cuenta lo que pasa por la caja: ventas/envíos/mixtos en efectivo, gastos marcados "de la caja"
+// y pagos a repartidores en efectivo. No cuenta gastos que pagó un socio ni utilidades extra (esas las recibe un socio).
+function efectivoEsperado(d,sales,expenses,extras){
+  const r=cuentaResumen("Efectivo",{start:d,end:d},sales,expenses,extras);
+  const gastosCaja=expenses.filter(e=>e.date===d&&(e.pagadoCon||"Efectivo")==="Efectivo"&&e.deCaja).reduce((a,e)=>a+e.amount,0);
+  const neto=r.ventasTotal+r.envCobrado+r.mixAmt-gastosCaja-r.repPagado;
+  // Contra entrega de hoy que el repartidor todavía no entrega hoy
+  const traen=sales.filter(s=>s.date===d&&s.envioContra&&!(s.envioDineroRecibido&&s.envioDineroFecha===d)).reduce((a,s)=>a+(s.envioDebe||0),0);
+  // Contra entrega de días anteriores que el repartidor entregó hoy
+  const llegaron=sales.filter(s=>s.date<d&&s.envioContra&&s.envioDineroRecibido&&s.envioDineroFecha===d).reduce((a,s)=>a+(s.envioDebe||0),0);
+  return FONDO_CAJA+neto-traen+llegaron;
+}
+// Todo lo que se cuenta en el cierre: productos (cajas + sobres, o piezas) y vasos de palomitas
+function contables(prods,popCfg){
+  const a=prods.filter(p=>p.id!=="sob").map(p=>{const dual=(p.spc||1)>1;return{key:p.id,name:p.name,dual,uC:dual?"cajas":(p.unit||"piezas"),uS:p.spcu||"sobres",
+    sisC:p.stockCajas||0,sisS:dual?(p.stockSobres||0):0,pC:p.list||0,pS:dual?(p.listSobre||150):0,cC:p.cost||0,cS:dual?(p.costSobre||Math.round((p.cost||0)/(p.spc||1))):0};});
+  const v=POP_SIZES.map(k=>({key:"pop_"+k,name:"Vaso palomitas "+popCfg[k].name,dual:false,uC:"vasos",uS:"",sisC:+popCfg[k].stock||0,sisS:0,pC:+popCfg[k].price||0,pS:0,cC:popUnitCost(popCfg[k]),cS:0}));
+  return[...a,...v];
+}
+const cierreDifs=c=>(c.inv||[]).map(r=>({...r,dC:r.contC-r.sisC,dS:r.contS-r.sisS})).filter(r=>r.dC!==0||r.dS!==0);
+const cierreCuadra=c=>Math.abs(c.efectivoContado-c.efectivoEsperado)<1&&cierreDifs(c).length===0;
+const fechaLarga=ds=>new Date(ds+"T12:00:00").toLocaleDateString("es-MX",{weekday:"long",day:"numeric",month:"short"}).replace(/^\w/,x=>x.toUpperCase());
+
+function CierreDia({prods,setProds,sales,expenses,extras,popCfg,setPopCfg,cierres,setCierres,stockMoves,setStockMoves,user,isAdmin}){
+  const hoy=today();
+  const cierreHoy=cierres.find(c=>c.date===hoy);
+  const[den,setDen]=useState({});
+  const[monedas,setMonedas]=useState("");
+  const[cnt,setCnt]=useState({});
+  const[nota,setNota]=useState("");
+  const[confirm,setConfirm]=useState(false);
+  const[err,setErr]=useState("");
+  const[reabrir,setReabrir]=useState(null);
+  const items=contables(prods,popCfg);
+  const contado=DENOMS.reduce((a,d)=>a+d*(+den[d]||0),0)+(+monedas||0);
+  const faltan=items.filter(r=>cnt[r.key+"C"]===undefined||cnt[r.key+"C"]===""||(r.dual&&(cnt[r.key+"S"]===undefined||cnt[r.key+"S"]==="")));
+  const setC=(k,v)=>setCnt({...cnt,[k]:v});
+
+  const cerrar=()=>{
+    if(cierres.some(c=>c.date===hoy)){setErr("El día de hoy ya está cerrado");return;}
+    if(contado<=0){setErr("Cuenta el efectivo de la caja");return;}
+    if(faltan.length>0){setErr("Faltan "+faltan.length+" productos por contar (pon 0 si no hay)");return;}
+    if(!confirm){setConfirm(true);setErr("");return;}
+    const d=new Date();
+    const inv=items.map(r=>({key:r.key,name:r.name,dual:r.dual,uC:r.uC,uS:r.uS,sisC:r.sisC,sisS:r.sisS,contC:+cnt[r.key+"C"]||0,contS:r.dual?(+cnt[r.key+"S"]||0):0,pC:r.pC,pS:r.pS,cC:r.cC,cS:r.cS}));
+    setCierres(prev=>[...prev,{id:uid(),date:hoy,hora:String(d.getHours()).padStart(2,"0")+":"+String(d.getMinutes()).padStart(2,"0"),by:user?.name||"",
+      fondo:FONDO_CAJA,denoms:{...den},monedas:+monedas||0,efectivoContado:contado,efectivoEsperado:+efectivoEsperado(hoy,sales,expenses,extras).toFixed(2),
+      entregar:contado-FONDO_CAJA,inv,nota:nota.trim(),revisado:false,ajustado:false}]);
+    setConfirm(false);setErr("");
+  };
+
+  // Socios: aplicar el conteo al inventario (registra un ajuste por cada diferencia)
+  const ajustar=c=>{
+    const difs=cierreDifs(c);if(difs.length===0)return;
+    setProds(prev=>prev.map(p=>{const r=difs.find(x=>x.key===p.id);if(!r)return p;return{...p,stockCajas:Math.max(0,(p.stockCajas||0)+r.dC),stockSobres:Math.max(0,(p.stockSobres||0)+r.dS)};}));
+    setPopCfg(prev=>{const n={...prev};POP_SIZES.forEach(k=>{const r=difs.find(x=>x.key==="pop_"+k);if(r)n[k]={...n[k],stock:(+n[k].stock||0)+r.dC};});return n;});
+    setStockMoves(prev=>[...prev,...difs.map(r=>({id:uid(),date:today(),pid:r.key,type:"ajuste",cajas:r.dC,sobres:r.dS,
+      note:"Ajuste por cierre del "+c.date+(r.dC<0||r.dS<0?" (faltante)":" (sobrante)"),by:user?.name||""}))]);
+    setCierres(prev=>prev.map(x=>x.id===c.id?{...x,ajustado:true,revisado:true,revisadoPor:user?.name||""}:x));
+  };
+
+  const inputCnt=(k,ph)=><input type="number" min="0" inputMode="numeric" value={cnt[k]??""} onChange={e=>setC(k,e.target.value)} placeholder={ph} style={{width:"100%",textAlign:"center",fontWeight:700,fontSize:16}}/>;
+
+  return(
+    <div style={{display:"flex",flexDirection:"column",gap:"1.25rem"}}>
+      {cierreHoy?(
+        <Card style={{borderColor:T.profit,borderWidth:1}}>
+          <STitle>✓ Cierre de hoy hecho</STitle>
+          <p style={{margin:"0 0 6px",fontSize:13,color:T.textSub}}>{fechaLarga(hoy)} · {cierreHoy.hora} · por {cierreHoy.by||"—"}</p>
+          <div style={{padding:12,borderRadius:10,background:"rgba(26,140,90,0.07)",fontSize:14,lineHeight:1.7}}>
+            💵 Contaste: <strong>{$m(cierreHoy.efectivoContado)}</strong><br/>
+            🪙 Deja de fondo: <strong>{$m(FONDO_CAJA)}</strong><br/>
+            🤝 Entrega al socio: <strong style={{fontSize:18,color:T.profit}}>{$m(Math.max(0,cierreHoy.entregar))}</strong>
+            {cierreHoy.entregar<0&&<div style={{color:T.expense,fontWeight:600}}>⚠ No alcanza para dejar el fondo completo</div>}
+          </div>
+          <p style={{margin:"10px 0 0",fontSize:12,color:T.textMuted}}>El día quedó cerrado: ya no se pueden registrar ventas de hoy.</p>
+        </Card>
+      ):(
+        <>
+          <Card>
+            <STitle>🔒 Cierre del día · {fechaLarga(hoy)}</STitle>
+            <p style={{margin:"0 0 4px",fontSize:12,color:T.textSub}}>Hazlo después de las 7:30 pm, cuando ya no haya ventas. Cuenta lo que hay de verdad, sin adivinar.</p>
+          </Card>
+
+          <Card>
+            <STitle right={<span style={{fontWeight:700,fontSize:16,color:T.revenue}}>{$m(contado)}</span>}>1 · Cuenta el efectivo de la caja</STitle>
+            <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:8}}>
+              {DENOMS.map(d=>(
+                <F key={d} label={"Billetes de $"+d}>
+                  <input type="number" min="0" inputMode="numeric" value={den[d]??""} onChange={e=>setDen({...den,[d]:e.target.value})} placeholder="0" style={{textAlign:"center",fontWeight:700}}/>
+                </F>
+              ))}
+            </div>
+            <F label="Monedas (total en $)" style={{marginTop:8}}>
+              <input type="number" min="0" inputMode="decimal" value={monedas} onChange={e=>setMonedas(e.target.value)} placeholder="0" style={{textAlign:"center",fontWeight:700}}/>
+            </F>
+            <p style={{margin:"8px 0 0",fontSize:11,color:T.textMuted}}>Cuenta TODO lo que hay en la caja, incluidos los {$m(FONDO_CAJA)} de fondo.</p>
+          </Card>
+
+          <Card>
+            <STitle right={<span style={{fontSize:12,color:faltan.length?T.expense:T.profit,fontWeight:600}}>{faltan.length?faltan.length+" por contar":"✓ Todo contado"}</span>}>2 · Cuenta el inventario</STitle>
+            <p style={{margin:"0 0 10px",fontSize:12,color:T.textSub}}>Pon cuántos hay físicamente. Si no hay, pon 0.</p>
+            <div style={{display:"flex",flexDirection:"column",gap:8}}>
+              {items.map(r=>(
+                <div key={r.key} style={{padding:"10px 12px",borderRadius:10,border:`1px solid ${faltan.includes(r)?T.goldBorder:"rgba(26,140,90,0.3)"}`,background:T.bgRow}}>
+                  <p style={{margin:"0 0 6px",fontSize:13,fontWeight:600,color:T.text}}>{r.name}</p>
+                  <div style={{display:"grid",gridTemplateColumns:r.dual?"1fr 1fr":"1fr",gap:8}}>
+                    {inputCnt(r.key+"C",r.dual?"Cajas cerradas":r.uC)}
+                    {r.dual&&inputCnt(r.key+"S",r.uS+" sueltos")}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </Card>
+
+          <Card>
+            <F label="Nota (opcional)"><input value={nota} onChange={e=>setNota(e.target.value)} placeholder="Ej. se rompió un frasco, cliente pagó después…"/></F>
+            {confirm&&(
+              <div style={{marginTop:12,padding:12,borderRadius:10,background:T.goldBg,border:`1px solid ${T.goldBorder}`,fontSize:13,color:T.goldText}}>
+                ¿Seguro? Contaste <strong>{$m(contado)}</strong>. Al cerrar ya no se pueden registrar ventas de hoy.
+              </div>
+            )}
+            <button onClick={cerrar} style={{marginTop:12,width:"100%",minHeight:56,border:"none",borderRadius:12,background:confirm?T.expense:T.profit,color:"#fff",fontSize:17,fontWeight:700}}>
+              {confirm?"Sí, cerrar el día":"🔒 Cerrar el día"}
+            </button>
+            {confirm&&<button onClick={()=>setConfirm(false)} style={{marginTop:8,width:"100%",border:"none",color:T.textSub}}>Cancelar</button>}
+            <ErrMsg msg={err}/>
+          </Card>
+        </>
+      )}
+
+      {isAdmin&&(
+        <Card>
+          <STitle>Historial de cierres ({cierres.length})</STitle>
+          {cierres.length===0?<Empty icon="ti-lock" text="Todavía no hay cierres"/>:(
+            <div style={{display:"flex",flexDirection:"column",gap:10}}>
+              {[...cierres].sort((a,b)=>b.date.localeCompare(a.date)).slice(0,31).map(c=>{
+                const dif=+(c.efectivoContado-c.efectivoEsperado).toFixed(2);
+                const difs=cierreDifs(c);
+                const valV=difs.reduce((a,r)=>a+r.dC*r.pC+r.dS*r.pS,0);
+                const valC=difs.reduce((a,r)=>a+r.dC*r.cC+r.dS*r.cS,0);
+                const ok=cierreCuadra(c);
+                return(
+                  <div key={c.id} style={{padding:12,borderRadius:10,border:`1px solid ${ok?"rgba(26,140,90,0.3)":"rgba(192,64,64,0.35)"}`,background:ok?"rgba(26,140,90,0.04)":"rgba(192,64,64,0.04)"}}>
+                    <div style={{display:"flex",justifyContent:"space-between",gap:8,alignItems:"center"}}>
+                      <div>
+                        <p style={{margin:0,fontWeight:700,fontSize:14}}>{fechaLarga(c.date)}</p>
+                        <p style={{margin:0,fontSize:11,color:T.textMuted}}>{c.hora} · {c.by||"—"}{c.revisado?" · revisado"+(c.revisadoPor?" por "+c.revisadoPor:""):""}</p>
+                      </div>
+                      <Chip label={ok?"✓ Cuadró":"⚠ Con diferencias"} bg={ok?"rgba(26,140,90,0.12)":"rgba(192,64,64,0.12)"} color={ok?T.profit:T.expense}/>
+                    </div>
+                    <div style={{marginTop:8,fontSize:13,lineHeight:1.7}}>
+                      💵 Contado <strong>{$m(c.efectivoContado)}</strong> · Debía haber <strong>{$m(c.efectivoEsperado)}</strong>
+                      {Math.abs(dif)>=1&&<span style={{fontWeight:700,color:dif<0?T.expense:T.client}}> · {dif<0?"Faltan "+$m(-dif):"Sobran "+$m(dif)}</span>}
+                      <br/>🤝 Entregó al socio: <strong>{$m(Math.max(0,c.entregar))}</strong>
+                    </div>
+                    {difs.length>0&&(
+                      <div style={{marginTop:8,padding:"8px 10px",borderRadius:8,background:T.bg,border:`0.5px solid ${T.border}`,fontSize:12}}>
+                        <p style={{margin:"0 0 4px",fontWeight:700,color:T.text}}>📦 Inventario que no cuadró</p>
+                        {difs.map(r=>(
+                          <div key={r.key} style={{display:"flex",justifyContent:"space-between",gap:8,padding:"2px 0"}}>
+                            <span style={{color:T.textSub}}>{r.name}</span>
+                            <span style={{fontWeight:600,color:(r.dC<0||r.dS<0)?T.expense:T.client,whiteSpace:"nowrap"}}>
+                              {r.dC!==0&&(r.dC>0?"+":"")+r.dC+" "+r.uC}{r.dC!==0&&r.dS!==0&&" · "}{r.dS!==0&&(r.dS>0?"+":"")+r.dS+" "+r.uS}
+                            </span>
+                          </div>
+                        ))}
+                        <p style={{margin:"6px 0 0",color:valV<0?T.expense:T.client,fontWeight:600}}>{valV<0?"Faltante":"Sobrante"}: {$m(Math.abs(valV))} a precio de venta · {$m(Math.abs(valC))} a costo</p>
+                      </div>
+                    )}
+                    {c.nota&&<p style={{margin:"8px 0 0",fontSize:12,color:T.textSub}}>📝 {c.nota}</p>}
+                    <div style={{display:"flex",gap:6,marginTop:10,flexWrap:"wrap"}}>
+                      {!c.revisado&&<OutBtn onClick={()=>setCierres(prev=>prev.map(x=>x.id===c.id?{...x,revisado:true,revisadoPor:user?.name||""}:x))} style={{fontSize:12}}>✓ Marcar revisado</OutBtn>}
+                      {difs.length>0&&!c.ajustado&&<OutBtn onClick={()=>ajustar(c)} style={{fontSize:12,color:T.client,borderColor:"rgba(40,96,176,0.3)"}}>📦 Ajustar inventario al conteo</OutBtn>}
+                      {c.ajustado&&<Chip label="Inventario ajustado" bg="rgba(40,96,176,0.1)" color={T.client}/>}
+                      {reabrir===c.id?(
+                        <>
+                          <button onClick={()=>{setCierres(prev=>prev.filter(x=>x.id!==c.id));setReabrir(null);}} style={{fontSize:12,background:T.expense,color:"#fff",border:"none",fontWeight:600}}>Sí, reabrir</button>
+                          <button onClick={()=>setReabrir(null)} style={{fontSize:12}}>No</button>
+                        </>
+                      ):(
+                        !c.ajustado&&<OutBtn onClick={()=>setReabrir(c.id)} danger style={{fontSize:12}}>↺ Reabrir día</OutBtn>
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+          <p style={{margin:"10px 0 0",fontSize:11,color:T.textMuted}}>"Debía haber" = fondo de {$m(FONDO_CAJA)} + efectivo del día (ventas, envíos y mixtos en efectivo − gastos pagados de la caja − pagos a repartidores en efectivo). Lo que paga un socio de su bolsa no cuenta. El empleado no ve esta cifra.</p>
+        </Card>
+      )}
+    </div>
+  );
+}
+
+// ── INVENTARIO: vasos de palomitas y productos por pieza (solo socios) ────────
+function VasosCard({popCfg,setPopCfg,stockMoves,setStockMoves,user}){
+  const[add,setAdd]=useState({});
+  const guardar=()=>{
+    const moves=[];
+    const n={...popCfg};
+    POP_SIZES.forEach(k=>{const q=+add[k]||0;if(q>0){n[k]={...n[k],stock:(+n[k].stock||0)+q};moves.push({id:uid(),date:today(),pid:"pop_"+k,type:"entrada",cajas:q,note:"+"+q+" vasos "+popCfg[k].name,by:user?.name||""});}});
+    if(moves.length===0)return;
+    setPopCfg(n);setStockMoves([...stockMoves,...moves]);setAdd({});
+  };
+  return(
+    <Card>
+      <STitle>🍿 Vasos de palomitas</STitle>
+      <p style={{margin:"0 0 10px",fontSize:12,color:T.textSub}}>Cada palomita vendida descuenta un vaso de su tamaño.</p>
+      <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:8}}>
+        {POP_SIZES.map(k=>{const st=+popCfg[k].stock||0;return(
+          <div key={k} style={{padding:10,borderRadius:10,background:T.bgAlt,border:`0.5px solid ${T.border}`,textAlign:"center"}}>
+            <p style={{margin:0,fontSize:12,fontWeight:600}}>{popCfg[k].name}</p>
+            <p style={{margin:"2px 0 8px",fontSize:22,fontWeight:700,color:st<=0?T.expense:st<=20?"#E88020":T.profit}}>{st}</p>
+            <input type="number" min="0" value={add[k]??""} onChange={e=>setAdd({...add,[k]:e.target.value})} placeholder="+ vasos" style={{textAlign:"center"}}/>
+          </div>
+        );})}
+      </div>
+      <GoldBtn onClick={guardar} style={{marginTop:10}}>+ Agregar vasos</GoldBtn>
+    </Card>
+  );
+}
+
+function OtrosTable({prods,sales}){
+  const otros=prods.filter(p=>(p.spc||1)===1&&p.id!=="sob");
+  return(
+    <Card>
+      <STitle>Productos por pieza (Sex Shop y otros)</STitle>
+      <div style={{overflowX:"auto"}}>
+        <table style={{width:"100%",borderCollapse:"collapse",fontSize:12}}>
+          <TH cols={["Producto","En sistema","Vendido"]}/>
+          <tbody>
+            {otros.map((p,i)=>{const st=p.stockCajas||0;const sold=sales.reduce((s,sl)=>s+(sl.items||[]).filter(it=>it.pid===p.id).reduce((a,it)=>a+(+it.qty||0),0),0);return(
+              <tr key={p.id} style={{background:i%2===0?T.bg:T.bgRow,borderBottom:`0.5px solid ${T.border}`}}>
+                <td style={{padding:"8px 10px",fontWeight:600}}>{p.name}</td>
+                <td style={{padding:"8px 10px",fontWeight:700,color:st<=0?T.expense:st<=2?"#E88020":T.profit}}>{st} <span style={{fontWeight:400,color:T.textMuted,fontSize:11}}>{p.unit}</span></td>
+                <td style={{padding:"8px 10px",color:T.textSub}}>{sold||"—"}</td>
+              </tr>
+            );})}
+          </tbody>
+        </table>
+      </div>
+      <p style={{margin:"8px 0 0",fontSize:11,color:T.textMuted}}>Cárgalos arriba en "Cargar / actualizar stock" (campo Piezas).</p>
+    </Card>
   );
 }
 
@@ -1662,23 +1993,7 @@ function CorteCaja({sales,expenses,extras=[],setExtras,user}){
   const mixEfectivoTotal=mixSales.reduce((a,s)=>a+(s.mixEfectivo||0),0);
   const mixMarcelTotal=mixSales.filter(s=>s.mixCuenta==="SPIN Marcel").reduce((a,s)=>a+(s.mixTransferencia||0),0);
   const mixGustavoTotal=mixSales.filter(s=>s.mixCuenta==="SPIN Gustavo").reduce((a,s)=>a+(s.mixTransferencia||0),0);
-  const byMethod=PAY_METHODS.filter(m=>m!=="Mixto").map(m=>{
-    const direct=fSales.filter(s=>s.payMethod===m);
-    const ventasTotal=direct.reduce((a,s)=>a+s.total,0);
-    // Envío que pagó el cliente: entra a la misma cuenta que la venta (en Mixto ya viene dentro del desglose)
-    const envCobrado=direct.reduce((a,s)=>a+(s.envio||0),0);
-    // Pagos a repartidores hechos en este periodo desde esta cuenta
-    const repPagado=sales.filter(s=>s.envioPagado&&s.envioPagadoCon===m&&s.envioPagadoFecha>=range.start&&s.envioPagadoFecha<=range.end).reduce((a,s)=>a+(s.costoEnvio||0),0);
-    const mixAmt=m==="Efectivo"?mixEfectivoTotal:mixSales.filter(s=>s.mixCuenta===m).reduce((a,s)=>a+(s.mixTransferencia||0),0);
-    // Mercado Pago deposita ya descontada su comisión
-    const comisionAmt=m==="Terminal MP"?fSales.reduce((a,s)=>a+(s.comision||0),0):0;
-    const extraAmt=fExtrasP.filter(x=>(x.via||"Efectivo")===m).reduce((a,x)=>a+x.amount,0);
-    const gastosDeEsta=fExp.filter(e=>(e.pagadoCon||"Efectivo")===m).reduce((a,e)=>a+e.amount,0);
-    const entradas=ventasTotal+envCobrado+mixAmt+extraAmt;
-    const neto=entradas-gastosDeEsta-comisionAmt-repPagado;
-    const pc=PAY_CLR[m]||{};
-    return{method:m,ventasTotal,envCobrado,repPagado,mixAmt,extraAmt,entradas,gastosDeEsta,comisionAmt,neto,count:direct.length,env:direct.reduce((a,s)=>a+(s.envio||0),0),bg:pc.bg,c:pc.c};
-  });
+  const byMethod=PAY_METHODS.filter(m=>m!=="Mixto").map(m=>cuentaResumen(m,range,sales,expenses,extras));
   const DAYS=["Lunes","Martes","Miércoles","Jueves","Viernes","Sábado","Domingo"];
   const byDay=DAYS.map((d,i)=>{const dn=(i+1)%7;const ds=fSales.filter(s=>{const w=new Date(s.date+"T12:00:00").getDay();return w===dn||(i===6&&w===0);});return{day:d,total:ds.reduce((a,s)=>a+s.total,0),util:ds.reduce((a,s)=>a+s.total-s.cost,0),count:ds.length};});
   const sinMetodo=fSales.filter(s=>!s.payMethod).length;
@@ -2087,7 +2402,7 @@ function Envios({sales,setSales,clients,isAdmin,user}){
 
 
 // ── PALOMITAS (POS rápido) ────────────────────────────────────────────────────
-function Palomitas({sales,setSales,popCfg,setPopCfg,user,isAdmin}){
+function Palomitas({sales,setSales,popCfg,setPopCfg,user,isAdmin,cerrados=[]}){
   const[qty,setQty]=useState({s:0,m:0,l:0});
   const[pay,setPay]=useState("Efectivo");
   const[okMsg,setOkMsg]=useState("");
@@ -2100,13 +2415,17 @@ function Palomitas({sales,setSales,popCfg,setPopCfg,user,isAdmin}){
   const cost=POP_SIZES.reduce((a,k)=>a+qty[k]*popUnitCost(popCfg[k]),0);
   const add=(k,d)=>setQty(q=>({...q,[k]:Math.max(0,q[k]+d)}));
 
+  const cerradoHoy=cerrados.includes(today());
   const cobrar=()=>{
-    if(count===0)return;
+    if(count===0||cerradoHoy)return;
+    const sinVasos=POP_SIZES.filter(k=>qty[k]>(+popCfg[k].stock||0)).map(k=>popCfg[k].name);
+    // Cada palomita vendida descuenta un vaso de su tamaño
+    setPopCfg(prev=>{const n={...prev};POP_SIZES.forEach(k=>{if(qty[k]>0)n[k]={...n[k],stock:(+n[k].stock||0)-qty[k]};});return n;});
     const items=POP_SIZES.filter(k=>qty[k]>0).map(k=>({pid:"pop_"+k,qty:qty[k],su:"pieza",price:+popCfg[k].price||0}));
     const desc="🍿 "+POP_SIZES.filter(k=>qty[k]>0).map(k=>qty[k]+"× "+popCfg[k].name).join(", ");
     const comision=pay==="Terminal MP"?+(total*TERMINAL_FEE).toFixed(2):0;
     setSales(prev=>[...prev,{id:uid(),date:today(),tipo:"palomitas",clientId:"",pkgId:null,total,cost:cost+comision,comision,desc,items,note:"",payMethod:pay,
-      mixEfectivo:0,mixTransferencia:0,mixCuenta:"",envio:0,costoEnvio:0,envioTipo:"ninguno",envioDesc:"",by:user?.name||""}]);
+      mixEfectivo:0,mixTransferencia:0,mixCuenta:"",envio:0,costoEnvio:0,envioTipo:"ninguno",envioDesc:"",by:user?.name||"",sinStock:sinVasos}]);
     setQty({s:0,m:0,l:0});setPay("Efectivo");
     setOkMsg("✓ Cobrado "+$m(total));
     setTimeout(()=>setOkMsg(""),2500);
@@ -2126,6 +2445,7 @@ function Palomitas({sales,setSales,popCfg,setPopCfg,user,isAdmin}){
     <div style={{display:"flex",flexDirection:"column",gap:"1.25rem"}}>
       <Card>
         <STitle>🍿 Vender palomitas</STitle>
+        {cerradoHoy&&<div style={{marginBottom:12,padding:"10px 12px",borderRadius:8,background:"rgba(192,64,64,0.08)",border:"1px solid rgba(192,64,64,0.3)",fontSize:13,color:T.expense,fontWeight:600}}>🔒 El día de hoy ya se cerró.</div>}
         <p style={{margin:"0 0 12px",fontSize:12,color:T.textSub}}>Toca el tamaño para agregar. Usa − para quitar.</p>
         <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:8}}>
           {POP_SIZES.map(k=>{
@@ -2184,7 +2504,7 @@ function Palomitas({sales,setSales,popCfg,setPopCfg,user,isAdmin}){
                   <span style={{fontWeight:700,fontSize:15,color:T.revenue}}>{$m(s.total)}</span>
                   {!isAdmin?null:confirmDel===s.id?(
                     <>
-                      <button onClick={()=>{setSales(prev=>prev.filter(x=>x.id!==s.id));setConfirmDel(null);}} style={{fontSize:11,background:T.expense,color:"#fff",border:"none",fontWeight:600,padding:"4px 8px"}}>Borrar</button>
+                      <button onClick={()=>{setPopCfg(prev=>{const n={...prev};(s.items||[]).forEach(it=>{const k=(it.pid||"").replace("pop_","");if(n[k])n[k]={...n[k],stock:(+n[k].stock||0)+(+it.qty||0)};});return n;});setSales(prev=>prev.filter(x=>x.id!==s.id));setConfirmDel(null);}} style={{fontSize:11,background:T.expense,color:"#fff",border:"none",fontWeight:600,padding:"4px 8px"}}>Borrar</button>
                       <button onClick={()=>setConfirmDel(null)} style={{fontSize:11,padding:"4px 8px"}}>No</button>
                     </>
                   ):(
@@ -2244,6 +2564,7 @@ const TABS=[
   {k:"pop",  l:"Palomitas",     s:"Palomitas",e:"🍿",                 color:T.revenue},
   {k:"corte",l:"Corte de caja", s:"Caja",    icon:"ti-report-money",  color:T.profit,  admin:true},
   {k:"envios",l:"Envíos",       s:"Envíos",  icon:"ti-motorbike",     color:T.client},
+  {k:"cierre",l:"Cierre del día",s:"Cierre",  icon:"ti-lock",          color:T.profit},
   {k:"inv",  l:"Inventario",    s:"Inventario",icon:"ti-package",     color:T.client},
   {k:"gasto",l:"Gastos",        s:"Gastos",  icon:"ti-wallet",        color:T.expense},
   {k:"cli",  l:"Clientes",      s:"Clientes",icon:"ti-users",         color:T.client},
@@ -2252,7 +2573,7 @@ const TABS=[
   {k:"reparto",l:"Reparto de utilidades",s:"Reparto",icon:"ti-users-group",color:T.pkg,admin:true},
 ];
 // Qué va fijo en la barra de abajo; lo demás queda en "Más"
-const NAV_MAIN={admin:["dash","venta","pop","corte"],staff:["venta","pop","inv","gasto","cli"]};
+const NAV_MAIN={admin:["dash","venta","pop","corte"],staff:["venta","pop","envios","inv","cierre"]};
 
 function TabIcon({t,size,color}){
   if(t.e)return <span style={{fontSize:size-2,lineHeight:1}}>{t.e}</span>;
@@ -2313,12 +2634,13 @@ function Dashboard_App({user,onLogout}){
   const[extras,setExtras]=useState([]);
   const[popCfg,setPopCfg]=useState(INIT_POP);
   const[fixed,setFixed]=useState(INIT_FIXED);
+  const[cierres,setCierres]=useState([]);
   const[ready,setReady]=useState(false);
   const[leaving,setLeaving]=useState(false);
 
   useEffect(()=>{
     (async()=>{
-      let[p,pk,c,s,e,sm,ex,pop,fx]=await Promise.all([load(SK.p,INIT_PRODS),load(SK.pk,INIT_PKGS),load(SK.c,[]),load(SK.s,[]),load(SK.e,[]),load(SK.sm,[]),load(SK.ex,[]),load(SK.pop,INIT_POP),load(SK.fx,INIT_FIXED)]);
+      let[p,pk,c,s,e,sm,ex,pop,fx,ci]=await Promise.all([load(SK.p,INIT_PRODS),load(SK.pk,INIT_PKGS),load(SK.c,[]),load(SK.s,[]),load(SK.e,[]),load(SK.sm,[]),load(SK.ex,[]),load(SK.pop,INIT_POP),load(SK.fx,INIT_FIXED),load(SK.ci,[])]);
       // Merge new products
       const ids=new Set(p.map(x=>x.id));
       INIT_PRODS.forEach(ip=>{if(!ids.has(ip.id))p.push(ip);});
@@ -2339,6 +2661,7 @@ function Dashboard_App({user,onLogout}){
       // por default que falten (sin tocar montos que ya editaron). Después se respetan tal cual.
       const fxItems=Array.isArray(fx)?fx:(fx&&Array.isArray(fx.items)?fx.items:INIT_FIXED);
       const fxVer=Array.isArray(fx)?1:(fx&&fx.v)||1;
+      setCierres(Array.isArray(ci)?ci:[]);
       setFixed(fxVer>=FIXED_VER?fxItems:[...fxItems,...INIT_FIXED.filter(d=>!fxItems.some(x=>x.id===d.id))]);
       setReady(true);
     })();
@@ -2353,6 +2676,7 @@ function Dashboard_App({user,onLogout}){
   useEffect(()=>{if(ready){const t=setTimeout(()=>save(SK.ex,extras),800);return()=>clearTimeout(t);}},[extras,ready]);
   useEffect(()=>{if(ready){const t=setTimeout(()=>save(SK.pop,popCfg),800);return()=>clearTimeout(t);}},[popCfg,ready]);
   useEffect(()=>{if(ready){const t=setTimeout(()=>save(SK.fx,{v:FIXED_VER,items:fixed}),800);return()=>clearTimeout(t);}},[fixed,ready]);
+  useEffect(()=>{if(ready){const t=setTimeout(()=>save(SK.ci,cierres),800);return()=>clearTimeout(t);}},[cierres,ready]);
 
   if(!ready)return(
     <div style={{display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",padding:"3rem",gap:12,color:T.textSub}}>
@@ -2365,7 +2689,7 @@ function Dashboard_App({user,onLogout}){
   const repSales=sales.filter(s=>s.date>=INICIO_OPERACION);
   const repExpenses=expenses.filter(e=>e.date>=INICIO_OPERACION);
   const repExtras=extras.filter(x=>x.date>=INICIO_OPERACION);
-  const props={prods,setProds,pkgs,setPkgs,clients,setClients,sales,setSales,expenses,setExpenses,stockMoves,setStockMoves,extras,setExtras,user,isAdmin,fixed,setFixed,goTab:setTab};
+  const props={prods,setProds,pkgs,setPkgs,clients,setClients,sales,setSales,expenses,setExpenses,stockMoves,setStockMoves,extras,setExtras,user,isAdmin,fixed,setFixed,goTab:setTab,popCfg,setPopCfg,cierres,setCierres,cerrados:cierres.map(c=>c.date)};
   const warn=isAdmin&&prods.some(p=>p.cost===0);
   const cur=myTabs.find(t=>t.k===tab)||myTabs[0];
   const can=k=>myTabs.some(t=>t.k===k);
@@ -2373,7 +2697,7 @@ function Dashboard_App({user,onLogout}){
   const logout=async()=>{
     if(leaving)return;
     setLeaving(true);
-    await Promise.all([save(SK.p,prods),save(SK.pk,pkgs),save(SK.c,clients),save(SK.s,sales),save(SK.e,expenses),save(SK.sm,stockMoves),save(SK.ex,extras),save(SK.pop,popCfg),save(SK.fx,{v:FIXED_VER,items:fixed})]);
+    await Promise.all([save(SK.p,prods),save(SK.pk,pkgs),save(SK.c,clients),save(SK.s,sales),save(SK.e,expenses),save(SK.sm,stockMoves),save(SK.ex,extras),save(SK.pop,popCfg),save(SK.fx,{v:FIXED_VER,items:fixed}),save(SK.ci,cierres)]);
     onLogout();
   };
 
@@ -2403,9 +2727,10 @@ function Dashboard_App({user,onLogout}){
       {cur.k==="pkgs"  && <Paquetes   {...props}/>}
       {cur.k==="cli"   && <Clientes   {...props}/>}
       {cur.k==="venta" && <NuevaVenta {...props}/>}
-      {cur.k==="pop"   && <Palomitas sales={sales} setSales={setSales} popCfg={popCfg} setPopCfg={setPopCfg} user={user} isAdmin={isAdmin}/>}
+      {cur.k==="pop"   && <Palomitas sales={sales} setSales={setSales} popCfg={popCfg} setPopCfg={setPopCfg} user={user} isAdmin={isAdmin} cerrados={props.cerrados}/>}
       {cur.k==="gasto" && <Gastos     {...props}/>}
       {cur.k==="envios"&& <Envios     {...props}/>}
+      {cur.k==="cierre"&& <CierreDia  {...props}/>}
       {cur.k==="inv"   && <Inventario {...props}/>}
       {cur.k==="corte" && can("corte") && <CorteCaja  sales={repSales} expenses={repExpenses} extras={extras} setExtras={setExtras} user={user}/>}
       {cur.k==="reparto" && can("reparto") && <Reparto sales={repSales} expenses={repExpenses} extras={repExtras}/>}
