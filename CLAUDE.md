@@ -54,7 +54,9 @@ Antes de hacer push SIEMPRE correr `npm run build` y confirmar que compila.
   - Venta con envío guarda: `conEnvio`, `envio` (lo que paga el cliente), `costoEnvio` (lo que cobra el repartidor), `envioNeto` = costo − cliente (lo que absorbemos, va DENTRO de `cost`), `envioKm`, `envioPct` (100/50/0/otro), `repartidor`, `envioDir`, `envioStatus` (pendiente/salio/entregado + horas), `envioPagado`, `envioPagadoCon`, `envioPagadoFecha`.
   - `sale.total` sigue siendo solo productos. En el Corte, `envio` entra a la cuenta de la venta (en Mixto ya viene dentro del desglose) y el pago al repartidor sale de `envioPagadoCon` en la fecha `envioPagadoFecha`. El pago al repartidor NO se registra como gasto (ya está en `cost`): así no se cuenta doble.
   - Pendiente de confirmar con Marcel: quién recibe el dinero del cliente y cuándo se paga cada viaje. Hoy: cada viaje queda "por pagar" hasta que se marca.
-  - Regalos (sobres): se registran como línea de producto con precio $0 (descuenta stock y usa el costSobre real).
+- **Regalos** (`RegalosForm` en Nueva venta): sobres que se regalan al cliente. Cada uno se absorbe a `SOBRE_COST` = $17 (promedio de todas las marcas) y se suma a `sale.cost`; se guardan en `sale.regalos` / `sale.regaloCosto`. Si se elige marca, se descuenta de `stockSobres`; "Sobre surtido" no toca inventario.
+- **Fecha de arranque** `INICIO_OPERACION` = 2026-10-01: Inicio, Corte y Reparto reciben `repSales/repExpenses/repExtras` (filtrados, SOLO LECTURA). Nunca pasar arreglos filtrados a componentes que hacen setSales/setExpenses/setExtras con el arreglo recibido, porque borrarían lo anterior.
+- Palomitas: insumos default Pequeño $3, Mediano $4, Grande $6 (estimado de Marcel, lado alto). Solo se aplican si el costo guardado es 0.
 - Equipo: 2 socios (Marcel, Gustavo) + 1 empleado usan la app.
 - **Reparto de utilidades**: vista semanal (principal) y mensual, split 33% Marcel / 33% Gustavo / 34% Reinversión MSP, con gráficas de barras.
 - **KPI**: tarjeta "Utilidad Neta del Mes" con borde verde/rojo.

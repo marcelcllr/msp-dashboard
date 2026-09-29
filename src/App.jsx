@@ -92,7 +92,10 @@ const pct = n => Number(n).toFixed(1)+"%";
 const uid = () => Date.now().toString(36)+Math.random().toString(36).slice(2,5);
 // Fecha local (Monterrey), no UTC: con toISOString después de las 6 pm ya salía el día siguiente
 const today = () => { const d=new Date(); return new Date(d.getTime()-d.getTimezoneOffset()*60000).toISOString().slice(0,10); };
-const SOBRE_COST = 10;
+// Costo promedio de un sobre (todas las marcas). Se usa para los regalos que absorbemos.
+const SOBRE_COST = 17;
+// Fecha en que empezamos a usar la app con números reales. Inicio, Corte y Reparto no cuentan nada antes.
+const INICIO_OPERACION = "2026-10-01";
 
 // ── TIERS ─────────────────────────────────────────────────────────────────────
 const TA=[{m:1,p:1199},{m:3,p:699},{m:5,p:650},{m:10,p:530},{m:20,p:500},{m:50,p:470},{m:100,p:450}];
@@ -166,7 +169,7 @@ const fixedPending=(fixed,expenses,ds)=>(fixed||[]).filter(f=>!expenses.some(e=>
 // ── PALOMITAS ─────────────────────────────────────────────────────────────────
 const POP_SIZES=["s","m","l"];
 // cost = insumos (maíz, aceite, sal…) · vaso = bolsita/vaso donde se sirve
-const INIT_POP={s:{name:"Pequeño",price:20,cost:0,vaso:5},m:{name:"Mediano",price:35,cost:0,vaso:5},l:{name:"Grande",price:50,cost:0,vaso:5}};
+const INIT_POP={s:{name:"Pequeño",price:20,cost:3,vaso:5},m:{name:"Mediano",price:35,cost:4,vaso:5},l:{name:"Grande",price:50,cost:6,vaso:5}};
 const popUnitCost=c=>(+c.cost||0)+(+c.vaso||0);
 const PAY_METHODS=["Efectivo","SPIN Marcel","SPIN Gustavo","Terminal MP","Tercero","Mixto"];
 const PAY_METHODS_LABEL={"Efectivo":"💵 Efectivo","SPIN Marcel":"📱 SPIN Marcel","SPIN Gustavo":"📱 SPIN Gustavo","Terminal MP":"💳 Terminal MP","Tercero":"🤝 Tercero","Mixto":"🔀 Mixto"};
@@ -280,7 +283,7 @@ function Dashboard({prods,pkgs,clients,sales,expenses,fixed,goTab}){
         <div style={{background:T.bgCard,borderRadius:12,padding:"16px 18px",border:`0.5px solid ${T.goldBorder}`,borderTop:`3px solid ${T.profit}`}}>
           <p style={{margin:"0 0 8px",fontSize:11,fontWeight:600,color:T.textSub,textTransform:"uppercase",letterSpacing:"0.08em"}}>Ganancias del año</p>
           <p style={{margin:"0 0 4px",fontSize:28,fontWeight:700,color:T.text}}>{$m(totalData.util)}</p>
-          <p style={{margin:0,fontSize:12,color:T.textMuted}}>Enero a hoy · {curYear}</p>
+          <p style={{margin:0,fontSize:12,color:T.textMuted}}>Desde el arranque ({new Date(INICIO_OPERACION+"T12:00:00").toLocaleDateString("es-MX",{day:"numeric",month:"short"})}) · {curYear}</p>
         </div>
         <div style={{background:T.bgCard,borderRadius:12,padding:"16px 18px",border:`0.5px solid ${T.goldBorder}`,borderTop:`3px solid ${T.client}`}}>
           <p style={{margin:"0 0 8px",fontSize:11,fontWeight:600,color:T.textSub,textTransform:"uppercase",letterSpacing:"0.08em"}}>Ventas este mes</p>
@@ -685,6 +688,37 @@ function ProdSearch({prods,value,onChange}){
   );
 }
 
+// ── REGALOS (sobres que regalamos en una venta) ───────────────────────────────
+function RegalosForm({regalos,setRegalos,prods,isAdmin}){
+  const sobreProds=prods.filter(p=>p.cat==="Miel"&&(p.spc||1)>1);
+  const n=regalos.reduce((a,r)=>a+(+r.qty||0),0);
+  const upd=(i,k,v)=>{const a=[...regalos];a[i]={...a[i],[k]:v};setRegalos(a);};
+  return(
+    <div style={{borderTop:`1px solid ${T.goldBorder}`,paddingTop:12,marginTop:4,marginBottom:12}}>
+      <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:8}}>
+        <p style={{margin:0,fontSize:12,fontWeight:600,color:T.text}}>🎁 Regalos para el cliente</p>
+        <OutBtn onClick={()=>setRegalos([...regalos,{pid:"",qty:1}])} style={{fontSize:12}}>+ Agregar regalo</OutBtn>
+      </div>
+      {regalos.map((r,i)=>(
+        <div key={i} style={{display:"flex",gap:6,marginTop:8,alignItems:"center"}}>
+          <select value={r.pid} onChange={e=>upd(i,"pid",e.target.value)} style={{flex:1}}>
+            <option value="">Sobre surtido</option>
+            {sobreProds.map(p=><option key={p.id} value={p.id}>Sobre {p.name.replace(/\s*\(.*\)/,"")} ({p.stockSobres||0} sueltos)</option>)}
+          </select>
+          <input type="number" min="1" value={r.qty} onChange={e=>upd(i,"qty",e.target.value)} style={{width:64,textAlign:"center"}}/>
+          <OutBtn onClick={()=>setRegalos(regalos.filter((_,j)=>j!==i))} danger style={{padding:"6px 10px"}}>✕</OutBtn>
+        </div>
+      ))}
+      {n>0&&(
+        <p style={{margin:"8px 0 0",fontSize:12,color:T.textSub}}>
+          {n} sobre{n!==1?"s":""} de regalo{isAdmin&&<> · los absorbes: <strong style={{color:T.expense}}>−{$m(n*SOBRE_COST)}</strong> (a {$m(SOBRE_COST)} c/u)</>}
+          {regalos.some(r=>r.pid)&&" · se descuentan del inventario"}
+        </p>
+      )}
+    </div>
+  );
+}
+
 // ── FORMULARIO DE ENVÍO (dentro de Nueva venta) ───────────────────────────────
 function EnvioForm({conEnvio,setConEnvio,envKm,setEnvKm,envCostoOver,setEnvCostoOver,envPct,setEnvPct,envOtro,setEnvOtro,envRep,setEnvRep,envDir,setEnvDir,envPagado,setEnvPagado,envPagadoCon,setEnvPagadoCon,isAdmin,repartidores}){
   const ev=envioCalc(envKm,envCostoOver,envPct,envOtro);
@@ -763,6 +797,7 @@ function NuevaVenta({prods,setProds,pkgs,clients,setClients,sales,setSales,user,
   const[mixEfectivo,setMixEfectivo]=useState("");
   const[mixTransferencia,setMixTransferencia]=useState("");
   const[mixCuenta,setMixCuenta]=useState("SPIN Marcel");
+  const[regalos,setRegalos]=useState([]);
   const[conEnvio,setConEnvio]=useState(false);
   const[envKm,setEnvKm]=useState("");
   const[envCostoOver,setEnvCostoOver]=useState("");
@@ -822,7 +857,13 @@ function NuevaVenta({prods,setProds,pkgs,clients,setClients,sales,setSales,user,
       repartidor:envRep.trim(),envioDir:envDir.trim(),envioStatus:"pendiente",envioSalio:"",envioEntregado:"",
       envioPagado:envPagado==="si",envioPagadoCon:envPagado==="si"?envPagadoCon:"",envioPagadoFecha:envPagado==="si"?date:""}
       :{conEnvio:false,envio:0,costoEnvio:0,envioNeto:0};
-    const sale={id:uid(),date,clientId,pkgId:mode==="paquete"?pkgId:null,total,cost:cost+comision+ev.absorbe,comision,desc,items,note,payMethod,
+    // Regalos: cada sobre regalado lo absorbemos a SOBRE_COST y, si se eligió marca, se descuenta de sobres sueltos
+    const regaloItems=regalos.filter(r=>+r.qty>0).map(r=>({pid:r.pid||"",qty:+r.qty}));
+    const regaloN=regaloItems.reduce((a,r)=>a+r.qty,0);
+    const regaloCosto=regaloN*SOBRE_COST;
+    if(regaloN>0)desc+=" + 🎁 "+regaloN+" regalo"+(regaloN!==1?"s":"");
+    const stockItems=[...items,...regaloItems.filter(r=>r.pid).map(r=>({pid:r.pid,qty:r.qty,su:"sobre"}))];
+    const sale={id:uid(),date,clientId,pkgId:mode==="paquete"?pkgId:null,total,cost:cost+comision+ev.absorbe+regaloCosto,comision,regalos:regaloItems,regaloCosto,desc,items,note,payMethod,
       mixEfectivo:payMethod==="Mixto"?+mixEfectivo||0:0,
       mixTransferencia:payMethod==="Mixto"?+mixTransferencia||0:0,
       mixCuenta:payMethod==="Mixto"?mixCuenta:"",
@@ -830,7 +871,7 @@ function NuevaVenta({prods,setProds,pkgs,clients,setClients,sales,setSales,user,
     setSales([...sales,sale]);
     // deduct stock (suma todas las líneas del mismo producto: cajas y sobres por separado)
     setProds(prev=>prev.map(prod=>{
-      const its=items.filter(it=>it.pid===prod.id);
+      const its=stockItems.filter(it=>it.pid===prod.id);
       if(its.length===0)return prod;
       const qS=its.filter(it=>it.su==="sobre").reduce((a,it)=>a+(+it.qty||0),0);
       const qC=its.filter(it=>(it.su||"caja")!=="sobre").reduce((a,it)=>a+(+it.qty||0),0);
@@ -839,7 +880,7 @@ function NuevaVenta({prods,setProds,pkgs,clients,setClients,sales,setSales,user,
     setErr("");
     setPkgId("");setPkgQty(1);setPkgOver("");
     setLines([{pid:"",qty:1,price:"",su:"caja"}]);
-    setConEnvio(false);setEnvKm("");setEnvCostoOver("");setEnvPct("100");setEnvOtro("");setEnvRep("");setEnvDir("");setEnvPagado("no");setNote("");
+    setRegalos([]);setConEnvio(false);setEnvKm("");setEnvCostoOver("");setEnvPct("100");setEnvOtro("");setEnvRep("");setEnvDir("");setEnvPagado("no");setNote("");
     setPayMethod("Efectivo");setMixEfectivo("");setMixTransferencia("");setMixCuenta("SPIN Marcel");
     setOkMsg("✓ Venta de "+$m(total+ev.cliente)+" registrada"+(conEnvio?" · envío pendiente en 🛵 Envíos":""));
     setTimeout(()=>setOkMsg(""),3000);
@@ -1025,6 +1066,9 @@ function NuevaVenta({prods,setProds,pkgs,clients,setClients,sales,setSales,user,
             )}
           </div>
         )}
+
+        {/* REGALOS */}
+        <RegalosForm regalos={regalos} setRegalos={setRegalos} prods={prods} isAdmin={isAdmin}/>
 
         {/* ENVÍO */}
         <EnvioForm {...{conEnvio,setConEnvio,envKm,setEnvKm,envCostoOver,setEnvCostoOver,envPct,setEnvPct,envOtro,setEnvOtro,envRep,setEnvRep,envDir,setEnvDir,envPagado,setEnvPagado,envPagadoCon,setEnvPagadoCon,isAdmin}} repartidores={[...new Set(sales.map(s=>s.repartidor).filter(Boolean))]}/>
@@ -2230,7 +2274,8 @@ function Dashboard_App({user,onLogout}){
       p=p.filter(x=>x.id!=="gom"&&x.id!=="pp12");
       p=p.map(x=>fix.has(x.id)?{...x,cat:"Miel"}:x);
       setProds(p);setPkgs(pk);setClients(c);setSales(s);setExpenses(e);setStockMoves(sm);setExtras(ex);
-      const popM={};POP_SIZES.forEach(k=>{popM[k]={...INIT_POP[k],...((pop||{})[k]||{})};});
+      // Igual que con productos: el default de insumos solo entra si no hay costo capturado (0 o vacío)
+      const popM={};POP_SIZES.forEach(k=>{const st=(pop||{})[k]||{};popM[k]={...INIT_POP[k],...st,cost:(+st.cost>0)?+st.cost:INIT_POP[k].cost};});
       setPopCfg(popM);
       // Fijos: guardado como {v,items}. Si viene de una versión anterior, se agregan los fijos nuevos
       // por default que falten (sin tocar montos que ya editaron). Después se respetan tal cual.
@@ -2258,6 +2303,10 @@ function Dashboard_App({user,onLogout}){
     </div>
   );
 
+  // Solo lectura para reportes: lo anterior al arranque se conserva guardado pero no se cuenta
+  const repSales=sales.filter(s=>s.date>=INICIO_OPERACION);
+  const repExpenses=expenses.filter(e=>e.date>=INICIO_OPERACION);
+  const repExtras=extras.filter(x=>x.date>=INICIO_OPERACION);
   const props={prods,setProds,pkgs,setPkgs,clients,setClients,sales,setSales,expenses,setExpenses,stockMoves,setStockMoves,extras,setExtras,user,isAdmin,fixed,setFixed,goTab:setTab};
   const warn=isAdmin&&prods.some(p=>p.cost===0);
   const cur=myTabs.find(t=>t.k===tab)||myTabs[0];
@@ -2291,7 +2340,7 @@ function Dashboard_App({user,onLogout}){
           </div>
         </div>
       </div>
-      {cur.k==="dash"  && <Dashboard  {...props}/>}
+      {cur.k==="dash"  && <Dashboard  {...props} sales={repSales} expenses={repExpenses}/>}
       {cur.k==="prod"  && <Productos  {...props}/>}
       {cur.k==="pkgs"  && <Paquetes   {...props}/>}
       {cur.k==="cli"   && <Clientes   {...props}/>}
@@ -2300,8 +2349,8 @@ function Dashboard_App({user,onLogout}){
       {cur.k==="gasto" && <Gastos     {...props}/>}
       {cur.k==="envios"&& <Envios     {...props}/>}
       {cur.k==="inv"   && <Inventario {...props}/>}
-      {cur.k==="corte" && can("corte") && <CorteCaja  sales={sales} expenses={expenses} extras={extras} setExtras={setExtras} user={user}/>}
-      {cur.k==="reparto" && can("reparto") && <Reparto sales={sales} expenses={expenses} extras={extras}/>}
+      {cur.k==="corte" && can("corte") && <CorteCaja  sales={repSales} expenses={repExpenses} extras={extras} setExtras={setExtras} user={user}/>}
+      {cur.k==="reparto" && can("reparto") && <Reparto sales={repSales} expenses={repExpenses} extras={repExtras}/>}
       <BottomNav tabs={myTabs} mainKeys={NAV_MAIN[user.role]||NAV_MAIN.staff} tab={cur.k} setTab={setTab}/>
     </div>
   );
