@@ -29,7 +29,7 @@ Contexto para Claude Code. Léelo antes de tocar cualquier cosa.
 ## Gastos fijos
 - `msp-fx4`: guardado como `{v, items}`. Defaults: Renta $7,859/mes, Sueldo empleado $2,000/semana, Repartidor fijo $1,000/semana, Plan celular $150/mes, Apartado aguinaldo $357.14/mes (15 días de sueldo ÷ 12). Al subir `FIXED_VER` se agregan una sola vez los defaults que falten, sin tocar los editados.
 - Luz, agua e internet los paga la plaza: no son gasto.
-- Al marcar "Ya se pagó" se crea un gasto normal con `fixedId` + `period` ("YYYY-MM" o lunes de la semana). Pendientes salen como aviso en Inicio.
+- Al marcar "Ya se pagó" se crea un gasto normal con `fixedId` + `period` ("YYYY-MM" o el día que empieza su semana de cobro). Las semanas de cobro son bloques de 7 días desde `INICIO_OPERACION` (1–7 oct, 8–14 oct…), no lunes. Antes del arranque no hay pendientes ni se puede pagar. Pendientes salen como aviso en Inicio.
 
 ## Correr local
 ```
@@ -53,7 +53,7 @@ Antes de hacer push SIEMPRE correr `npm run build` y confirmar que compila.
   - Dos costos: cuota de la plataforma $1,000/semana (gasto fijo "Repartidor fijo") + cada viaje se le paga al repartidor a `ENVIO_TARIFA_KM` = $10/km.
   - Venta con envío guarda: `conEnvio`, `envio` (lo que paga el cliente), `costoEnvio` (lo que cobra el repartidor), `envioNeto` = costo − cliente (lo que absorbemos, va DENTRO de `cost`), `envioKm`, `envioPct` (100/50/0/otro), `repartidor`, `envioDir`, `envioStatus` (pendiente/salio/entregado + horas), `envioPagado`, `envioPagadoCon`, `envioPagadoFecha`.
   - `sale.total` sigue siendo solo productos. En el Corte, `envio` entra a la cuenta de la venta (en Mixto ya viene dentro del desglose) y el pago al repartidor sale de `envioPagadoCon` en la fecha `envioPagadoFecha`. El pago al repartidor NO se registra como gasto (ya está en `cost`): así no se cuenta doble.
-  - Pendiente de confirmar con Marcel: quién recibe el dinero del cliente y cuándo se paga cada viaje. Hoy: cada viaje queda "por pagar" hasta que se marca.
+  - Dos formas de cobro (`envCobro`): **transferencia/terminal** (el viaje queda "por pagar" al repartidor hasta marcarlo) o **efectivo contra entrega** (`envioContra`): el repartidor cobra productos + envío, se queda con `costoEnvio` (queda pagado en Efectivo ese día) y debe entregar `envioDebe` hasta que se marque `envioDineroRecibido`. El Corte avisa cuánto efectivo lo traen todavía los repartidores.
 - **Regalos** (`RegalosForm` en Nueva venta): sobres que se regalan al cliente. Cada uno se absorbe a `SOBRE_COST` = $17 (promedio de todas las marcas) y se suma a `sale.cost`; se guardan en `sale.regalos` / `sale.regaloCosto`. Si se elige marca, se descuenta de `stockSobres`; "Sobre surtido" no toca inventario.
 - **Fecha de arranque** `INICIO_OPERACION` = 2026-10-01: Inicio, Corte y Reparto reciben `repSales/repExpenses/repExtras` (filtrados, SOLO LECTURA). Nunca pasar arreglos filtrados a componentes que hacen setSales/setExpenses/setExtras con el arreglo recibido, porque borrarían lo anterior.
 - Palomitas: insumos default Pequeño $3, Mediano $4, Grande $6 (estimado de Marcel, lado alto). Solo se aplican si el costo guardado es 0.

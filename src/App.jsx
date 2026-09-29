@@ -157,14 +157,18 @@ const INIT_FIXED=[
 const FIXED_VER=2;
 const ymd=d=>d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0");
 const weekStartOf=ds=>{const d=new Date(ds+"T12:00:00");const w=d.getDay();d.setDate(d.getDate()-(w===0?6:w-1));return ymd(d);};
-// Periodo actual de un gasto fijo: "2026-09" (mensual) o el lunes de la semana (semanal)
-const fixedPeriod=(f,ds)=>f.freq==="semanal"?weekStartOf(ds):ds.slice(0,7);
+// Semanas de cobro de los fijos: bloques de 7 días a partir del arranque (1–7 oct, 8–14 oct…)
+const fixedWeekStart=ds=>{const d0=new Date(INICIO_OPERACION+"T12:00:00");const d=new Date(ds+"T12:00:00");const n=Math.floor(Math.round((d-d0)/86400000)/7);const st=new Date(d0);st.setDate(d0.getDate()+n*7);return ymd(st);};
+// Periodo actual de un gasto fijo: "2026-10" (mensual) o el día que empieza su semana de cobro (semanal)
+const fixedPeriod=(f,ds)=>f.freq==="semanal"?fixedWeekStart(ds):ds.slice(0,7);
 const fixedPeriodLabel=(f,ds)=>{
-  if(f.freq==="semanal"){const m=new Date(weekStartOf(ds)+"T12:00:00");return "semana del "+m.toLocaleDateString("es-MX",{day:"numeric",month:"short"});}
+  if(f.freq==="semanal"){const a=new Date(fixedWeekStart(ds)+"T12:00:00");const b=new Date(a);b.setDate(a.getDate()+6);
+    const o={day:"numeric",month:"short"};return "semana "+a.toLocaleDateString("es-MX",o)+" – "+b.toLocaleDateString("es-MX",o);}
   return new Date(ds.slice(0,7)+"-15T12:00:00").toLocaleDateString("es-MX",{month:"long",year:"numeric"});
 };
 const fixedMonthly=f=>f.freq==="semanal"?f.amount*52/12:f.amount;
-const fixedPending=(fixed,expenses,ds)=>(fixed||[]).filter(f=>!expenses.some(e=>e.fixedId===f.id&&e.period===fixedPeriod(f,ds)));
+// Antes del arranque no hay nada pendiente: todos los fijos se cobran por primera vez el día de arranque
+const fixedPending=(fixed,expenses,ds)=>ds<INICIO_OPERACION?[]:(fixed||[]).filter(f=>!expenses.some(e=>e.fixedId===f.id&&e.period===fixedPeriod(f,ds)));
 
 // ── PALOMITAS ─────────────────────────────────────────────────────────────────
 const POP_SIZES=["s","m","l"];
@@ -720,8 +724,10 @@ function RegalosForm({regalos,setRegalos,prods,isAdmin}){
 }
 
 // ── FORMULARIO DE ENVÍO (dentro de Nueva venta) ───────────────────────────────
-function EnvioForm({conEnvio,setConEnvio,envKm,setEnvKm,envCostoOver,setEnvCostoOver,envPct,setEnvPct,envOtro,setEnvOtro,envRep,setEnvRep,envDir,setEnvDir,envPagado,setEnvPagado,envPagadoCon,setEnvPagadoCon,isAdmin,repartidores}){
+function EnvioForm({conEnvio,setConEnvio,envKm,setEnvKm,envCostoOver,setEnvCostoOver,envPct,setEnvPct,envOtro,setEnvOtro,envRep,setEnvRep,envDir,setEnvDir,envPagado,setEnvPagado,envPagadoCon,setEnvPagadoCon,envCobro,setEnvCobro,setPayMethod,productos,isAdmin,repartidores}){
   const ev=envioCalc(envKm,envCostoOver,envPct,envOtro);
+  const cobraRep=productos+ev.cliente;           // lo que el repartidor le cobra al cliente
+  const teEntrega=cobraRep-ev.costo;              // lo que el repartidor te regresa
   const pill=(on,c)=>({border:`2px solid ${on?c:T.border}`,background:on?c+"18":"transparent",color:on?c:T.textSub,fontWeight:on?700:500,fontSize:12,minHeight:42,padding:"6px 4px",borderRadius:10});
   return(
     <div style={{borderTop:`1px solid ${T.goldBorder}`,paddingTop:12,marginTop:4,marginBottom:12}}>
@@ -764,6 +770,21 @@ function EnvioForm({conEnvio,setConEnvio,envKm,setEnvKm,envCostoOver,setEnvCosto
             </F>
           </div>
           <div>
+            <p style={{margin:"0 0 6px",fontSize:11,fontWeight:600,color:T.textSub}}>¿CÓMO PAGA EL CLIENTE?</p>
+            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:6}}>
+              <button onClick={()=>setEnvCobro("transfer")} style={pill(envCobro==="transfer",T.client)}>📱 Transferencia / terminal</button>
+              <button onClick={()=>{setEnvCobro("contra");setPayMethod("Efectivo");}} style={pill(envCobro==="contra",T.profit)}>💵 Efectivo al repartidor</button>
+            </div>
+          </div>
+          {envCobro==="contra"?(
+            <div style={{padding:"10px 12px",borderRadius:8,background:"rgba(26,140,90,0.06)",border:"1px solid rgba(26,140,90,0.25)",fontSize:13,display:"flex",flexDirection:"column",gap:3}}>
+              <span>💵 El repartidor le cobra al cliente: <strong>{$m(cobraRep)}</strong></span>
+              <span>🛵 Se queda con su envío: <strong style={{color:T.cost}}>−{$m(ev.costo)}</strong></span>
+              <span style={{fontSize:14}}>🤝 Te tiene que entregar: <strong style={{color:T.profit}}>{$m(teEntrega)}</strong></span>
+              {teEntrega<0&&<span style={{color:T.expense,fontSize:12}}>⚠ El envío cuesta más que lo que cobra: tú le debes {$m(-teEntrega)}</span>}
+            </div>
+          ):(
+          <div>
             <p style={{margin:"0 0 6px",fontSize:11,fontWeight:600,color:T.textSub}}>¿YA SE LE PAGÓ AL REPARTIDOR?</p>
             <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:6}}>
               <button onClick={()=>setEnvPagado("no")} style={pill(envPagado==="no",T.expense)}>⏳ No, después</button>
@@ -777,6 +798,7 @@ function EnvioForm({conEnvio,setConEnvio,envKm,setEnvKm,envCostoOver,setEnvCosto
               </select>
             )}
           </div>
+          )}
         </div>
       )}
     </div>
@@ -807,6 +829,7 @@ function NuevaVenta({prods,setProds,pkgs,clients,setClients,sales,setSales,user,
   const[envDir,setEnvDir]=useState("");
   const[envPagado,setEnvPagado]=useState("no");
   const[envPagadoCon,setEnvPagadoCon]=useState("Efectivo");
+  const[envCobro,setEnvCobro]=useState("transfer");
   const[note,setNote]=useState("");
   const[err,setErr]=useState("");
   const[okMsg,setOkMsg]=useState("");
@@ -853,9 +876,13 @@ function NuevaVenta({prods,setProds,pkgs,clients,setClients,sales,setSales,user,
     if(conEnvio&&ev.costo<=0){setErr("Pon los kilómetros o lo que cobra el repartidor");return;}
     // Comisión de la terminal (sobre productos + envío que pagó el cliente)
     const comision=+(terminalAmt(payMethod,total+ev.cliente,mixCuenta,mixTransferencia)*TERMINAL_FEE).toFixed(2);
+    // Contra entrega: el repartidor cobra en efectivo, se queda con su envío (queda pagado ese mismo día, en efectivo)
+    // y nos debe entregar el resto hasta que se marque "ya entregó el dinero"
+    const contra=conEnvio&&envCobro==="contra";
     const envioFields=conEnvio?{conEnvio:true,envio:ev.cliente,costoEnvio:ev.costo,envioNeto:ev.absorbe,envioKm:+envKm||0,envioPct:envPct,
+      envioContra:contra,envioDebe:contra?+(total+ev.cliente-ev.costo).toFixed(2):0,envioDineroRecibido:false,envioDineroHora:"",
       repartidor:envRep.trim(),envioDir:envDir.trim(),envioStatus:"pendiente",envioSalio:"",envioEntregado:"",
-      envioPagado:envPagado==="si",envioPagadoCon:envPagado==="si"?envPagadoCon:"",envioPagadoFecha:envPagado==="si"?date:""}
+      envioPagado:contra||envPagado==="si",envioPagadoCon:contra?"Efectivo":(envPagado==="si"?envPagadoCon:""),envioPagadoFecha:(contra||envPagado==="si")?date:""}
       :{conEnvio:false,envio:0,costoEnvio:0,envioNeto:0};
     // Regalos: cada sobre regalado lo absorbemos a SOBRE_COST y, si se eligió marca, se descuenta de sobres sueltos
     const regaloItems=regalos.filter(r=>+r.qty>0).map(r=>({pid:r.pid||"",qty:+r.qty}));
@@ -880,7 +907,7 @@ function NuevaVenta({prods,setProds,pkgs,clients,setClients,sales,setSales,user,
     setErr("");
     setPkgId("");setPkgQty(1);setPkgOver("");
     setLines([{pid:"",qty:1,price:"",su:"caja"}]);
-    setRegalos([]);setConEnvio(false);setEnvKm("");setEnvCostoOver("");setEnvPct("100");setEnvOtro("");setEnvRep("");setEnvDir("");setEnvPagado("no");setNote("");
+    setRegalos([]);setConEnvio(false);setEnvKm("");setEnvCostoOver("");setEnvPct("100");setEnvOtro("");setEnvRep("");setEnvDir("");setEnvPagado("no");setEnvCobro("transfer");setNote("");
     setPayMethod("Efectivo");setMixEfectivo("");setMixTransferencia("");setMixCuenta("SPIN Marcel");
     setOkMsg("✓ Venta de "+$m(total+ev.cliente)+" registrada"+(conEnvio?" · envío pendiente en 🛵 Envíos":""));
     setTimeout(()=>setOkMsg(""),3000);
@@ -1071,15 +1098,19 @@ function NuevaVenta({prods,setProds,pkgs,clients,setClients,sales,setSales,user,
         <RegalosForm regalos={regalos} setRegalos={setRegalos} prods={prods} isAdmin={isAdmin}/>
 
         {/* ENVÍO */}
-        <EnvioForm {...{conEnvio,setConEnvio,envKm,setEnvKm,envCostoOver,setEnvCostoOver,envPct,setEnvPct,envOtro,setEnvOtro,envRep,setEnvRep,envDir,setEnvDir,envPagado,setEnvPagado,envPagadoCon,setEnvPagadoCon,isAdmin}} repartidores={[...new Set(sales.map(s=>s.repartidor).filter(Boolean))]}/>
+        <EnvioForm {...{conEnvio,setConEnvio,envKm,setEnvKm,envCostoOver,setEnvCostoOver,envPct,setEnvPct,envOtro,setEnvOtro,envRep,setEnvRep,envDir,setEnvDir,envPagado,setEnvPagado,envPagadoCon,setEnvPagadoCon,envCobro,setEnvCobro,setPayMethod,isAdmin}} productos={mode==="paquete"?pkgTotal:lineTotal} repartidores={[...new Set(sales.map(s=>s.repartidor).filter(Boolean))]}/>
 
         {/* PAGO */}
         <div style={{borderTop:`1px solid ${T.goldBorder}`,paddingTop:12,marginTop:4,display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(140px,1fr))",gap:12}}>
+          {conEnvio&&envCobro==="contra"?(
+            <F label="¿Cómo pagó?"><div style={{padding:"10px 12px",borderRadius:8,background:PAY_CLR.Efectivo.bg,color:PAY_CLR.Efectivo.c,fontWeight:600,fontSize:13}}>💵 Efectivo contra entrega</div></F>
+          ):(
           <F label="¿Cómo pagó?">
             <select value={payMethod} onChange={e=>setPayMethod(e.target.value)}>
               {PAY_METHODS.map(m=><option key={m} value={m}>{PAY_METHODS_LABEL[m]||m}</option>)}
             </select>
           </F>
+          )}
           {isAdmin&&terminalAmt(payMethod,mode==="paquete"?pkgTotal:lineTotal,mixCuenta,mixTransferencia)>0&&(()=>{
             const base=terminalAmt(payMethod,mode==="paquete"?pkgTotal:lineTotal,mixCuenta,mixTransferencia);
             return <div style={{gridColumn:"1/-1",padding:"8px 12px",background:PAY_CLR["Terminal MP"].bg,borderRadius:8,fontSize:12,color:PAY_CLR["Terminal MP"].c}}>
@@ -1180,7 +1211,10 @@ function NuevaVenta({prods,setProds,pkgs,clients,setClients,sales,setSales,user,
 
 // ── GASTOS FIJOS (solo socios) ────────────────────────────────────────────────
 function GastosFijos({fixed,setFixed,expenses,setExpenses,user}){
-  const hoy=today();
+  const hoyReal=today();
+  // Antes del arranque se muestra el primer periodo (el que se cobra el día de arranque) sin dejar pagarlo
+  const antes=hoyReal<INICIO_OPERACION;
+  const hoy=antes?INICIO_OPERACION:hoyReal;
   const[payWith,setPayWith]=useState({});
   const[edit,setEdit]=useState(false);
   const[rows,setRows]=useState([]);
@@ -1188,8 +1222,8 @@ function GastosFijos({fixed,setFixed,expenses,setExpenses,user}){
   const mensual=(fixed||[]).reduce((a,f)=>a+fixedMonthly(f),0);
   const pagar=f=>{
     const per=fixedPeriod(f,hoy);
-    if(expenses.some(e=>e.fixedId===f.id&&e.period===per))return;
-    setExpenses(prev=>[...prev,{id:uid(),date:hoy,cat:f.cat,amount:+f.amount,desc:f.name+" · "+fixedPeriodLabel(f,hoy),pagadoCon:payWith[f.id]||"Efectivo",fixedId:f.id,period:per,by:user?.name||""}]);
+    if(antes||expenses.some(e=>e.fixedId===f.id&&e.period===per))return;
+    setExpenses(prev=>[...prev,{id:uid(),date:hoyReal,cat:f.cat,amount:+f.amount,desc:f.name+" · "+fixedPeriodLabel(f,hoy),pagadoCon:payWith[f.id]||"Efectivo",fixedId:f.id,period:per,by:user?.name||""}]);
   };
   const guardar=()=>{
     setFixed(rows.filter(r=>r.name.trim()&&+r.amount>0).map(r=>({...r,name:r.name.trim(),amount:+r.amount})));
@@ -1216,9 +1250,11 @@ function GastosFijos({fixed,setFixed,expenses,setExpenses,user}){
                   </div>
                   {paid
                     ? <Chip label={"✓ Pagado "+paid.date.slice(5)} bg="rgba(26,140,90,0.12)" color={T.profit}/>
-                    : <Chip label="Pendiente" bg="rgba(192,64,64,0.12)" color={T.expense}/>}
+                    : antes
+                      ? <Chip label={"Se cobra el "+new Date(INICIO_OPERACION+"T12:00:00").toLocaleDateString("es-MX",{day:"numeric",month:"short"})} bg={T.goldBg} color={T.goldText}/>
+                      : <Chip label="Pendiente" bg="rgba(192,64,64,0.12)" color={T.expense}/>}
                 </div>
-                {!paid&&(
+                {!paid&&!antes&&(
                   <div style={{display:"flex",gap:8,marginTop:10}}>
                     <select value={payWith[f.id]||"Efectivo"} onChange={e=>setPayWith({...payWith,[f.id]:e.target.value})} style={{flex:1}}>
                       <option value="Efectivo">💵 Efectivo</option>
@@ -1688,6 +1724,8 @@ function CorteCaja({sales,expenses,extras=[],setExtras,user}){
           ))}
         </div>
         <div style={{marginTop:12,padding:"10px 14px",background:T.goldBg,borderRadius:8,fontSize:12,color:T.goldText}}>
+          {(()=>{const x=fSales.filter(s=>s.envioContra&&!s.envioDineroRecibido).reduce((a,s)=>a+(s.envioDebe||0),0);
+            return x>0?<div style={{marginBottom:6,color:T.expense,fontWeight:600}}>⚠ De tu efectivo, {$m(x)} todavía lo traen los repartidores (ve a 🛵 Envíos).</div>:null;})()}
           🛡️ <strong>Verifica:</strong> Efectivo debe estar en caja física · SPIN Marcel debe coincidir con la app de Marcel · SPIN Gustavo con la de Gustavo · Terminal MP con lo que te depositó Mercado Pago
         </div>
       </Card>
@@ -1938,6 +1976,9 @@ function Envios({sales,setSales,clients,isAdmin,user}){
   const envAll=sales.filter(s=>s.conEnvio);
   const env=envAll.filter(s=>s.date>=range.start&&s.date<=range.end).sort((a,b)=>b.date.localeCompare(a.date));
   const pend=envAll.filter(s=>!s.envioPagado);
+  const debe=envAll.filter(s=>s.envioContra&&!s.envioDineroRecibido);
+  const porRepDebe={};debe.forEach(s=>{const k=s.repartidor||"Sin nombre";(porRepDebe[k]=porRepDebe[k]||[]).push(s);});
+  const recibir=ids=>{const set=new Set(ids);const h=horaAhora();setSales(prev=>prev.map(s=>set.has(s.id)?{...s,envioDineroRecibido:true,envioDineroHora:h,envioDineroFecha:today(),envioDineroPor:user?.name||""}:s));};
   const upd=(id,patch)=>setSales(prev=>prev.map(s=>s.id===id?{...s,...patch}:s));
   const pagar=(ids,con)=>{const set=new Set(ids);setSales(prev=>prev.map(s=>set.has(s.id)?{...s,envioPagado:true,envioPagadoCon:con,envioPagadoFecha:today(),envioPagadoPor:user?.name||""}:s));};
   const porRep={};pend.forEach(s=>{const k=s.repartidor||"Sin nombre";(porRep[k]=porRep[k]||[]).push(s);});
@@ -1946,6 +1987,24 @@ function Envios({sales,setSales,clients,isAdmin,user}){
   const ST={pendiente:{l:"⏳ Por salir",c:"#B86010"},salio:{l:"🛵 En camino",c:T.client},entregado:{l:"✓ Entregado",c:T.profit}};
   return(
     <div style={{display:"flex",flexDirection:"column",gap:"1.25rem"}}>
+      {debe.length>0&&(
+        <Card style={{borderColor:T.profit,borderWidth:1}}>
+          <STitle right={<span style={{fontWeight:700,color:T.profit}}>{$m(sum(debe,"envioDebe"))}</span>}>💵 Te tienen que entregar</STitle>
+          <p style={{margin:"-4px 0 10px",fontSize:11,color:T.textMuted}}>Efectivo que cobraron los repartidores (ya descontado su envío).</p>
+          <div style={{display:"flex",flexDirection:"column",gap:8}}>
+            {Object.entries(porRepDebe).map(([rep,arr])=>(
+              <div key={rep} style={{padding:10,borderRadius:10,border:"1px solid rgba(26,140,90,0.3)",background:"rgba(26,140,90,0.05)"}}>
+                <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+                  <div><p style={{margin:0,fontWeight:700,fontSize:14}}>🛵 {rep}</p><p style={{margin:0,fontSize:11,color:T.textMuted}}>{arr.length} pedido{arr.length!==1?"s":""} contra entrega</p></div>
+                  <span style={{fontWeight:700,fontSize:16,color:T.profit}}>{$m(sum(arr,"envioDebe"))}</span>
+                </div>
+                <GoldBtn onClick={()=>recibir(arr.map(s=>s.id))} style={{marginTop:8,width:"100%",minHeight:44,background:T.profit}}>✓ Ya me entregó {$m(sum(arr,"envioDebe"))}</GoldBtn>
+              </div>
+            ))}
+          </div>
+        </Card>
+      )}
+
       {pend.length>0&&(
         <Card style={{borderColor:T.expense,borderWidth:1}}>
           <STitle right={<span style={{fontWeight:700,color:T.expense}}>{$m(sum(pend,"costoEnvio"))}</span>}>Por pagar a repartidores</STitle>
@@ -2009,12 +2068,14 @@ function Envios({sales,setSales,clients,isAdmin,user}){
                   </div>
                   <div style={{fontSize:11,color:T.textMuted,marginTop:4}}>
                     {s.envioSalio&&<span>Salió {s.envioSalio} </span>}{s.envioEntregado&&<span>· Entregado {s.envioEntregado} </span>}
-                    <span>· {s.envioPagado?"✓ Repartidor pagado"+(s.envioPagadoCon?" ("+s.envioPagadoCon+")":""):"⏳ Falta pagar al repartidor"}</span>
+                    <span>· {s.envioContra?"💵 Contra entrega (se cobró su envío)":s.envioPagado?"✓ Repartidor pagado"+(s.envioPagadoCon?" ("+s.envioPagadoCon+")":""):"⏳ Falta pagar al repartidor"}</span>
+                    {s.envioContra&&<div style={{marginTop:2,color:s.envioDineroRecibido?T.profit:T.expense,fontWeight:600}}>{s.envioDineroRecibido?"✓ Entregó "+$m(s.envioDebe||0)+" a las "+s.envioDineroHora:"⏳ Te debe entregar "+$m(s.envioDebe||0)}</div>}
                   </div>
                   <div style={{display:"flex",gap:6,marginTop:8}}>
                     {(s.envioStatus||"pendiente")==="pendiente"&&<GoldBtn onClick={()=>upd(s.id,{envioStatus:"salio",envioSalio:horaAhora()})} style={{flex:1,minHeight:40,background:T.client}}>🛵 Ya salió</GoldBtn>}
                     {s.envioStatus==="salio"&&<GoldBtn onClick={()=>upd(s.id,{envioStatus:"entregado",envioEntregado:horaAhora()})} style={{flex:1,minHeight:40,background:T.profit}}>✓ Entregado</GoldBtn>}
                     {!s.envioPagado&&<OutBtn onClick={()=>pagar([s.id],"Efectivo")} style={{flex:1,minHeight:40}}>💵 Pagarle en efectivo</OutBtn>}
+                    {s.envioContra&&!s.envioDineroRecibido&&<OutBtn onClick={()=>recibir([s.id])} style={{flex:1,minHeight:40,color:T.profit,borderColor:"rgba(26,140,90,0.4)"}}>✓ Ya entregó el dinero</OutBtn>}
                   </div>
                 </div>
               );
