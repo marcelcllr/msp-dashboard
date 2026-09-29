@@ -94,8 +94,9 @@ const pct = n => Number(n).toFixed(1)+"%";
 const uid = () => Date.now().toString(36)+Math.random().toString(36).slice(2,5);
 // Fecha local (Monterrey), no UTC: con toISOString después de las 6 pm ya salía el día siguiente
 const today = () => { const d=new Date(); return new Date(d.getTime()-d.getTimezoneOffset()*60000).toISOString().slice(0,10); };
-// Costo promedio de un sobre (todas las marcas). Se usa para los regalos que absorbemos.
-const SOBRE_COST = 17;
+// Costo de un sobre (o pieza) = lo que nos cuesta la caja ÷ sobres de la caja. Se usa en ventas por sobre,
+// cortesías e inventario, así al cambiar el costo de la caja se actualiza solo.
+const sobreCost=p=>p?((p.spc||1)>1?(p.cost||0)/(p.spc||1):(p.cost||0)):0;
 // Fecha en que empezamos a usar la app con números reales. Inicio, Corte y Reparto no cuentan nada antes.
 const INICIO_OPERACION = "2026-10-01";
 
@@ -466,7 +467,7 @@ function Productos({prods,setProds}){
                         {editMode ? <input type="number" min="0" step="0.01" value={costMap[p.id]||""} onChange={e=>setCostMap({...costMap,[p.id]:e.target.value})} style={{width:80,fontSize:12}}/> : (p.cost>0?<span style={{color:T.cost,fontWeight:600}}>{$m(p.cost)}</span>:<span style={{color:T.textMuted}}>—</span>)}
                       </td>
                       <td style={{padding:"8px 10px"}}>
-                        {p.spc>1?(editMode ? <input type="number" min="0" step="0.01" value={costSobreMap[p.id]||""} onChange={e=>setCostSobreMap({...costSobreMap,[p.id]:e.target.value})} placeholder={String(p.costSobre||Math.round(p.cost/p.spc))} style={{width:70,fontSize:12}}/> : <span style={{color:T.cost,fontSize:12}}>{$m(p.costSobre||Math.round(p.cost/p.spc))}</span>):<span style={{color:T.textMuted,fontSize:11}}>—</span>}
+                        {p.spc>1?<span style={{color:T.cost,fontSize:12}} title="Costo de la caja ÷ sobres">{$m(sobreCost(editMode?{...p,cost:parseFloat(costMap[p.id])||0}:p))}</span>:<span style={{color:T.textMuted,fontSize:11}}>—</span>}
                       </td>
                       <td style={{padding:"8px 10px",color:T.text}}>{$m(p.list)}</td>
                       <td style={{padding:"8px 10px"}}>
@@ -484,7 +485,6 @@ function Productos({prods,setProds}){
               <GoldBtn onClick={()=>{setProds(prods.map(p=>{
                 const upd={...p,cost:parseFloat(costMap[p.id])||0};
                 if(p.spc>1){
-                  if(costSobreMap[p.id]!==undefined&&costSobreMap[p.id]!=="")upd.costSobre=parseFloat(costSobreMap[p.id])||0;
                   if(listSobreMap[p.id]!==undefined&&listSobreMap[p.id]!=="")upd.listSobre=parseFloat(listSobreMap[p.id])||0;
                 }
                 return upd;
@@ -725,33 +725,160 @@ function ProdSearch({prods,value,onChange}){
   );
 }
 
-// ── REGALOS (sobres que regalamos en una venta) ───────────────────────────────
+// ── CORTESÍAS (sobres que regalamos por gusto en una venta; opcionales) ───────
+// regalos = {pid: cantidad}. Cada sobre cuesta lo que nos cuesta: costo de la caja ÷ sobres de la caja.
 function RegalosForm({regalos,setRegalos,prods,isAdmin}){
   const sobreProds=prods.filter(p=>p.cat==="Miel"&&(p.spc||1)>1);
-  const n=regalos.reduce((a,r)=>a+(+r.qty||0),0);
-  const upd=(i,k,v)=>{const a=[...regalos];a[i]={...a[i],[k]:v};setRegalos(a);};
+  const[open,setOpen]=useState(false);
+  const elegidos=sobreProds.filter(p=>(regalos[p.id]||0)>0);
+  const n=elegidos.reduce((a,p)=>a+regalos[p.id],0);
+  const costo=elegidos.reduce((a,p)=>a+regalos[p.id]*sobreCost(p),0);
+  const set=(pid,d)=>setRegalos(r=>{const v=Math.max(0,(r[pid]||0)+d);const x={...r};if(v)x[pid]=v;else delete x[pid];return x;});
+  const nombre=p=>p.name.replace(/\s*\(.*\)/,"");
   return(
     <div style={{borderTop:`1px solid ${T.goldBorder}`,paddingTop:12,marginTop:4,marginBottom:12}}>
-      <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:8}}>
-        <p style={{margin:0,fontSize:12,fontWeight:600,color:T.text}}>🎁 Regalos para el cliente</p>
-        <OutBtn onClick={()=>setRegalos([...regalos,{pid:"",qty:1}])} style={{fontSize:12}}>+ Agregar regalo</OutBtn>
-      </div>
-      {regalos.map((r,i)=>(
-        <div key={i} style={{display:"flex",gap:6,marginTop:8,alignItems:"center"}}>
-          <select value={r.pid} onChange={e=>upd(i,"pid",e.target.value)} style={{flex:1}}>
-            <option value="">Sobre surtido</option>
-            {sobreProds.map(p=><option key={p.id} value={p.id}>Sobre {p.name.replace(/\s*\(.*\)/,"")} ({p.stockSobres||0} sueltos)</option>)}
-          </select>
-          <input type="number" min="1" value={r.qty} onChange={e=>upd(i,"qty",e.target.value)} style={{width:64,textAlign:"center"}}/>
-          <OutBtn onClick={()=>setRegalos(regalos.filter((_,j)=>j!==i))} danger style={{padding:"6px 10px"}}>✕</OutBtn>
+      <button onClick={()=>setOpen(!open)} style={{width:"100%",display:"flex",alignItems:"center",gap:8,padding:"10px 12px",borderRadius:10,minHeight:46,textAlign:"left"}}>
+        <span style={{fontSize:18}}>🎁</span>
+        <span style={{flex:1,fontSize:14,fontWeight:600,color:T.text}}>Cortesías <span style={{fontWeight:400,color:T.textMuted}}>(opcional)</span></span>
+        {n>0&&<span style={{fontSize:12,padding:"2px 8px",borderRadius:10,background:T.goldBg,color:T.goldText,fontWeight:700}}>{n}</span>}
+        <i className={"ti ti-chevron-"+(open?"up":"down")} style={{color:T.textMuted}}/>
+      </button>
+      {open&&(
+        <div style={{marginTop:6}}>
+          {sobreProds.map(p=>{const q=regalos[p.id]||0;return(
+            <div key={p.id} style={{display:"flex",alignItems:"center",gap:10,padding:"8px 2px",borderBottom:`0.5px solid ${T.border}`}}>
+              <div style={{flex:1,minWidth:0}}>
+                <p style={{margin:0,fontSize:13,fontWeight:600,color:T.text}}>{p.spcu==="piezas"?"Pieza":"Sobre"} {nombre(p)}</p>
+                {isAdmin&&<p style={{margin:0,fontSize:11,color:T.textMuted}}>te cuesta {$m(sobreCost(p))} c/u</p>}
+              </div>
+              {q===0
+                ?<button onClick={()=>set(p.id,1)} aria-label="Agregar cortesía" style={{width:38,height:38,minHeight:38,padding:0,borderRadius:"50%",fontSize:18,color:T.gold,borderColor:T.gold}}><i className="ti ti-plus"/></button>
+                :<div style={{display:"flex",alignItems:"center",border:`1px solid ${T.gold}`,borderRadius:20,overflow:"hidden"}}>
+                  <button onClick={()=>set(p.id,-1)} aria-label="Quitar" style={{border:"none",borderRadius:0,width:36,height:36,minHeight:36,padding:0,fontSize:18,color:T.expense}}>−</button>
+                  <span style={{minWidth:22,textAlign:"center",fontWeight:700}}>{q}</span>
+                  <button onClick={()=>set(p.id,1)} aria-label="Agregar" style={{border:"none",borderRadius:0,width:36,height:36,minHeight:36,padding:0,fontSize:18,color:T.profit}}>+</button>
+                </div>}
+            </div>
+          );})}
         </div>
-      ))}
-      {n>0&&(
-        <p style={{margin:"8px 0 0",fontSize:12,color:T.textSub}}>
-          {n} sobre{n!==1?"s":""} de regalo{isAdmin&&<> · los absorbes: <strong style={{color:T.expense}}>−{$m(n*SOBRE_COST)}</strong> (a {$m(SOBRE_COST)} c/u)</>}
-          {regalos.some(r=>r.pid)&&" · se descuentan del inventario"}
-        </p>
       )}
+      {n>0&&(
+        <div style={{marginTop:8,padding:"10px 12px",borderRadius:10,background:T.bgAlt,border:`0.5px solid ${T.goldBorder}`,fontSize:13}}>
+          {elegidos.map(p=>(
+            <div key={p.id} style={{display:"flex",justifyContent:"space-between",gap:8,padding:"2px 0",color:T.textSub}}>
+              <span>🎁 {regalos[p.id]} × {nombre(p)}</span>
+              {isAdmin&&<span>{regalos[p.id]} × {$m(sobreCost(p))} = <strong style={{color:T.expense}}>−{$m(regalos[p.id]*sobreCost(p))}</strong></span>}
+            </div>
+          ))}
+          {isAdmin&&<div style={{display:"flex",justifyContent:"space-between",borderTop:`0.5px solid ${T.goldBorder}`,marginTop:6,paddingTop:6,fontWeight:700}}>
+            <span>Las cortesías te cuestan</span><span style={{color:T.expense}}>−{$m(costo)}</span>
+          </div>}
+          <p style={{margin:"4px 0 0",fontSize:11,color:T.textMuted}}>Se descuentan de los sobres sueltos del inventario{isAdmin?" y de la utilidad de esta venta":""}.</p>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── VENDER: piezas de la pantalla (top-level, regla 2) ────────────────────────
+// Apartados de productos en Vender
+const GRUPOS=[["miel","Mieles","ti-droplet"],["gom","Gomitas y chocolates","ti-candy"],["sex","Sex shop","ti-heart"],["pkg","Paquetes","ti-packages"]];
+const grupoDe=p=>p.cat==="SexShop"?"sex":(p.spcu==="piezas"?"gom":"miel");
+const iniciales=n=>(n||"?").split(" ").filter(Boolean).map(w=>w[0]).slice(0,2).join("").toUpperCase();
+
+function ClientePicker({clients,cl,onPick,onClear,onNew}){
+  const[open,setOpen]=useState(false);
+  const[q,setQ]=useState("");
+  if(cl)return(
+    <div style={{display:"flex",alignItems:"center",gap:10,padding:"10px 12px",borderRadius:12,background:"rgba(26,140,90,0.08)",border:"1px solid rgba(26,140,90,0.25)"}}>
+      <div style={{width:38,height:38,borderRadius:"50%",background:T.bg,display:"flex",alignItems:"center",justifyContent:"center",fontWeight:700,fontSize:13,color:T.profit}}>{iniciales(cl.name)}</div>
+      <div style={{flex:1,minWidth:0}}>
+        <p style={{margin:0,fontSize:15,fontWeight:700,color:T.profit,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{cl.name}</p>
+        <p style={{margin:0,fontSize:12,color:T.profit}}>{cl.type}{Object.values(cl.prices||{}).some(v=>v)?" · precios especiales":""}</p>
+      </div>
+      <OutBtn onClick={()=>{onClear();setOpen(true);setQ("");}} style={{fontSize:12}}>Cambiar</OutBtn>
+    </div>
+  );
+  const s=q.trim().toLowerCase();
+  // Primero los que empiezan con lo que escribiste, luego los que lo tienen en otra palabra
+  const rank=c=>{const n=c.name.toLowerCase();return !s?0:n.startsWith(s)?0:n.split(" ").some(w=>w.startsWith(s))?1:2;};
+  const lista=[...clients].filter(c=>!s||c.name.toLowerCase().includes(s)).sort((a,b)=>rank(a)-rank(b)||a.name.localeCompare(b.name,"es"));
+  if(!open)return(
+    <button onClick={()=>setOpen(true)} style={{width:"100%",display:"flex",alignItems:"center",justifyContent:"space-between",padding:"12px 14px",borderRadius:12,fontSize:15,color:T.textSub,minHeight:50}}>
+      <span><i className="ti ti-user" style={{fontSize:18,verticalAlign:-3,marginRight:6}}/>Elegir cliente</span><i className="ti ti-chevron-down"/>
+    </button>
+  );
+  return(
+    <div style={{border:`1px solid ${T.goldBorder}`,borderRadius:12,padding:10}}>
+      <div style={{position:"relative"}}>
+        <i className="ti ti-search" style={{position:"absolute",left:12,top:14,fontSize:16,color:T.textMuted}}/>
+        <input autoFocus value={q} onChange={e=>setQ(e.target.value)} placeholder="Buscar cliente, ej. M" style={{paddingLeft:36}}/>
+      </div>
+      <p style={{margin:"6px 2px 4px",fontSize:11,color:T.textMuted}}>{s?lista.length+" resultado"+(lista.length!==1?"s":""):"Todos tus clientes ("+clients.length+")"}</p>
+      <div style={{maxHeight:320,overflowY:"auto"}}>
+        {lista.map(c=>(
+          <div key={c.id} onClick={()=>{onPick(c.id);setOpen(false);setQ("");}} style={{display:"flex",alignItems:"center",gap:10,padding:"9px 4px",borderBottom:`0.5px solid ${T.border}`,cursor:"pointer"}}>
+            <div style={{width:32,height:32,borderRadius:"50%",background:T.goldBg,color:T.goldText,display:"flex",alignItems:"center",justifyContent:"center",fontSize:12,fontWeight:700}}>{iniciales(c.name)}</div>
+            <div style={{flex:1,minWidth:0}}>
+              <p style={{margin:0,fontSize:14,color:T.text}}>{c.name}</p>
+              <p style={{margin:0,fontSize:11,color:T.textMuted}}>{c.type}{c.phone?" · "+c.phone:""}</p>
+            </div>
+          </div>
+        ))}
+        {lista.length===0&&<p style={{fontSize:13,color:T.textSub,padding:"6px 2px"}}>Sin resultados</p>}
+      </div>
+      <OutBtn onClick={()=>{setOpen(false);onNew(q);}} style={{width:"100%",marginTop:8,fontSize:13,minHeight:42}}><i className="ti ti-user-plus" style={{fontSize:15,verticalAlign:-2}}/> Cliente nuevo{q.trim()?": "+q.trim():""}</OutBtn>
+    </div>
+  );
+}
+
+// Una fila de producto (o paquete) con +/−, caja/sobre, lápiz de precio y utilidad
+function VentaRow({name,sub,dual,unitLabel,unit,setUnit,qty,otherQty,otherLabel,price,esp,may,unitCost,isAdmin,onAdd,onSub,editing,onEdit,editVal,setEditVal,onEditDone,onEditCancel,canSave,saveChk,setSaveChk,clName,editErr}){
+  const ut=(price-unitCost)*qty;
+  return(
+    <div style={{padding:"12px 2px",borderBottom:`0.5px solid ${T.border}`}}>
+      <div style={{display:"flex",alignItems:"flex-start",gap:10}}>
+        <div style={{flex:1,minWidth:0}}>
+          <p style={{margin:0,fontSize:14,fontWeight:600,color:T.text}}>{name}</p>
+          <p style={{margin:"1px 0 0",fontSize:13,color:T.textSub,display:"flex",alignItems:"center",flexWrap:"wrap",gap:4}}>
+            <strong style={{color:esp?"#B86010":T.revenue}}>{$m(price)}</strong>{sub}
+            <button onClick={onEdit} aria-label="Editar precio" style={{border:"none",background:"transparent",padding:"0 4px",minHeight:0,color:T.client,fontSize:15}}><i className="ti ti-pencil"/></button>
+            {esp&&<span style={{fontSize:10,padding:"1px 6px",borderRadius:8,background:"rgba(232,128,32,0.12)",color:"#B86010",fontWeight:600}}>precio especial</span>}
+            {may&&<span style={{fontSize:11,color:T.profit,fontWeight:600}}>· mayoreo</span>}
+          </p>
+          {dual&&(
+            <div style={{display:"inline-flex",border:`1px solid ${T.goldBorder}`,borderRadius:8,overflow:"hidden",marginTop:6}}>
+              {[["caja","Caja"],["sobre",unitLabel]].map(([v,l])=>(
+                <span key={v} onClick={()=>setUnit(v)} style={{fontSize:12,padding:"4px 12px",cursor:"pointer",background:unit===v?T.goldBg:"transparent",color:unit===v?T.goldText:T.textSub,fontWeight:unit===v?700:400}}>{l}</span>
+              ))}
+            </div>
+          )}
+          {otherQty>0&&<p style={{margin:"4px 0 0",fontSize:11,color:T.client}}>También llevas {otherQty} {otherLabel}</p>}
+        </div>
+        {qty===0?(
+          <button onClick={onAdd} aria-label="Agregar" style={{width:42,height:42,minHeight:42,padding:0,borderRadius:"50%",fontSize:20,color:T.gold,borderColor:T.gold,flexShrink:0}}><i className="ti ti-plus"/></button>
+        ):(
+          <div style={{display:"flex",alignItems:"center",border:`1px solid ${T.gold}`,borderRadius:22,overflow:"hidden",flexShrink:0}}>
+            <button onClick={onSub} aria-label="Quitar uno" style={{border:"none",borderRadius:0,width:40,height:40,minHeight:40,padding:0,fontSize:20,color:T.expense}}>−</button>
+            <span style={{minWidth:26,textAlign:"center",fontWeight:700,fontSize:16}}>{qty}</span>
+            <button onClick={onAdd} aria-label="Agregar uno" style={{border:"none",borderRadius:0,width:40,height:40,minHeight:40,padding:0,fontSize:20,color:T.profit}}>+</button>
+          </div>
+        )}
+      </div>
+      {editing&&(
+        <div style={{marginTop:8,padding:10,borderRadius:10,background:T.bgAlt,border:`0.5px solid ${T.goldBorder}`}}>
+          <div style={{display:"flex",gap:6}}>
+            <input type="number" min="0" inputMode="decimal" autoFocus value={editVal} onChange={e=>setEditVal(e.target.value)} placeholder="Precio" style={{flex:1,fontWeight:700,textAlign:"center"}}/>
+            <GoldBtn onClick={onEditDone} style={{minHeight:44}}>Listo</GoldBtn>
+            <OutBtn onClick={onEditCancel} style={{minHeight:44}}>✕</OutBtn>
+          </div>
+          {editErr&&<p style={{margin:"4px 0 0",fontSize:12,color:T.expense}}>{editErr}</p>}
+          {canSave&&<label style={{display:"flex",alignItems:"center",gap:8,marginTop:8,fontSize:13,color:T.textSub}}><input type="checkbox" checked={saveChk} onChange={e=>setSaveChk(e.target.checked)} style={{width:18,height:18,minHeight:0}}/>Guardar como precio de {clName}</label>}
+        </div>
+      )}
+      {qty>0&&isAdmin&&(unitCost>0
+        ?<p style={{margin:"6px 0 0",fontSize:12,fontWeight:600,color:ut>=0?T.profit:T.expense}}>Utilidad {$m(ut)} · {price>0?pct(ut/(price*qty)*100):"—"}</p>
+        :<p style={{margin:"6px 0 0",fontSize:12,color:"#B86010"}}>Falta el costo de este producto (Más → Productos y costos)</p>)}
     </div>
   );
 }
@@ -840,17 +967,22 @@ function EnvioForm({conEnvio,setConEnvio,envKm,setEnvKm,envCostoOver,setEnvCosto
 function NuevaVenta({prods,setProds,pkgs,clients,setClients,sales,setSales,user,isAdmin,stockMoves,setStockMoves,cerrados=[]}){
   const[confirmDel,setConfirmDel]=useState(null);
   const[date,setDate]=useState(today());
+  const[step,setStep]=useState(1);
   const[clientId,setClientId]=useState("");
-  const[mode,setMode]=useState("custom");
-  const[pkgId,setPkgId]=useState("");
-  const[pkgQty,setPkgQty]=useState(1);
-  const[pkgOver,setPkgOver]=useState("");
-  const[lines,setLines]=useState([{pid:"",qty:1,price:"",su:"caja"}]);
+  // cart: "p|pid|caja" / "p|pid|sobre" / "k|pkgId" → cantidad · over: mismo key → precio escrito a mano
+  const[cart,setCart]=useState({});
+  const[over,setOver]=useState({});
+  const[unitView,setUnitView]=useState({});
+  const[openG,setOpenG]=useState({miel:true});
+  const[editKey,setEditKey]=useState(null);
+  const[editVal,setEditVal]=useState("");
+  const[editErr,setEditErr]=useState("");
+  const[saveChk,setSaveChk]=useState(true);
   const[payMethod,setPayMethod]=useState("Efectivo");
   const[mixEfectivo,setMixEfectivo]=useState("");
   const[mixTransferencia,setMixTransferencia]=useState("");
   const[mixCuenta,setMixCuenta]=useState("SPIN Marcel");
-  const[regalos,setRegalos]=useState([]);
+  const[regalos,setRegalos]=useState({});
   const[conEnvio,setConEnvio]=useState(false);
   const[envKm,setEnvKm]=useState("");
   const[envCostoOver,setEnvCostoOver]=useState("");
@@ -864,47 +996,82 @@ function NuevaVenta({prods,setProds,pkgs,clients,setClients,sales,setSales,user,
   const[note,setNote]=useState("");
   const[err,setErr]=useState("");
   const[okMsg,setOkMsg]=useState("");
-  const[pricesSaved,setPricesSaved]=useState(false);
   const[newCl,setNewCl]=useState(null);
   const[newClPrices,setNewClPrices]=useState(false);
 
   const cl=clients.find(c=>c.id===clientId);
-  const selPkg=pkgs.find(p=>p.id===pkgId);
-  const pSalePrice=selPkg?pkgPrice(cl,pkgId,selPkg.price):0;
-  const effPkgPrice=pkgOver?+pkgOver:pSalePrice;
-  const pkgCostU=selPkg?pkgCost(selPkg,prods):0;
-  const pkgTotal=effPkgPrice*pkgQty;
-  const pkgCostT=pkgCostU*pkgQty;
+  const vendibles=prods.filter(p=>p.id!=="sob");
+  // Precio normal para este cliente (su precio especial si tiene; si no, lista/mayoreo)
+  const stdProd=(p,su,qty)=>{
+    if(su==="sobre"){const e=cl?.prices?.[p.id+"_s"];return e!=null&&e!==""?+e:(p.listSobre||150);}
+    return clientPrice(cl,p.id,p.tiers,qty||1);
+  };
+  const tieneEsp=(p,su)=>{const e=cl?.prices?.[su==="sobre"?p.id+"_s":p.id];return e!=null&&e!=="";};
+  const stdPkg=pk=>pkgPrice(cl,pk.id,pk.price);
+  const keyP=(p,su)=>"p|"+p.id+"|"+su;
+  const keyK=pk=>"k|"+pk.id;
+  const priceOf=key=>{
+    if(over[key]!=null)return +over[key];
+    const[t,id,su]=key.split("|");
+    if(t==="k"){const pk=pkgs.find(x=>x.id===id);return pk?stdPkg(pk):0;}
+    const p=prods.find(x=>x.id===id);return p?stdProd(p,su,cart[key]||1):0;
+  };
+  const stdOf=key=>{const[t,id,su]=key.split("|");
+    if(t==="k"){const pk=pkgs.find(x=>x.id===id);return pk?stdPkg(pk):0;}
+    const p=prods.find(x=>x.id===id);return p?stdProd(p,su,cart[key]||1):0;};
+  const costOf=key=>{const[t,id,su]=key.split("|");
+    if(t==="k"){const pk=pkgs.find(x=>x.id===id);return pk?pkgCost(pk,prods):0;}
+    const p=prods.find(x=>x.id===id);if(!p)return 0;return su==="sobre"?sobreCost(p):(p.cost||0);};
+  const lineas=Object.entries(cart).filter(([,q])=>q>0);
+  const subtotal=lineas.reduce((a,[k,q])=>a+priceOf(k)*q,0);
+  const costoProd=lineas.reduce((a,[k,q])=>a+costOf(k)*q,0);
+  const nPiezas=lineas.reduce((a,[,q])=>a+q,0);
+  const regaloCostoVista=Object.entries(regalos).reduce((a,[pid,q])=>{const p=prods.find(x=>x.id===pid);return a+(p?sobreCost(p)*q:0);},0);
+  const evVista=conEnvio?envioCalc(envKm,envCostoOver,envPct,envOtro):{costo:0,cliente:0,absorbe:0};
+  const cobrar=subtotal+evVista.cliente;
 
-  const getLC=l=>{const p=prods.find(x=>x.id===l.pid);if(!p)return 0;return l.su==="sobre"?(p.costSobre||Math.round(p.cost/(p.spc||1))):p.cost;};
-  const getLP=l=>{if(l.price)return+l.price;if(!l.pid)return 0;const p=prods.find(x=>x.id===l.pid);if(!p)return 0;if(l.su==="sobre")return p.listSobre||150;return clientPrice(cl,l.pid,p.tiers,+l.qty||1);};
-  const getStd=l=>{const p=prods.find(x=>x.id===l.pid);if(!p)return 0;if(l.su==="sobre")return p.listSobre||150;return clientPrice(cl,l.pid,p.tiers,+l.qty||1);};
-  const lineTotal=lines.reduce((s,l)=>s+getLP(l)*(+l.qty||1),0);
-  const lineCost=lines.reduce((s,l)=>{if(!l.pid)return s;return s+getLC(l)*(+l.qty||1);},0);
-  // simpler lineCost
-  const lineCostCalc=lines.reduce((s,l)=>{if(!l.pid)return s;return s+getLC(l)*(+l.qty||1);},0);
+  const setQty=(key,d)=>setCart(c=>{const v=Math.max(0,(c[key]||0)+d);const x={...c};if(v)x[key]=v;else delete x[key];return x;});
+  const pickClient=id=>{setClientId(id);setOver({});setEditKey(null);setErr("");};
+  const startEdit=key=>{setEditKey(key);setEditVal(String(priceOf(key)));setEditErr("");setSaveChk(true);};
+  const doneEdit=()=>{
+    if(editVal===""||+editVal<0){setEditErr("Escribe un precio");return;}
+    const v=+editVal;
+    setOver(o=>({...o,[editKey]:v}));
+    if(isAdmin&&cl&&saveChk){
+      const[t,id,su]=editKey.split("|");
+      if(t==="k")setClients(prev=>prev.map(c=>c.id===cl.id?{...c,pkgPrices:{...(c.pkgPrices||{}),[id]:v}}:c));
+      else setClients(prev=>prev.map(c=>c.id===cl.id?{...c,prices:{...(c.prices||{}),[su==="sobre"?id+"_s":id]:v}}:c));
+    }
+    setEditKey(null);
+  };
+
+  const continuar=()=>{
+    if(!clientId){setErr("Elige un cliente primero");return;}
+    if(nPiezas===0){setErr("Agrega al menos un producto");return;}
+    setErr("");setStep(2);window.scrollTo(0,0);
+  };
 
   const register=()=>{
     if(cerrados.includes(date)){setErr("Ese día ya se cerró. Un socio lo tiene que reabrir en 🔒 Cierre para registrar ventas.");return;}
-    if(!clientId){setErr("Selecciona un cliente");return;}
-    let total,cost,desc,items,bajoPrecio=false;
-    if(mode==="paquete"){
-      if(!pkgId){setErr("Selecciona un paquete");return;}
-      total=pkgTotal;cost=pkgCostT;
-      bajoPrecio=effPkgPrice<pSalePrice;
-      desc=selPkg.name+" ×"+pkgQty;
-      items=(selPkg.items||[]).map(it=>({pid:it.pid,qty:it.qty*pkgQty,su:"caja"}));
-    } else {
-      const valid=lines.filter(l=>l.pid&&+l.qty>0);
-      if(valid.length===0){setErr("Agrega al menos un producto");return;}
-      total=lineTotal;cost=lineCostCalc;
-      desc=valid.map(l=>{const p=prods.find(x=>x.id===l.pid);return l.qty+"× "+(p?p.name:l.pid);}).join(", ");
-      items=valid.map(l=>({pid:l.pid,qty:+l.qty,su:l.su||"caja",price:getLP(l),std:getStd(l)}));
-      bajoPrecio=items.some(it=>it.price<it.std);
-    }
+    if(!clientId){setErr("Elige un cliente");setStep(1);return;}
+    if(lineas.length===0){setErr("Agrega al menos un producto");setStep(1);return;}
+    let items=[],descs=[],bajoPrecio=false,pkgFirst=null;
+    lineas.forEach(([k,q])=>{
+      const[t,id,su]=k.split("|");const pr=priceOf(k),st=stdOf(k);
+      if(pr<st)bajoPrecio=true;
+      if(t==="k"){const pk=pkgs.find(x=>x.id===id);if(!pk)return;pkgFirst=pkgFirst||pk.id;
+        descs.push(q+"× "+pk.name);
+        (pk.items||[]).forEach(it=>items.push({pid:it.pid,qty:it.qty*q,su:"caja",pkg:pk.id}));
+      }else{const p=prods.find(x=>x.id===id);if(!p)return;
+        descs.push(q+"× "+p.name.replace(/\s*\(.*\)/,"")+(su==="sobre"?" ("+(p.spcu==="piezas"?"pieza":"sobre")+(q>1?"s":"")+")":""));
+        items.push({pid:id,qty:q,su,price:pr,std:st});
+      }
+    });
+    const total=subtotal,cost=costoProd;
+    let desc=descs.join(", ");
     // Envío: el cliente paga "envio", al repartidor se le paga "costoEnvio".
     // La diferencia (lo que absorbemos) va dentro de cost para que la utilidad sea real en todos los reportes.
-    const ev=conEnvio?envioCalc(envKm,envCostoOver,envPct,envOtro):{costo:0,cliente:0,absorbe:0};
+    const ev=evVista;
     if(conEnvio&&ev.costo<=0){setErr("Pon los kilómetros o lo que cobra el repartidor");return;}
     // El pago mixto tiene que sumar exactamente lo que se cobra
     if(payMethod==="Mixto"){const suma=(+mixEfectivo||0)+(+mixTransferencia||0);const debe=total+ev.cliente;
@@ -919,18 +1086,18 @@ function NuevaVenta({prods,setProds,pkgs,clients,setClients,sales,setSales,user,
       repartidor:envRep.trim(),envioDir:envDir.trim(),envioStatus:"pendiente",envioSalio:"",envioEntregado:"",
       envioPagado:contra||envPagado==="si",envioPagadoCon:contra?"Efectivo":(envPagado==="si"?envPagadoCon:""),envioPagadoFecha:(contra||envPagado==="si")?date:""}
       :{conEnvio:false,envio:0,costoEnvio:0,envioNeto:0};
-    // Regalos: cada sobre regalado lo absorbemos a SOBRE_COST y, si se eligió marca, se descuenta de sobres sueltos
-    const regaloItems=regalos.filter(r=>+r.qty>0).map(r=>({pid:r.pid||"",qty:+r.qty}));
+    // Cortesías: cada sobre regalado cuesta lo que nos cuesta (caja ÷ sobres) y se descuenta de sobres sueltos
+    const regaloItems=Object.entries(regalos).filter(([,q])=>q>0).map(([pid,q])=>{const p=prods.find(x=>x.id===pid);return{pid,qty:q,costo:+(p?sobreCost(p):0).toFixed(2)};});
     const regaloN=regaloItems.reduce((a,r)=>a+r.qty,0);
-    const regaloCosto=regaloN*SOBRE_COST;
-    if(regaloN>0)desc+=" + 🎁 "+regaloN+" regalo"+(regaloN!==1?"s":"");
-    const stockItems=[...items,...regaloItems.filter(r=>r.pid).map(r=>({pid:r.pid,qty:r.qty,su:"sobre"}))];
+    const regaloCosto=+regaloItems.reduce((a,r)=>a+r.qty*r.costo,0).toFixed(2);
+    if(regaloN>0)desc+=" + 🎁 "+regaloItems.map(r=>{const p=prods.find(x=>x.id===r.pid);return r.qty+" "+(p?p.name.replace(/\s*\(.*\)/,""):r.pid);}).join(", ");
+    const stockItems=[...items,...regaloItems.map(r=>({pid:r.pid,qty:r.qty,su:"sobre"}))];
     // Productos que se vendieron sin tener stock suficiente en el sistema (se marcan para que los socios revisen)
     const sinStock=[];
     [...new Set(stockItems.map(it=>it.pid))].forEach(pid=>{const p=prods.find(x=>x.id===pid);if(!p)return;const its=stockItems.filter(it=>it.pid===pid);
       const qS=its.filter(it=>it.su==="sobre").reduce((a,it)=>a+(+it.qty||0),0);const qC=its.filter(it=>it.su!=="sobre").reduce((a,it)=>a+(+it.qty||0),0);
       if(qC>(p.stockCajas||0)||qS>(p.stockSobres||0))sinStock.push(p.name);});
-    const sale={sinStock,id:uid(),date,clientId,pkgId:mode==="paquete"?pkgId:null,total,cost:cost+comision+ev.absorbe+regaloCosto,comision,regalos:regaloItems,regaloCosto,desc,items,note,payMethod,
+    const sale={sinStock,id:uid(),date,clientId,pkgId:pkgFirst,total,cost:cost+comision+ev.absorbe+regaloCosto,comision,regalos:regaloItems,regaloCosto,desc,items,note,payMethod,
       mixEfectivo:payMethod==="Mixto"?+mixEfectivo||0:0,
       mixTransferencia:payMethod==="Mixto"?+mixTransferencia||0:0,
       mixCuenta:payMethod==="Mixto"?mixCuenta:"",
@@ -944,13 +1111,12 @@ function NuevaVenta({prods,setProds,pkgs,clients,setClients,sales,setSales,user,
       const qC=its.filter(it=>(it.su||"caja")!=="sobre").reduce((a,it)=>a+(+it.qty||0),0);
       return {...prod,stockCajas:Math.max(0,(prod.stockCajas||0)-qC),stockSobres:Math.max(0,(prod.stockSobres||0)-qS)};
     }));
-    setErr("");
-    setPkgId("");setPkgQty(1);setPkgOver("");
-    setLines([{pid:"",qty:1,price:"",su:"caja"}]);
-    setRegalos([]);setConEnvio(false);setEnvKm("");setEnvCostoOver("");setEnvPct("100");setEnvOtro("");setEnvRep("");setEnvDir("");setEnvPagado("no");setEnvCobro("transfer");setNote("");
+    setErr("");setStep(1);setClientId("");setCart({});setOver({});setUnitView({});setEditKey(null);
+    setRegalos({});setConEnvio(false);setEnvKm("");setEnvCostoOver("");setEnvPct("100");setEnvOtro("");setEnvRep("");setEnvDir("");setEnvPagado("no");setEnvCobro("transfer");setNote("");
     setPayMethod("Efectivo");setMixEfectivo("");setMixTransferencia("");setMixCuenta("SPIN Marcel");
     setOkMsg("✓ Venta de "+$m(total+ev.cliente)+" registrada"+(conEnvio?" · envío pendiente en 🛵 Envíos":"")+(sinStock.length?" · ⚠ en el sistema no había suficiente de: "+sinStock.join(", "):""));
-    setTimeout(()=>setOkMsg(""),3000);
+    setTimeout(()=>setOkMsg(""),4000);
+    window.scrollTo(0,0);
   };
 
   const borrarVenta=s=>{
@@ -964,257 +1130,177 @@ function NuevaVenta({prods,setProds,pkgs,clients,setClients,sales,setSales,user,
     setSales(prev=>prev.filter(x=>x.id!==s.id));
   };
 
-  const updLine=(i,k,v)=>{
-    const ls=[...lines];ls[i]={...ls[i],[k]:v};
-    if(k==="pid"&&!ls[i].price){const p=prods.find(x=>x.id===v);if(p)ls[i].price=String(clientPrice(cl,v,p.tiers,+ls[i].qty||1));}
-    setLines(ls);
-  };
+  // Props comunes del editor de precio para VentaRow
+  const edProps=key=>({editing:editKey===key,onEdit:()=>editKey===key?setEditKey(null):startEdit(key),editVal,setEditVal,onEditDone:doneEdit,onEditCancel:()=>setEditKey(null),
+    canSave:isAdmin&&!!cl,saveChk,setSaveChk,clName:cl?.name,editErr});
+  const barStyle={position:"fixed",left:0,right:0,bottom:"calc(64px + env(safe-area-inset-bottom))",zIndex:890,maxWidth:600,margin:"0 auto",background:T.bg,borderTop:`1px solid ${T.goldBorder}`,boxShadow:"0 -4px 16px rgba(0,0,0,0.06)",padding:"10px 14px",display:"flex",alignItems:"center",gap:10};
 
   return(
     <div style={{display:"flex",flexDirection:"column",gap:"1.25rem"}}>
-      <Card>
-        <STitle>Registrar venta</STitle>
-        {cerrados.includes(today())&&<div style={{marginBottom:12,padding:"10px 12px",borderRadius:8,background:"rgba(192,64,64,0.08)",border:"1px solid rgba(192,64,64,0.3)",fontSize:13,color:T.expense,fontWeight:600}}>🔒 El día de hoy ya se cerró. Para vender, un socio tiene que reabrirlo.</div>}
-        {/* ROW 1: fecha, modo */}
-        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12,marginBottom:12}}>
-          <F label="Fecha"><input type="date" value={date} onChange={e=>setDate(e.target.value)} disabled={!isAdmin}/></F>
-          <F label="Modo de venta">
-            <div style={{display:"flex",gap:10,paddingTop:6}}>
-              {[["paquete","📦 Paquete"],["custom","🛒 Productos"]].map(([v,l])=>(
-                <label key={v} style={{display:"flex",alignItems:"center",gap:5,fontSize:12,cursor:"pointer",color:mode===v?T.gold:T.textSub,fontWeight:mode===v?600:400}}>
-                  <input type="radio" name="mode" value={v} checked={mode===v} onChange={()=>setMode(v)} style={{accentColor:T.gold}}/>{l}
-                </label>
-              ))}
-            </div>
-          </F>
-        </div>
+      {okMsg&&<div style={{padding:"12px 14px",background:"rgba(26,140,90,0.1)",border:"1px solid rgba(26,140,90,0.3)",borderRadius:10,fontSize:14,color:T.profit,fontWeight:600}}>{okMsg}</div>}
+      {cerrados.includes(today())&&<div style={{padding:"10px 12px",borderRadius:8,background:"rgba(192,64,64,0.08)",border:"1px solid rgba(192,64,64,0.3)",fontSize:13,color:T.expense,fontWeight:600}}>🔒 El día de hoy ya se cerró. Para vender, un socio tiene que reabrirlo.</div>}
 
-        {/* CLIENTE */}
-        <div style={{marginBottom:12}}>
-          {clientId && !newCl ? (
-            <div style={{display:"flex",alignItems:"center",gap:10,padding:"10px 14px",background:"rgba(26,140,90,0.08)",border:"1px solid rgba(26,140,90,0.25)",borderRadius:10}}>
-              <span style={{fontSize:13,fontWeight:600,color:T.profit}}>✓ Cliente seleccionado:</span>
-              <span style={{fontSize:13,color:T.text,fontWeight:500}}>{clients.find(c=>c.id===clientId)?.name}</span>
-              <Chip label={clients.find(c=>c.id===clientId)?.type||""} bg={T.goldBg} color={T.goldText}/>
-              <button onClick={()=>{setClientId("");setErr("");}} style={{marginLeft:"auto",fontSize:11,color:T.expense,background:"none",border:"none",cursor:"pointer",fontWeight:600}}>✕ Cambiar</button>
-            </div>
-          ) : !newCl ? (
-            <F label="Cliente">
-              <select value="" onChange={e=>{setErr("");const v=e.target.value;if(v==="__new__"){setNewCl({name:"",type:"Menudeo",phone:"",prices:{}});}else if(v){setClientId(v);}}}>
-                <option value="">— Selecciona cliente —</option>
-                <option value="__new__" style={{color:T.gold,fontWeight:600}}>➕ Nuevo cliente rápido</option>
-                {clients.map(c=><option key={c.id} value={c.id}>{c.name} ({c.type})</option>)}
-              </select>
-            </F>
-          ) : null}
-
-          {/* NUEVO CLIENTE RÁPIDO */}
-          {newCl && (
-            <div style={{background:T.goldBg,border:`1px solid ${T.goldBorder}`,borderRadius:10,padding:"14px"}}>
-              <p style={{margin:"0 0 12px",fontSize:12,fontWeight:600,color:T.goldText,textTransform:"uppercase",letterSpacing:"0.05em"}}>➕ Datos del nuevo cliente</p>
-              <div style={{display:"flex",flexDirection:"column",gap:10}}>
-                <F label="Nombre *"><input value={newCl.name} onChange={e=>setNewCl({...newCl,name:e.target.value})} placeholder="Nombre del cliente" autoFocus/></F>
-                <F label="Tipo"><select value={newCl.type} onChange={e=>setNewCl({...newCl,type:e.target.value})}><option>Menudeo</option><option>Mayorista</option><option>Exclusivo</option></select></F>
-                <F label="Teléfono"><input value={newCl.phone} onChange={e=>setNewCl({...newCl,phone:e.target.value})} placeholder="Opcional"/></F>
-              </div>
-              {isAdmin&&<button onClick={()=>setNewClPrices(!newClPrices)} style={{marginTop:10,fontSize:12,color:T.gold,background:"none",border:"none",cursor:"pointer",fontWeight:600,padding:0}}>
-                {newClPrices?"▲ Ocultar":"▼ Configurar"} precios especiales (opcional)
-              </button>}
-              {isAdmin&&newClPrices&&(
-                <div style={{marginTop:10,padding:"12px",background:T.bg,borderRadius:8,border:`0.5px solid ${T.goldBorder}`}}>
-                  <p style={{margin:"0 0 8px",fontSize:11,fontWeight:600,color:T.goldText,textTransform:"uppercase"}}>Precio especial por producto (vacío = precio lista)</p>
-                  <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
-                    {prods.filter(p=>p.cat==="Miel").map(p=>(
-                      <F key={p.id} label={p.name}>
-                        <input type="number" min="0" placeholder={"$"+p.list}
-                          value={newCl.prices?.[p.id]||""}
-                          onChange={e=>setNewCl({...newCl,prices:{...(newCl.prices||{}),[p.id]:e.target.value}})}/>
-                      </F>
-                    ))}
-                  </div>
+      {step===1&&(
+        <>
+          <Card>
+            <STitle>Cliente</STitle>
+            {!newCl&&<ClientePicker clients={clients} cl={cl} onPick={pickClient} onClear={()=>pickClient("")} onNew={q=>setNewCl({name:q||"",type:"Menudeo",phone:"",prices:{}})}/>}
+            {/* NUEVO CLIENTE RÁPIDO */}
+            {newCl && (
+              <div style={{background:T.goldBg,border:`1px solid ${T.goldBorder}`,borderRadius:10,padding:"14px"}}>
+                <p style={{margin:"0 0 12px",fontSize:12,fontWeight:600,color:T.goldText,textTransform:"uppercase",letterSpacing:"0.05em"}}>➕ Datos del nuevo cliente</p>
+                <div style={{display:"flex",flexDirection:"column",gap:10}}>
+                  <F label="Nombre *"><input value={newCl.name} onChange={e=>setNewCl({...newCl,name:e.target.value})} placeholder="Nombre del cliente" autoFocus/></F>
+                  <F label="Tipo"><select value={newCl.type} onChange={e=>setNewCl({...newCl,type:e.target.value})}><option>Menudeo</option><option>Mayorista</option><option>Exclusivo</option></select></F>
+                  <F label="Teléfono"><input value={newCl.phone} onChange={e=>setNewCl({...newCl,phone:e.target.value})} placeholder="Opcional"/></F>
                 </div>
-              )}
-              {!newCl.name.trim() && <p style={{margin:"8px 0 0",fontSize:11,color:T.expense}}>⚠ Escribe el nombre del cliente para continuar</p>}
-              <div style={{display:"flex",gap:8,marginTop:12}}>
-                <GoldBtn onClick={()=>{
-                  if(!newCl.name.trim())return;
-                  const cleanPrices={};
-                  Object.entries(newCl.prices||{}).forEach(([k,v])=>{if(v&&+v>0)cleanPrices[k]=+v;});
-                  const nc={id:uid(),name:newCl.name.trim(),type:newCl.type,phone:newCl.phone||"",notes:"",prices:cleanPrices,pkgPrices:{}};
-                  setClients(prev=>[...prev,nc]);
-                  setClientId(nc.id);
-                  setNewCl(null);
-                  setNewClPrices(false);
-                  setErr("");
-                }}>✓ Guardar y continuar</GoldBtn>
-                <OutBtn onClick={()=>{setNewCl(null);setNewClPrices(false);}}>Cancelar</OutBtn>
-              </div>
-            </div>
-          )}
-        </div>
-
-        {/* PAQUETE */}
-        {mode==="paquete" && (
-          <div style={{background:T.bgAlt,borderRadius:10,padding:"12px",marginBottom:12,border:`0.5px solid ${T.goldBorder}`}}>
-            <div style={{display:"grid",gridTemplateColumns:"2fr 1fr 1fr",gap:12}}>
-              <F label="Paquete">
-                <select value={pkgId} onChange={e=>{setPkgId(e.target.value);setPkgOver("");setErr("");}}>
-                  <option value="">— Selecciona paquete —</option>
-                  {pkgs.map(p=><option key={p.id} value={p.id}>{p.name} — {$m(p.price)}</option>)}
-                </select>
-              </F>
-              <F label="Cantidad"><input type="number" min="1" value={pkgQty} onChange={e=>setPkgQty(Math.max(1,+e.target.value))} style={{width:70}}/></F>
-              <F label={selPkg?"Precio venta (lista: "+$m(pSalePrice)+")":"Precio venta"}>
-                <input type="number" min="0" value={pkgOver} onChange={e=>setPkgOver(e.target.value)} placeholder={selPkg?String(pSalePrice):"0.00"}/>
-              </F>
-            </div>
-            {selPkg && (
-              <div style={{marginTop:8,fontSize:11,color:T.textSub}}>
-                <span>Incluye: {pkgDesc(selPkg,prods)}</span>
-                {isAdmin && pkgCostT>0 && <span style={{marginLeft:12}}>Utilidad: <strong style={{color:T.profit}}>{$m(pkgTotal-pkgCostT)} ({pct((pkgTotal-pkgCostT)/pkgTotal*100)})</strong></span>}
+                {!newCl.name.trim() && <p style={{margin:"8px 0 0",fontSize:11,color:T.expense}}>⚠ Escribe el nombre del cliente para continuar</p>}
+                <div style={{display:"flex",gap:8,marginTop:12}}>
+                  <GoldBtn onClick={()=>{
+                    if(!newCl.name.trim())return;
+                    const nc={id:uid(),name:newCl.name.trim(),type:newCl.type,phone:newCl.phone||"",notes:"",prices:{},pkgPrices:{}};
+                    setClients(prev=>[...prev,nc]);
+                    pickClient(nc.id);
+                    setNewCl(null);
+                  }}>✓ Guardar y continuar</GoldBtn>
+                  <OutBtn onClick={()=>setNewCl(null)}>Cancelar</OutBtn>
+                </div>
+                <p style={{margin:"8px 0 0",fontSize:11,color:T.textMuted}}>Los precios especiales se ponen con el lápiz ✏️ de cada producto.</p>
               </div>
             )}
-          </div>
-        )}
+          </Card>
 
-        {/* PRODUCTOS INDIVIDUALES */}
-        {mode==="custom" && (
-          <div style={{background:T.bgAlt,borderRadius:10,padding:"12px",marginBottom:12,border:`0.5px solid ${T.goldBorder}`}}>
-            {lines.map((l,i)=>{
-              const p=prods.find(x=>x.id===l.pid);
-              const up=getLP(l);
-              const ut=up*(+l.qty||1)-(p?getLC(l)*(+l.qty||1):0);
-              const esEspecial=p&&cl?.prices?.[l.pid];
+          <Card>
+            <STitle>Productos</STitle>
+            {GRUPOS.map(([g,label,icon])=>{
+              const lista=g==="pkg"?pkgs:vendibles.filter(p=>grupoDe(p)===g);
+              if(lista.length===0)return null;
+              const cnt=g==="pkg"?lista.reduce((a,pk)=>a+(cart[keyK(pk)]||0),0):lista.reduce((a,p)=>a+(cart[keyP(p,"caja")]||0)+(cart[keyP(p,"sobre")]||0),0);
+              const abierto=!!openG[g];
               return(
-                <div key={i} style={{background:T.bg,borderRadius:8,padding:"10px",marginBottom:8,border:`0.5px solid ${T.border}`}}>
-                  <div style={{marginBottom:8}}>
-                    <ProdSearch prods={prods} value={l.pid} onChange={pid=>updLine(i,"pid",pid)}/>
-                  </div>
-                  {p&&(
-                    <div style={{display:"flex",gap:8,alignItems:"flex-end",flexWrap:"wrap"}}>
-                      {p.spc>1&&(
-                        <div style={{flex:"0 0 auto"}}>
-                          <label style={{fontSize:10,fontWeight:600,color:T.textSub,display:"block",marginBottom:2}}>Unidad</label>
-                          <select value={l.su||"caja"} onChange={e=>updLine(i,"su",e.target.value)} style={{width:90,minHeight:40}}>
-                            <option value="caja">Caja</option>
-                            <option value="sobre">Sobre</option>
-                          </select>
-                        </div>
-                      )}
-                      <div style={{flex:"0 0 auto"}}>
-                        <label style={{fontSize:10,fontWeight:600,color:T.textSub,display:"block",marginBottom:2}}>Cant.</label>
-                        <input type="number" min="1" step="1" value={l.qty} onChange={e=>updLine(i,"qty",e.target.value)} style={{width:72,minHeight:40,textAlign:"center"}}/>
-                      </div>
-                      <div style={{flex:"0 0 130px"}}>
-                        <label style={{fontSize:10,fontWeight:600,color:esEspecial?T.profit:T.textSub,display:"block",marginBottom:2}}>{esEspecial?"Precio especial":"Precio"}</label>
-                        <input type="number" min="0" value={l.price} onChange={e=>updLine(i,"price",e.target.value)} placeholder={p?String(clientPrice(cl,l.pid,p.tiers,+l.qty||1)):"0"} style={{minHeight:40,textAlign:"center",fontWeight:600}}/>
-                      </div>
-                      {isAdmin&&<div style={{flex:"0 0 auto",textAlign:"right",paddingBottom:8}}>
-                        <div style={{fontSize:10,color:T.textMuted}}>Utilidad</div>
-                        <div style={{fontSize:14,fontWeight:700,color:ut>=0?T.profit:T.expense,whiteSpace:"nowrap"}}>{p.cost>0?$m(ut):"—"}</div>
-                      </div>}
-                      <OutBtn onClick={()=>setLines(lines.filter((_,j)=>j!==i))} danger style={{padding:"7px 10px",marginBottom:2}}>✕</OutBtn>
+                <div key={g} style={{marginBottom:8}}>
+                  <button onClick={()=>setOpenG({...openG,[g]:!abierto})} style={{width:"100%",display:"flex",alignItems:"center",gap:10,padding:"12px 14px",borderRadius:12,minHeight:52,textAlign:"left",borderColor:abierto?T.gold:T.goldBorder,background:abierto?T.goldBg:"transparent"}}>
+                    <i className={"ti "+icon} style={{fontSize:20,color:T.gold}}/>
+                    <span style={{flex:1,fontSize:15,fontWeight:700,color:T.text}}>{label}</span>
+                    {cnt>0&&<span style={{fontSize:12,padding:"2px 9px",borderRadius:10,background:T.gold,color:"#fff",fontWeight:700}}>{cnt}</span>}
+                    <i className={"ti ti-chevron-"+(abierto?"up":"down")} style={{color:T.textMuted}}/>
+                  </button>
+                  {abierto&&(
+                    <div style={{padding:"0 4px"}}>
+                      {g==="pkg"?lista.map(pk=>{const k=keyK(pk);const q=cart[k]||0;const pr=priceOf(k);
+                        return <VentaRow key={pk.id} name={pk.name} sub={" el paquete"} dual={false} qty={q} otherQty={0} price={pr} esp={over[k]!=null||pr!==pk.price} may={false} unitCost={costOf(k)} isAdmin={isAdmin}
+                          onAdd={()=>setQty(k,1)} onSub={()=>setQty(k,-1)} {...edProps(k)}/>;
+                      }):lista.map(p=>{
+                        const dual=(p.spc||1)>1;const su=dual?(unitView[p.id]||"caja"):"caja";const other=su==="caja"?"sobre":"caja";
+                        const k=keyP(p,su);const q=cart[k]||0;const pr=priceOf(k);
+                        const uL=p.spcu==="piezas"?"Pieza":"Sobre";
+                        const may=su==="caja"&&over[k]==null&&!tieneEsp(p,su)&&(p.tiers||[]).length>1&&pr<(p.tiers[0]?.p||pr);
+                        return <VentaRow key={p.id} name={p.name.replace(/\s*\(.*\)/,"")} sub={su==="sobre"?(" el "+uL.toLowerCase()):(dual?" la caja ("+p.spc+")":" c/u")} dual={dual} unitLabel={uL}
+                          unit={su} setUnit={v=>{setUnitView({...unitView,[p.id]:v});setEditKey(null);}} qty={q}
+                          otherQty={dual?(cart[keyP(p,other)]||0):0} otherLabel={other==="caja"?"caja(s)":uL.toLowerCase()+"(s)"}
+                          price={pr} esp={over[k]!=null||tieneEsp(p,su)} may={may} unitCost={costOf(k)} isAdmin={isAdmin}
+                          onAdd={()=>setQty(k,1)} onSub={()=>setQty(k,-1)} {...edProps(k)}/>;
+                      })}
                     </div>
                   )}
                 </div>
               );
             })}
-            <OutBtn onClick={()=>setLines([...lines,{pid:"",qty:1,price:"",su:"caja"}])} style={{fontSize:11}}>+ Agregar producto</OutBtn>
-            {lineTotal>0 && (
-              <div style={{marginTop:10,padding:"8px 12px",background:T.goldBg,borderRadius:8,fontSize:12,display:"flex",gap:20,flexWrap:"wrap"}}>
-                <span style={{color:T.textSub}}>Total: <strong style={{color:T.revenue}}>{$m(lineTotal)}</strong></span>
-                {isAdmin && lineCostCalc>0 && <span style={{color:T.textSub}}>Utilidad: <strong style={{color:lineTotal-lineCostCalc>=0?T.profit:T.expense}}>{$m(lineTotal-lineCostCalc)} ({pct((lineTotal-lineCostCalc)/lineTotal*100)})</strong></span>}
-              </div>
-            )}
-            {isAdmin&&cl&&lines.some(l=>l.pid&&l.price)&&(
-              <div style={{marginTop:8}}>
-                {pricesSaved?(
-                  <div style={{padding:"8px 12px",background:"rgba(26,140,90,0.1)",border:"1px solid rgba(26,140,90,0.3)",borderRadius:8,fontSize:12,color:T.profit}}>✓ Precios guardados para {cl.name}</div>
-                ):(
-                  <OutBtn onClick={()=>{
-                    const newPrices={...(cl.prices||{})};
-                    lines.forEach(l=>{if(l.pid&&l.price)newPrices[l.pid]=+l.price;});
-                    setClients(clients.map(c=>c.id===cl.id?{...c,prices:newPrices}:c));
-                    setPricesSaved(true);
-                    setTimeout(()=>setPricesSaved(false),3000);
-                  }} style={{fontSize:12,color:T.client,borderColor:"rgba(40,96,176,0.3)"}}>
-                    💾 Guardar estos precios para {cl.name}
-                  </OutBtn>
-                )}
-              </div>
-            )}
+          </Card>
+          <ErrMsg msg={err}/>
+        </>
+      )}
+
+      {step===2&&(
+        <Card>
+          <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:8,marginBottom:10}}>
+            <OutBtn onClick={()=>{setStep(1);setErr("");}} style={{fontSize:12}}>← Productos</OutBtn>
+            {isAdmin
+              ?<input type="date" value={date} onChange={e=>setDate(e.target.value)} style={{maxWidth:170,fontSize:14}}/>
+              :<span style={{fontSize:12,color:T.textMuted}}>{fechaLarga(date)}</span>}
           </div>
-        )}
+          <div style={{padding:"10px 12px",borderRadius:10,background:T.bgAlt,border:`0.5px solid ${T.goldBorder}`,marginBottom:12}}>
+            <p style={{margin:"0 0 4px",fontSize:14,fontWeight:700,color:T.text}}>{cl?.name}</p>
+            {lineas.map(([k,q])=>{const[t,id,su]=k.split("|");const nm=t==="k"?(pkgs.find(x=>x.id===id)?.name||id):((prods.find(x=>x.id===id)?.name||id).replace(/\s*\(.*\)/,"")+(su==="sobre"?" (sobre)":""));
+              return <div key={k} style={{display:"flex",justifyContent:"space-between",fontSize:13,color:T.textSub,padding:"1px 0"}}><span>{q} × {nm}</span><span>{$m(priceOf(k)*q)}</span></div>;})}
+          </div>
 
-        {/* REGALOS */}
-        <RegalosForm regalos={regalos} setRegalos={setRegalos} prods={prods} isAdmin={isAdmin}/>
+          {/* CORTESÍAS */}
+          <RegalosForm regalos={regalos} setRegalos={setRegalos} prods={prods} isAdmin={isAdmin}/>
 
-        {/* ENVÍO */}
-        <EnvioForm {...{conEnvio,setConEnvio,envKm,setEnvKm,envCostoOver,setEnvCostoOver,envPct,setEnvPct,envOtro,setEnvOtro,envRep,setEnvRep,envDir,setEnvDir,envPagado,setEnvPagado,envPagadoCon,setEnvPagadoCon,envCobro,setEnvCobro,setPayMethod,isAdmin}} productos={mode==="paquete"?pkgTotal:lineTotal} repartidores={[...new Set(sales.map(s=>s.repartidor).filter(Boolean))]}/>
+          {/* ENVÍO */}
+          <EnvioForm {...{conEnvio,setConEnvio,envKm,setEnvKm,envCostoOver,setEnvCostoOver,envPct,setEnvPct,envOtro,setEnvOtro,envRep,setEnvRep,envDir,setEnvDir,envPagado,setEnvPagado,envPagadoCon,setEnvPagadoCon,envCobro,setEnvCobro,setPayMethod,isAdmin}} productos={subtotal} repartidores={[...new Set(sales.map(s=>s.repartidor).filter(Boolean))]}/>
 
-        {/* PAGO */}
-        <div style={{borderTop:`1px solid ${T.goldBorder}`,paddingTop:12,marginTop:4,display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(140px,1fr))",gap:12}}>
-          {conEnvio&&envCobro==="contra"?(
-            <F label="¿Cómo pagó?"><div style={{padding:"10px 12px",borderRadius:8,background:PAY_CLR.Efectivo.bg,color:PAY_CLR.Efectivo.c,fontWeight:600,fontSize:13}}>💵 Efectivo contra entrega</div></F>
-          ):(
-          <F label="¿Cómo pagó?">
-            <select value={payMethod} onChange={e=>setPayMethod(e.target.value)}>
-              {PAY_METHODS.map(m=><option key={m} value={m}>{PAY_METHODS_LABEL[m]||m}</option>)}
-            </select>
-          </F>
-          )}
-          {isAdmin&&terminalAmt(payMethod,mode==="paquete"?pkgTotal:lineTotal,mixCuenta,mixTransferencia)>0&&(()=>{
-            const base=terminalAmt(payMethod,mode==="paquete"?pkgTotal:lineTotal,mixCuenta,mixTransferencia);
-            return <div style={{gridColumn:"1/-1",padding:"8px 12px",background:PAY_CLR["Terminal MP"].bg,borderRadius:8,fontSize:12,color:PAY_CLR["Terminal MP"].c}}>
-              💳 Comisión Mercado Pago ({(TERMINAL_FEE*100).toFixed(1)}%): <strong>−{$m(base*TERMINAL_FEE)}</strong> · Te llega: <strong>{$m(base*(1-TERMINAL_FEE))}</strong>
-            </div>;
-          })()}
-          {payMethod==="Mixto"&&(
-            <div style={{gridColumn:"1/-1",background:"rgba(100,100,100,0.06)",borderRadius:10,padding:"14px",border:"1px solid rgba(100,100,100,0.15)"}}>
-              <p style={{margin:"0 0 12px",fontSize:12,fontWeight:600,color:T.text}}>💳 Desglose del pago mixto</p>
-              <div style={{display:"flex",flexDirection:"column",gap:10}}>
-                <F label="💵 ¿Cuánto pagó en efectivo? ($)">
-                  <input type="number" min="0" value={mixEfectivo} onChange={e=>setMixEfectivo(e.target.value)} placeholder="0.00"/>
-                </F>
-                <F label="📱 ¿El resto a dónde se pagó?">
-                  <select value={mixCuenta} onChange={e=>setMixCuenta(e.target.value)}>
-                    <option value="SPIN Marcel">📱 SPIN Marcel</option>
-                    <option value="SPIN Gustavo">📱 SPIN Gustavo</option>
-                    <option value="Transferencia MP">🏦 Transferencia Mercado Pago</option>
-                    <option value="Terminal MP">💳 Terminal Mercado Pago</option>
-                  </select>
-                </F>
-                <F label={"💰 ¿Cuánto se pagó con "+mixCuenta+"? ($)"}>
-                  <input type="number" min="0" value={mixTransferencia} onChange={e=>setMixTransferencia(e.target.value)} placeholder="0.00"/>
-                </F>
-                {(+mixEfectivo>0||+mixTransferencia>0)&&(
-                  <div style={{padding:"10px 12px",background:T.goldBg,borderRadius:8,fontSize:12,color:T.goldText}}>
-                    Total mixto: <strong>{$m((+mixEfectivo||0)+(+mixTransferencia||0))}</strong>
-                    {" · "}💵 Efectivo: <strong>{$m(+mixEfectivo||0)}</strong>
-                    {" · "}📱 {mixCuenta}: <strong>{$m(+mixTransferencia||0)}</strong>
-                  </div>
-                )}
+          {/* PAGO */}
+          <div style={{borderTop:`1px solid ${T.goldBorder}`,paddingTop:12,marginTop:4,display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(140px,1fr))",gap:12}}>
+            {conEnvio&&envCobro==="contra"?(
+              <F label="¿Cómo pagó?"><div style={{padding:"10px 12px",borderRadius:8,background:PAY_CLR.Efectivo.bg,color:PAY_CLR.Efectivo.c,fontWeight:600,fontSize:13}}>💵 Efectivo contra entrega</div></F>
+            ):(
+            <F label="¿Cómo pagó?">
+              <select value={payMethod} onChange={e=>setPayMethod(e.target.value)}>
+                {PAY_METHODS.map(m=><option key={m} value={m}>{PAY_METHODS_LABEL[m]||m}</option>)}
+              </select>
+            </F>
+            )}
+            {isAdmin&&terminalAmt(payMethod,cobrar,mixCuenta,mixTransferencia)>0&&(()=>{
+              const base=terminalAmt(payMethod,cobrar,mixCuenta,mixTransferencia);
+              return <div style={{gridColumn:"1/-1",padding:"8px 12px",background:PAY_CLR["Terminal MP"].bg,borderRadius:8,fontSize:12,color:PAY_CLR["Terminal MP"].c}}>
+                💳 Comisión Mercado Pago ({(TERMINAL_FEE*100).toFixed(1)}%): <strong>−{$m(base*TERMINAL_FEE)}</strong> · Te llega: <strong>{$m(base*(1-TERMINAL_FEE))}</strong>
+              </div>;
+            })()}
+            {payMethod==="Mixto"&&(
+              <div style={{gridColumn:"1/-1",background:"rgba(100,100,100,0.06)",borderRadius:10,padding:"14px",border:"1px solid rgba(100,100,100,0.15)"}}>
+                <p style={{margin:"0 0 12px",fontSize:12,fontWeight:600,color:T.text}}>💳 Desglose del pago mixto · hay que cobrar {$m(cobrar)}</p>
+                <div style={{display:"flex",flexDirection:"column",gap:10}}>
+                  <F label="💵 ¿Cuánto pagó en efectivo? ($)">
+                    <input type="number" min="0" value={mixEfectivo} onChange={e=>setMixEfectivo(e.target.value)} placeholder="0.00"/>
+                  </F>
+                  <F label="📱 ¿El resto a dónde se pagó?">
+                    <select value={mixCuenta} onChange={e=>setMixCuenta(e.target.value)}>
+                      <option value="SPIN Marcel">📱 SPIN Marcel</option>
+                      <option value="SPIN Gustavo">📱 SPIN Gustavo</option>
+                      <option value="Transferencia MP">🏦 Transferencia Mercado Pago</option>
+                      <option value="Terminal MP">💳 Terminal Mercado Pago</option>
+                    </select>
+                  </F>
+                  <F label={"💰 ¿Cuánto se pagó con "+mixCuenta+"? ($)"}>
+                    <input type="number" min="0" value={mixTransferencia} onChange={e=>setMixTransferencia(e.target.value)} placeholder={String(Math.max(0,cobrar-(+mixEfectivo||0)))}/>
+                  </F>
+                </div>
               </div>
+            )}
+            <F label="Nota interna (opcional)" style={{gridColumn:"1/-1"}}>
+              <input value={note} onChange={e=>setNote(e.target.value)} placeholder="Observaciones…"/>
+            </F>
+          </div>
+
+          {isAdmin&&(
+            <div style={{marginTop:12,padding:"10px 12px",borderRadius:10,background:"rgba(26,140,90,0.06)",border:"1px solid rgba(26,140,90,0.2)",fontSize:13}}>
+              {[["Productos",subtotal,T.text],["− Costo de productos",-costoProd,T.cost],regaloCostoVista>0&&["− Cortesías",-regaloCostoVista,T.expense],conEnvio&&evVista.absorbe!==0&&[evVista.absorbe>0?"− Envío que absorbes":"+ Ganancia en envío",-evVista.absorbe,evVista.absorbe>0?T.expense:T.profit]].filter(Boolean).map(([l,v,c])=>(
+                <div key={l} style={{display:"flex",justifyContent:"space-between",padding:"1px 0",color:T.textSub}}><span>{l}</span><span style={{color:c}}>{(v<0?"−":"")+$m(Math.abs(v))}</span></div>
+              ))}
+              {(()=>{const com=+(terminalAmt(payMethod,cobrar,mixCuenta,mixTransferencia)*TERMINAL_FEE).toFixed(2);const u=subtotal-costoProd-regaloCostoVista-evVista.absorbe-com;return(<>
+                {com>0&&<div style={{display:"flex",justifyContent:"space-between",padding:"1px 0",color:T.textSub}}><span>− Comisión terminal</span><span style={{color:T.expense}}>−{$m(com)}</span></div>}
+                <div style={{display:"flex",justifyContent:"space-between",borderTop:"0.5px solid rgba(26,140,90,0.3)",marginTop:4,paddingTop:4,fontWeight:700}}><span>Utilidad de esta venta</span><span style={{color:u>=0?T.profit:T.expense}}>{$m(u)}</span></div>
+              </>);})()}
             </div>
           )}
+          <ErrMsg msg={err}/>
+        </Card>
+      )}
 
-          <div style={{gridColumn:"1/-1",padding:"10px 12px",background:T.goldBg,borderRadius:8,fontSize:13,color:T.goldText,display:"flex",justifyContent:"space-between",flexWrap:"wrap",gap:6}}>
-            <span>Total a cobrar al cliente{conEnvio?" (con envío)":""}:</span>
-            <strong style={{fontSize:16}}>{$m((mode==="paquete"?pkgTotal:lineTotal)+(conEnvio?envioCalc(envKm,envCostoOver,envPct,envOtro).cliente:0))}</strong>
-          </div>
+      {/* BARRA DE TOTAL (fija arriba del menú) */}
+      <div style={barStyle}>
+        <div style={{flex:1,minWidth:0}}>
+          <p style={{margin:0,fontSize:11,color:T.textSub}}>{step===1?(nPiezas?nPiezas+" producto"+(nPiezas>1?"s":""):"Sin productos"):"Total a cobrar"+(conEnvio?" (con envío)":"")}</p>
+          <p style={{margin:0,fontSize:20,fontWeight:700,color:T.text}}>{$m(step===1?subtotal:cobrar)}</p>
+          {isAdmin&&step===1&&nPiezas>0&&<p style={{margin:0,fontSize:11,color:subtotal-costoProd>=0?T.profit:T.expense,fontWeight:600}}>Utilidad {$m(subtotal-costoProd)}{subtotal>0?" · "+pct((subtotal-costoProd)/subtotal*100):""}</p>}
         </div>
-
-        <div style={{display:"flex",gap:12,alignItems:"flex-end",marginTop:12}}>
-          <F label="Nota interna (opcional)" style={{flex:1}}>
-            <input value={note} onChange={e=>setNote(e.target.value)} placeholder="Observaciones…"/>
-          </F>
-          <GoldBtn onClick={register} style={{padding:"9px 24px",fontSize:13}}>
-            ✓ Registrar venta
-          </GoldBtn>
-        </div>
-        <ErrMsg msg={err}/>
-        {okMsg&&<div style={{marginTop:8,padding:"10px 14px",background:"rgba(26,140,90,0.1)",border:"1px solid rgba(26,140,90,0.3)",borderRadius:8,fontSize:13,color:T.profit,fontWeight:600}}>{okMsg}</div>}
-      </Card>
+        {step===1
+          ?<button onClick={continuar} style={{border:"none",background:T.client,color:"#fff",borderRadius:12,padding:"0 20px",minHeight:50,fontSize:15,fontWeight:700}}>Continuar →</button>
+          :<button onClick={register} style={{border:"none",background:T.profit,color:"#fff",borderRadius:12,padding:"0 20px",minHeight:50,fontSize:15,fontWeight:700}}>✓ Registrar venta</button>}
+      </div>
+      <div style={{height:80}}/>
 
       {/* HISTORIAL */}
       <Card>
@@ -1740,7 +1826,7 @@ function efectivoEsperado(d,sales,expenses,extras){
 // Todo lo que se cuenta en el cierre: productos (cajas + sobres, o piezas) y vasos de palomitas
 function contables(prods,popCfg){
   const a=prods.filter(p=>p.id!=="sob").map(p=>{const dual=(p.spc||1)>1;return{key:p.id,name:p.name,dual,uC:dual?"cajas":(p.unit||"piezas"),uS:p.spcu||"sobres",
-    sisC:p.stockCajas||0,sisS:dual?(p.stockSobres||0):0,pC:p.list||0,pS:dual?(p.listSobre||150):0,cC:p.cost||0,cS:dual?(p.costSobre||Math.round((p.cost||0)/(p.spc||1))):0};});
+    sisC:p.stockCajas||0,sisS:dual?(p.stockSobres||0):0,pC:p.list||0,pS:dual?(p.listSobre||150):0,cC:p.cost||0,cS:dual?sobreCost(p):0};});
   const v=POP_SIZES.map(k=>({key:"pop_"+k,name:"Vaso palomitas "+popCfg[k].name,dual:false,uC:"vasos",uS:"",sisC:+popCfg[k].stock||0,sisS:0,pC:+popCfg[k].price||0,pS:0,cC:popUnitCost(popCfg[k]),cS:0}));
   return[...a,...v];
 }

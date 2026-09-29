@@ -54,7 +54,7 @@ Antes de hacer push SIEMPRE correr `npm run build` y confirmar que compila.
 - Local usa la base REAL. Para probar sin escribir nada: `VITE_NO_SAVE=1` en `.env.local` (solo aplica en `npm run dev`; `dbSave` no guarda). `.env.local` no se sube.
 
 ## Módulos actuales
-- **POS / Nueva Venta**: selección de producto con precio de mayoreo automático por niveles; modo precio especial para clientes fijos (se guarda en su perfil); alta rápida de cliente con precios especiales colapsables.
+- **Vender** (`NuevaVenta`, 2 pasos): paso 1 = `ClientePicker` (lista completa A-Z + buscador; primero los que empiezan con lo escrito) y productos por apartados (`GRUPOS`: Mieles, Gomitas y chocolates, Sex shop, Paquetes) con `VentaRow` (+/−, Caja/Sobre, lápiz de precio, utilidad por línea solo socios). Carrito `cart` con llaves `p|pid|caja`, `p|pid|sobre`, `k|pkgId`; precios a mano en `over`. Precio especial de cliente: `cl.prices[pid]` (caja), `cl.prices[pid+"_s"]` (sobre), `cl.pkgPrices[id]`; solo socios lo guardan en el perfil (casilla en el editor). Paso 2 = cortesías, envío, pago, nota y desglose de utilidad. Barra de total fija arriba del menú. Se pueden mezclar paquetes y productos en una venta.
 - **Inventario**: cargador masivo (cajas + sobres), edición en línea por fila con historial de cambios.
 - **Gastos**: registra de qué cuenta salió (Efectivo / SPIN Marcel / SPIN Gustavo) y se descuenta en el Corte de Caja.
 - **Corte de Caja**: desglose por cuenta (ventas + transferencias mixtas + extras − gastos = neto). Pago "Mixto" se reparte entre cuentas y NO aparece como categoría aparte.
@@ -70,7 +70,7 @@ Antes de hacer push SIEMPRE correr `npm run build` y confirmar que compila.
   - Venta con envío guarda: `conEnvio`, `envio` (lo que paga el cliente), `costoEnvio` (lo que cobra el repartidor), `envioNeto` = costo − cliente (lo que absorbemos, va DENTRO de `cost`), `envioKm`, `envioPct` (100/50/0/otro), `repartidor`, `envioDir`, `envioStatus` (pendiente/salio/entregado + horas), `envioPagado`, `envioPagadoCon`, `envioPagadoFecha`.
   - `sale.total` sigue siendo solo productos. En el Corte, `envio` entra a la cuenta de la venta (en Mixto ya viene dentro del desglose) y el pago al repartidor sale de `envioPagadoCon` en la fecha `envioPagadoFecha`. El pago al repartidor NO se registra como gasto (ya está en `cost`): así no se cuenta doble.
   - Dos formas de cobro (`envCobro`): **transferencia/terminal** (el viaje queda "por pagar" al repartidor hasta marcarlo) o **efectivo contra entrega** (`envioContra`): el repartidor cobra productos + envío, se queda con `costoEnvio` (queda pagado en Efectivo ese día) y debe entregar `envioDebe` hasta que se marque `envioDineroRecibido`. El Corte avisa cuánto efectivo lo traen todavía los repartidores.
-- **Regalos** (`RegalosForm` en Nueva venta): sobres que se regalan al cliente. Cada uno se absorbe a `SOBRE_COST` = $17 (promedio de todas las marcas) y se suma a `sale.cost`; se guardan en `sale.regalos` / `sale.regaloCosto`. Si se elige marca, se descuenta de `stockSobres`; "Sobre surtido" no toca inventario.
+- **Cortesías** (`RegalosForm`, paso 2 de Vender): sobres que se regalan por gusto, opcionales, siempre por marca (`regalos={pid:qty}`). Cada uno cuesta `sobreCost(p)`, se suma a `sale.cost`, se guarda en `sale.regalos` [{pid,qty,costo}] / `sale.regaloCosto` y se descuenta de `stockSobres`.
 - **Fecha de arranque** `INICIO_OPERACION` = 2026-10-01: Inicio, Corte y Reparto reciben `repSales/repExpenses/repExtras` (filtrados, SOLO LECTURA). Nunca pasar arreglos filtrados a componentes que hacen setSales/setExpenses/setExtras con el arreglo recibido, porque borrarían lo anterior.
 - Palomitas: insumos default Pequeño $3, Mediano $4, Grande $6 (estimado de Marcel, lado alto). Solo se aplican si el costo guardado es 0.
 - Equipo: 2 socios (Marcel, Gustavo) + 1 empleado usan la app.
@@ -82,7 +82,7 @@ Antes de hacer push SIEMPRE correr `npm run build` y confirmar que compila.
 1. **No declarar variables duplicadas** (ej. `exForm`, `PAY_METHODS_LABEL`): rompen el build de Vercel.
 2. **Nunca definir componentes dentro de otros componentes**: causa pantalla en blanco. Todos los componentes van como funciones top-level.
 3. **La migración de productos solo pone costos default a productos NUEVOS** sin valor. Nunca sobreescribir costos que el usuario ya editó al cargar la página.
-4. **Venta por sobre usa `costSobre` y `listSobre`**, no el costo de caja, o la utilidad sale negativa.
+4. **Costo de un sobre = `sobreCost(p)` = costo de la caja ÷ sobres** (ya no se usa `costSobre` escrito a mano). Precio de venta del sobre = `listSobre`. Nunca usar el costo de la caja para un sobre.
 5. Queries a Supabase: usar `.maybeSingle()`, no `.single()` (ojo: `dbLoad` en `supabase.js` todavía usa `.single()`).
 6. Guardados con debounce de 800 ms (`setTimeout` / `clearTimeout`).
 7. Los datos de Supabase son independientes del código: actualizar código NO borra datos.
