@@ -120,7 +120,6 @@ const INIT_PRODS=[
   {id:"rhh", name:"Royal Honey for Her (12 sobres)",    cat:"Miel",    unit:"caja", spc:12, cost:173, list:999, tiers:TB,costSobre:14,listSobre:150,stockCajas:0,stockSobres:0},
   {id:"pp24",name:"Pink Pussycat (24 sobres)",          cat:"Miel",    unit:"caja", spc:24, cost:220, list:1199,tiers:TA,costSobre:9,listSobre:150,stockCajas:0,stockSobres:0},
   {id:"vf",  name:"Vitafer-L (16 sobres)",              cat:"Miel",    unit:"caja", spc:16, cost:340, list:1199,tiers:TA,costSobre:21,listSobre:150,stockCajas:0,stockSobres:0},
-  {id:"sob", name:"Sobre individual",                   cat:"Miel",    unit:"sobre",spc:1,  cost:10,  list:150, tiers:[{m:1,p:150},{m:4,p:125},{m:8,p:100}],stockCajas:0,stockSobres:0},
   {id:"gom_f",name:"Gomitas Bliss Bears — Mujer",        cat:"Miel",    unit:"caja", spc:6,  cost:130, list:400, tiers:TD,costSobre:22,listSobre:150,stockCajas:0,stockSobres:0,spcu:"piezas"},
   {id:"gom_m",name:"Gomitas Boner Bears — Hombre",       cat:"Miel",    unit:"caja", spc:6,  cost:130, list:400, tiers:TD,costSobre:22,listSobre:150,stockCajas:0,stockSobres:0,spcu:"piezas"},
   {id:"rchv",name:"Royal Choco VIP",                    cat:"Miel",    unit:"caja", spc:12, cost:290, list:1250,tiers:TC,listSobre:200,stockCajas:0,stockSobres:0},
@@ -145,7 +144,9 @@ const INIT_PKGS=[
   {id:"dist",name:"Paquete Distribuidor", price:9400, items:[{pid:"bh",qty:5},{pid:"rhv",qty:4},{pid:"rh",qty:5},{pid:"pp24",qty:3},{pid:"hs",qty:3}]},
   {id:"may", name:"Paquete Mayorista",    price:39400,items:[{pid:"bh",qty:20},{pid:"rhv",qty:15},{pid:"rhp",qty:15},{pid:"hs",qty:10},{pid:"pp24",qty:5}]},
 ];
-const EXP_CATS=["Renta local","Sueldos","Aguinaldo (apartado)","Plan celular","Repartidor fijo","Publicidad","Comisiones terminal","Insumos palomitas","Bolsas / empaques","Merma / regalos","Gasolina","Repartidores","Importación","Transporte","Almacén","Marketing","Gastos generales","Otro"];
+// Sin "Repartidores" (sale de Envíos), "Comisiones terminal" (se calcula sola) ni "Merma / regalos" (las
+// cortesías se restan en la venta): registrarlos aquí los contaría doble.
+const EXP_CATS=["Renta local","Sueldos","Aguinaldo (apartado)","Plan celular","Repartidor fijo","Publicidad","Insumos palomitas","Bolsas / empaques","Merma (producto dañado)","Gasolina","Importación","Otro"];
 
 // Gastos fijos: solo los socios los ven y registran
 const FIXED_CATS=["Renta local","Sueldos","Aguinaldo (apartado)","Plan celular","Repartidor fijo","Publicidad"];
@@ -192,7 +193,8 @@ const POP_SIZES=["s","m","l"];
 // cost = insumos (maíz, aceite, sal…) · vaso = bolsita/vaso donde se sirve
 const INIT_POP={s:{name:"Pequeño",price:20,cost:3,vaso:5},m:{name:"Mediano",price:35,cost:4,vaso:5},l:{name:"Grande",price:50,cost:6,vaso:5}};
 const popUnitCost=c=>(+c.cost||0)+(+c.vaso||0);
-const PAY_METHODS=["Efectivo","SPIN Marcel","SPIN Gustavo","Transferencia MP","Terminal MP","Tercero","Mixto"];
+// ("Tercero" ya no se ofrece; su etiqueta y color se quedan para ventas viejas)
+const PAY_METHODS=["Efectivo","SPIN Marcel","SPIN Gustavo","Transferencia MP","Terminal MP","Mixto"];
 // Cuentas de dinero del negocio (de dónde se paga un gasto, un fijo o a un repartidor).
 // "Transferencia MP" = la cuenta de Mercado Pago (ahí también cae lo de la terminal).
 const CUENTAS=["Efectivo","SPIN Marcel","SPIN Gustavo","Transferencia MP"];
@@ -247,7 +249,7 @@ function pkgCost(pkg,prods){return pkg.items.reduce((s,it)=>{const p=prods.find(
 function pkgDesc(pkg,prods){return pkg.items.map(it=>{const p=prods.find(x=>x.id===it.pid);return it.qty+"× "+(p?p.name:it.pid);}).join(" · ");}
 
 // ── DASHBOARD ─────────────────────────────────────────────────────────────────
-function Dashboard({prods,pkgs,clients,sales,expenses,fixed,goTab,cierres=[]}){
+function Dashboard({sales,expenses,extras=[],fixed,goTab,cierres=[]}){
   const now      = new Date();
   const todayStr = today();
   const curMonth = todayStr.slice(0,7);
@@ -259,10 +261,12 @@ function Dashboard({prods,pkgs,clients,sales,expenses,fixed,goTab,cierres=[]}){
     const rev=ss.reduce((a,s)=>a+s.total,0);
     const cst=ss.reduce((a,s)=>a+s.cost,0);
     const exp=expenses.filter(e=>e.date>=start&&e.date<=(end||todayStr)).reduce((a,e)=>a+e.amount,0);
-    return{rev,util:rev-cst,net:rev-cst-exp,count:ss.length};
+    const ext=(extras||[]).filter(x=>x.date>=start&&x.date<=(end||todayStr)).reduce((a,x)=>a+x.amount,0);
+    // Misma cuenta que Reparto: ventas − costo − gastos + ingresos extra
+    return{rev,net:rev-cst-exp+ext,count:ss.length};
   };
   const mesData  = calcPeriod(curMonth+"-01");
-  const totalData= calcPeriod(curYear+"-01-01");
+  const anioData = calcPeriod(curYear+"-01-01");
   const gastosMes= expenses.filter(e=>e.date>=curMonth+"-01"&&e.date<=todayStr).reduce((a,e)=>a+e.amount,0);
 
   // Monthly chart — all 12 months of current year
@@ -271,14 +275,8 @@ function Dashboard({prods,pkgs,clients,sales,expenses,fixed,goTab,cierres=[]}){
     const mm=String(i+1).padStart(2,"0");
     const start=curYear+"-"+mm+"-01";
     const end  =curYear+"-"+mm+"-31";
-    const ss=sales.filter(s=>s.date>=start&&s.date<=end);
-    const rev=ss.reduce((a,s)=>a+s.total,0);
-    const cst=ss.reduce((a,s)=>a+s.cost,0);
-    return{name:m,util:+(rev-cst).toFixed(0),rev:+rev.toFixed(0)};
+    return{name:m,net:+calcPeriod(start,end).net.toFixed(0)};
   });
-
-  // Recent sales
-  const recent=[...sales].sort((a,b)=>b.date.localeCompare(a.date)).slice(0,6);
 
   const nomMes=now.toLocaleDateString("es-MX",{month:"long"}).replace(/^\w/,c=>c.toUpperCase());
 
@@ -291,7 +289,7 @@ function Dashboard({prods,pkgs,clients,sales,expenses,fixed,goTab,cierres=[]}){
     <div style={{display:"flex",flexDirection:"column",gap:"1.25rem"}}>
 
       {(faltaCierreAyer||porRevisar.length>0)&&(
-        <button onClick={()=>goTab&&goTab("cierre")} style={{textAlign:"left",background:"rgba(192,64,64,0.07)",border:"1px solid rgba(192,64,64,0.3)",borderRadius:12,padding:"12px 14px",display:"flex",alignItems:"center",gap:10}}>
+        <button onClick={()=>goTab&&goTab("caja")} style={{textAlign:"left",background:"rgba(192,64,64,0.07)",border:"1px solid rgba(192,64,64,0.3)",borderRadius:12,padding:"12px 14px",display:"flex",alignItems:"center",gap:10}}>
           <i className="ti ti-lock-exclamation" style={{fontSize:22,color:T.expense}}/>
           <div style={{flex:1}}>
             {faltaCierreAyer&&<p style={{margin:0,fontSize:13,fontWeight:700,color:T.expense}}>No se hizo el cierre de ayer</p>}
@@ -312,128 +310,38 @@ function Dashboard({prods,pkgs,clients,sales,expenses,fixed,goTab,cierres=[]}){
         </button>
       )}
 
-      {/* ── KPI CARDS ── */}
-      <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(160px,1fr))",gap:12}}>
-        <div style={{background:T.bgCard,borderRadius:12,padding:"16px 18px",border:`0.5px solid ${T.goldBorder}`,borderTop:`3px solid ${T.gold}`}}>
-          <p style={{margin:"0 0 8px",fontSize:11,fontWeight:600,color:T.textSub,textTransform:"uppercase",letterSpacing:"0.08em"}}>Ganancias del mes</p>
-          <p style={{margin:"0 0 4px",fontSize:28,fontWeight:700,color:T.text}}>{$m(mesData.util)}</p>
-          <p style={{margin:0,fontSize:12,color:T.textMuted}}>{nomMes}</p>
-        </div>
-        <div style={{background:T.bgCard,borderRadius:12,padding:"16px 18px",border:`0.5px solid ${T.goldBorder}`,borderTop:`3px solid ${T.profit}`}}>
-          <p style={{margin:"0 0 8px",fontSize:11,fontWeight:600,color:T.textSub,textTransform:"uppercase",letterSpacing:"0.08em"}}>Ganancias del año</p>
-          <p style={{margin:"0 0 4px",fontSize:28,fontWeight:700,color:T.text}}>{$m(totalData.util)}</p>
-          <p style={{margin:0,fontSize:12,color:T.textMuted}}>Desde el arranque ({new Date(INICIO_OPERACION+"T12:00:00").toLocaleDateString("es-MX",{day:"numeric",month:"short"})}) · {curYear}</p>
-        </div>
-        <div style={{background:T.bgCard,borderRadius:12,padding:"16px 18px",border:`0.5px solid ${T.goldBorder}`,borderTop:`3px solid ${T.client}`}}>
-          <p style={{margin:"0 0 8px",fontSize:11,fontWeight:600,color:T.textSub,textTransform:"uppercase",letterSpacing:"0.08em"}}>Ventas este mes</p>
-          <p style={{margin:"0 0 4px",fontSize:28,fontWeight:700,color:T.text}}>{mesData.count}</p>
-          <p style={{margin:0,fontSize:12,color:T.textMuted}}>{nomMes}</p>
-        </div>
-        <div style={{background:T.bgCard,borderRadius:12,padding:"16px 18px",border:`0.5px solid ${T.goldBorder}`,borderTop:`3px solid ${T.expense}`}}>
-          <p style={{margin:"0 0 8px",fontSize:11,fontWeight:600,color:T.textSub,textTransform:"uppercase",letterSpacing:"0.08em"}}>Gastos del mes</p>
-          <p style={{margin:"0 0 4px",fontSize:28,fontWeight:700,color:T.text}}>{$m(gastosMes)}</p>
-          <p style={{margin:0,fontSize:12,color:T.textMuted}}>Mes actual</p>
-        </div>
-        <div style={{background:mesData.net>=0?"rgba(26,140,90,0.06)":"rgba(192,64,64,0.06)",borderRadius:12,padding:"16px 18px",border:`2px solid ${mesData.net>=0?T.profit:T.expense}`}}>
-          <p style={{margin:"0 0 8px",fontSize:11,fontWeight:600,color:mesData.net>=0?T.profit:T.expense,textTransform:"uppercase",letterSpacing:"0.08em"}}>✨ Utilidad neta del mes</p>
-          <p style={{margin:"0 0 4px",fontSize:28,fontWeight:700,color:mesData.net>=0?T.profit:T.expense}}>{$m(mesData.net)}</p>
-          <p style={{margin:0,fontSize:12,color:T.textMuted}}>Ganancias − gastos · {nomMes}</p>
-        </div>
+      {/* ── KPI ── */}
+      <div style={{background:mesData.net>=0?"rgba(26,140,90,0.06)":"rgba(192,64,64,0.06)",borderRadius:12,padding:"16px 18px",border:`2px solid ${mesData.net>=0?T.profit:T.expense}`}}>
+        <p style={{margin:"0 0 6px",fontSize:11,fontWeight:600,color:mesData.net>=0?T.profit:T.expense,textTransform:"uppercase",letterSpacing:"0.08em"}}>Utilidad neta · {nomMes}</p>
+        <p style={{margin:"0 0 2px",fontSize:30,fontWeight:700,color:mesData.net>=0?T.profit:T.expense}}>{$m(mesData.net)}</p>
+        <p style={{margin:0,fontSize:12,color:T.textMuted}}>Ya descontado costo, gastos y fijos</p>
+      </div>
+      <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:8}}>
+        {[["Vendido",$m(mesData.rev),mesData.count+" venta"+(mesData.count!==1?"s":""),T.revenue],["Gastos",$m(gastosMes),nomMes,T.expense],["Utilidad del año",$m(anioData.net),"desde el arranque",T.client]].map(([l,v,sub,c])=>(
+          <div key={l} style={{background:T.bgCard,borderRadius:10,padding:"10px 10px",border:`0.5px solid ${T.goldBorder}`,borderTop:`3px solid ${c}`}}>
+            <p style={{margin:"0 0 4px",fontSize:10,fontWeight:600,color:T.textSub,textTransform:"uppercase"}}>{l}</p>
+            <p style={{margin:0,fontSize:16,fontWeight:700,color:T.text}}>{v}</p>
+            <p style={{margin:0,fontSize:10,color:T.textMuted}}>{sub}</p>
+          </div>
+        ))}
       </div>
 
-      {/* ── CHART + RECIENTES ── */}
-      <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(280px,1fr))",gap:12}}>
-        {/* Gráfica mensual */}
-        <Card>
-          <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:16}}>
-            <span style={{width:10,height:10,borderRadius:"50%",background:T.gold,display:"inline-block"}}/>
-            <p style={{margin:0,fontWeight:600,fontSize:14,color:T.text}}>Ganancias por mes — {curYear}</p>
-          </div>
-          <div style={{height:220}}>
-            <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={byMonth} margin={{top:20,right:8,left:0,bottom:0}}>
-                <XAxis dataKey="name" tick={{fontSize:11,fill:T.textSub}} axisLine={false} tickLine={false}/>
-                <YAxis hide/>
-                <Tooltip
-                  formatter={v=>[$m(v),"Utilidad"]}
-                  contentStyle={{background:T.bgCard,border:`1px solid ${T.goldBorder}`,borderRadius:8,fontSize:12}}
-                  cursor={{fill:"rgba(196,150,42,0.08)"}}
-                />
-                <Bar dataKey="util" radius={[6,6,0,0]} label={{position:"top",fontSize:10,fill:T.textSub,formatter:v=>v>0?"$"+(v/1000).toFixed(1)+"k":""}}>
-                  {byMonth.map((entry,i)=>{
-                    const isCurrentMonth=i===now.getMonth();
-                    return <Cell key={i} fill={entry.util>0?(isCurrentMonth?T.gold:"#E8C050"):"#E8E0D0"}/>;
-                  })}
-                </Bar>
-              </BarChart>
-            </ResponsiveContainer>
-          </div>
-        </Card>
-
-        {/* Ventas recientes */}
-        <Card>
-          <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:16}}>
-            <span style={{width:10,height:10,borderRadius:"50%",background:T.expense,display:"inline-block"}}/>
-            <p style={{margin:0,fontWeight:600,fontSize:14,color:T.text}}>Ventas recientes</p>
-          </div>
-          {recent.length===0 ? <Empty icon="ti-shopping-cart" text="Sin ventas registradas"/> : (
-            <div style={{display:"flex",flexDirection:"column",gap:2}}>
-              {recent.map((s,i)=>{
-                const cl=clients.find(c=>c.id===s.clientId);
-                const util=s.total-s.cost;
-                const fecha=new Date(s.date+"T12:00:00").toLocaleDateString("es-MX",{day:"numeric",month:"short",year:"numeric"});
-                return(
-                  <div key={s.id} style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"10px 4px",borderBottom:i<recent.length-1?`0.5px solid ${T.border}`:"none"}}>
-                    <div>
-                      <p style={{margin:"0 0 2px",fontWeight:600,fontSize:13,color:T.text}}>{cl?.name||(s.tipo==="palomitas"?"🍿 Palomitas":"Cliente")}</p>
-                      <p style={{margin:0,fontSize:11,color:T.textMuted}}>{fecha} · {s.desc?.slice(0,28)}{s.desc?.length>28?"…":""}</p>
-                    </div>
-                    <p style={{margin:0,fontWeight:700,fontSize:14,color:util>=0?T.profit:T.expense,whiteSpace:"nowrap",marginLeft:12}}>{util>0?$m(util):$m(s.total)}</p>
-                  </div>
-                );
-              })}
-            </div>
-          )}
-        </Card>
-      </div>
-
-      {/* ── TABLA MENSUAL + ANUAL ── */}
-      {(()=>{
-        const anioData=calcPeriod(curYear+"-01-01");
-        const Row=({label,data,accent})=>(
-          <tr style={{borderBottom:`0.5px solid ${T.border}`}}>
-            <td style={{padding:"10px 12px",fontWeight:600,color:T.text,whiteSpace:"nowrap"}}>
-              <span style={{display:"inline-block",width:8,height:8,borderRadius:"50%",background:accent,marginRight:8}}/>
-              {label}
-            </td>
-            <td style={{padding:"10px 12px",color:T.textSub,textAlign:"center"}}>{data.count}</td>
-            <td style={{padding:"10px 12px",color:T.revenue,fontWeight:600,textAlign:"right",whiteSpace:"nowrap"}}>{$m(data.rev)}</td>
-            <td style={{padding:"10px 12px",fontWeight:700,color:data.util>=0?T.profit:T.expense,textAlign:"right",whiteSpace:"nowrap"}}>{$m(data.util)}</td>
-            <td style={{padding:"10px 12px",fontWeight:700,color:data.net>=0?T.profit:T.expense,textAlign:"right",whiteSpace:"nowrap"}}>{$m(data.net)}</td>
-          </tr>
-        );
-        return(
-          <Card>
-            <STitle>Resumen de ganancias</STitle>
-            <div style={{overflowX:"auto"}}>
-              <table style={{width:"100%",borderCollapse:"collapse",fontSize:13}}>
-                <TH cols={["Período","Ventas","Ingresos","Utilidad bruta","Utilidad neta"]}/>
-                <tbody>
-                  <Row label={"Este mes ("+nomMes+")"} data={mesData}  accent={T.gold}/>
-                  <Row label={"Este año ("+curYear+")"}  data={anioData} accent={T.profit}/>
-                </tbody>
-                <tfoot>
-                  <tr style={{background:T.goldBg}}>
-                    <td style={{padding:"7px 12px",fontSize:10,color:T.textMuted,fontStyle:"italic"}} colSpan={5}>
-                      * Utilidad neta descuenta gastos registrados en el período
-                    </td>
-                  </tr>
-                </tfoot>
-              </table>
-            </div>
-          </Card>
-        );
-      })()}
+      {/* ── GRÁFICA: utilidad neta por mes ── */}
+      <Card>
+        <STitle>Utilidad neta por mes · {curYear}</STitle>
+        <div style={{height:220}}>
+          <ResponsiveContainer width="100%" height="100%">
+            <BarChart data={byMonth} margin={{top:20,right:8,left:0,bottom:0}}>
+              <XAxis dataKey="name" tick={{fontSize:11,fill:T.textSub}} axisLine={false} tickLine={false}/>
+              <YAxis hide/>
+              <Tooltip formatter={v=>[$m(v),"Utilidad neta"]} contentStyle={{background:T.bgCard,border:`1px solid ${T.goldBorder}`,borderRadius:8,fontSize:12}} cursor={{fill:"rgba(196,150,42,0.08)"}}/>
+              <Bar dataKey="net" radius={[6,6,0,0]} label={{position:"top",fontSize:10,fill:T.textSub,formatter:v=>v?"$"+(v/1000).toFixed(1)+"k":""}}>
+                {byMonth.map((e,i)=><Cell key={i} fill={e.net<0?T.expense:i===now.getMonth()?T.gold:"#E8C050"}/>)}
+              </Bar>
+            </BarChart>
+          </ResponsiveContainer>
+        </div>
+      </Card>
     </div>
   );
 }
@@ -442,16 +350,15 @@ function Dashboard({prods,pkgs,clients,sales,expenses,fixed,goTab,cierres=[]}){
 function Productos({prods,setProds}){
   const[editMode,setEditMode]=useState(false);
   const[costMap,setCostMap]=useState({});
-  const[costSobreMap,setCostSobreMap]=useState({});
   const[listSobreMap,setListSobreMap]=useState({});
   const cats=[...new Set(prods.map(p=>p.cat))];
   const missing=prods.filter(p=>p.cost===0).length;
   return(
     <div style={{display:"flex",flexDirection:"column",gap:"1.25rem"}}>
-      {missing>0 && <div style={{background:T.goldBg,border:`1px solid ${T.goldBorder}`,borderRadius:10,padding:"10px 16px",display:"flex",alignItems:"center",gap:10,fontSize:13,color:T.goldText}}><i className="ti ti-alert-circle" style={{fontSize:18,color:T.gold}}/><span>Faltan costos en <strong>{missing} productos</strong>.</span>{!editMode&&<GoldBtn onClick={()=>{const m={};prods.forEach(p=>m[p.id]=String(p.cost));setCostMap(m);const ms={};const ml={};prods.forEach(p=>{if(p.spc>1){ms[p.id]=String(p.costSobre||Math.round(p.cost/p.spc));ml[p.id]=String(p.listSobre||150);}});setCostSobreMap(ms);setListSobreMap(ml);setEditMode(true);}} style={{marginLeft:"auto",fontSize:11}}>Editar costos</GoldBtn>}</div>}
+      {missing>0 && <div style={{background:T.goldBg,border:`1px solid ${T.goldBorder}`,borderRadius:10,padding:"10px 16px",display:"flex",alignItems:"center",gap:10,fontSize:13,color:T.goldText}}><i className="ti ti-alert-circle" style={{fontSize:18,color:T.gold}}/><span>Faltan costos en <strong>{missing} productos</strong>.</span>{!editMode&&<GoldBtn onClick={()=>{const m={};prods.forEach(p=>m[p.id]=String(p.cost));setCostMap(m);const ml={};prods.forEach(p=>{if(p.spc>1){ml[p.id]=String(p.listSobre||150);}});setListSobreMap(ml);setEditMode(true);}} style={{marginLeft:"auto",fontSize:11}}>Editar costos</GoldBtn>}</div>}
       {cats.map(cat=>(
         <Card key={cat}>
-          <STitle right={!editMode&&cat===cats[0]&&<OutBtn onClick={()=>{const m={};prods.forEach(p=>m[p.id]=String(p.cost));setCostMap(m);const ms={};const ml={};prods.forEach(p=>{if(p.spc>1){ms[p.id]=String(p.costSobre||Math.round(p.cost/p.spc));ml[p.id]=String(p.listSobre||150);}});setCostSobreMap(ms);setListSobreMap(ml);setEditMode(true);}} style={{fontSize:11}}>Editar costos</OutBtn>}>
+          <STitle right={!editMode&&cat===cats[0]&&<OutBtn onClick={()=>{const m={};prods.forEach(p=>m[p.id]=String(p.cost));setCostMap(m);const ml={};prods.forEach(p=>{if(p.spc>1){ml[p.id]=String(p.listSobre||150);}});setListSobreMap(ml);setEditMode(true);}} style={{fontSize:11}}>Editar costos</OutBtn>}>
             {cat==="Miel"?"Productos en existencia":"Sex Shop"}
           </STitle>
           <div style={{overflowX:"auto"}}>
@@ -489,7 +396,7 @@ function Productos({prods,setProds}){
                   if(listSobreMap[p.id]!==undefined&&listSobreMap[p.id]!=="")upd.listSobre=parseFloat(listSobreMap[p.id])||0;
                 }
                 return upd;
-              }));setEditMode(false);setCostSobreMap({});setListSobreMap({});}}>Guardar costos</GoldBtn>
+              }));setEditMode(false);setListSobreMap({});}}>Guardar costos</GoldBtn>
               <OutBtn onClick={()=>setEditMode(false)}>Cancelar</OutBtn>
             </div>
           )}
@@ -659,73 +566,6 @@ function Clientes({clients,setClients,prods,pkgs,isAdmin}){
 }
 
 
-// ── SEARCHABLE PRODUCT DROPDOWN ───────────────────────────────────────────────
-function ProdSearch({prods,value,onChange}){
-  const[q,setQ]=useState("");
-  const[open,setOpen]=useState(false);
-  const sel=prods.find(p=>p.id===value);
-  const miel=prods.filter(p=>p.cat==="Miel");
-  const sex=prods.filter(p=>p.cat==="SexShop");
-  const filter=arr=>q.trim()===""?arr:arr.filter(p=>p.name.toLowerCase().includes(q.toLowerCase()));
-  const fm=filter(miel);const fs=filter(sex);
-  const pick=pid=>{onChange(pid);setQ("");setOpen(false);};
-  return(
-    <div style={{position:"relative"}}>
-      <div onClick={()=>setOpen(!open)} style={{display:"flex",alignItems:"center",gap:6,padding:"6px 10px",border:`1px solid ${open?T.gold:T.border}`,borderRadius:6,background:T.bg,cursor:"pointer",minHeight:32}}>
-        {sel
-          ? <span style={{flex:1,fontSize:12,color:T.text,fontWeight:500,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{sel.name} <span style={{color:T.textMuted,fontWeight:400}}>· {$m(sel.list)}</span></span>
-          : <span style={{flex:1,fontSize:12,color:T.textMuted}}>— Selecciona producto —</span>
-        }
-        <i className="ti ti-chevron-down" style={{fontSize:12,color:T.textMuted,flexShrink:0}}/>
-      </div>
-      {open && (
-        <div style={{position:"absolute",top:"100%",left:0,right:0,zIndex:999,background:T.bg,border:`1px solid ${T.goldBorder}`,borderRadius:8,boxShadow:"0 4px 20px rgba(0,0,0,0.12)",marginTop:2,maxHeight:260,display:"flex",flexDirection:"column"}}>
-          <div style={{padding:"8px 10px",borderBottom:`1px solid ${T.border}`}}>
-            <input
-              autoFocus
-              value={q}
-              onChange={e=>setQ(e.target.value)}
-              placeholder="Buscar producto…"
-              style={{width:"100%",fontSize:12,padding:"5px 8px",border:`1px solid ${T.border}`,borderRadius:5}}
-              onClick={e=>e.stopPropagation()}
-            />
-          </div>
-          <div style={{overflowY:"auto",flex:1}}>
-            {fm.length>0 && (
-              <>
-                <div style={{padding:"5px 10px 2px",fontSize:10,fontWeight:700,color:T.textMuted,textTransform:"uppercase",letterSpacing:"0.08em",background:T.bgAlt}}>Mieles & Chocolates</div>
-                {fm.map(p=>(
-                  <div key={p.id} onClick={()=>pick(p.id)} style={{padding:"8px 12px",fontSize:12,cursor:"pointer",background:value===p.id?T.goldBg:undefined,color:value===p.id?T.goldText:T.text,display:"flex",justifyContent:"space-between",alignItems:"center"}}
-                    onMouseEnter={e=>e.currentTarget.style.background=T.bgAlt}
-                    onMouseLeave={e=>e.currentTarget.style.background=value===p.id?T.goldBg:"transparent"}>
-                    <span style={{fontWeight:value===p.id?600:400}}>{p.name}</span>
-                    <span style={{color:T.textMuted,fontSize:11}}>{$m(p.list)}</span>
-                  </div>
-                ))}
-              </>
-            )}
-            {fs.length>0 && (
-              <>
-                <div style={{padding:"5px 10px 2px",fontSize:10,fontWeight:700,color:T.textMuted,textTransform:"uppercase",letterSpacing:"0.08em",background:T.bgAlt}}>Sex Shop</div>
-                {fs.map(p=>(
-                  <div key={p.id} onClick={()=>pick(p.id)} style={{padding:"8px 12px",fontSize:12,cursor:"pointer",background:value===p.id?T.goldBg:undefined,color:value===p.id?T.goldText:T.text,display:"flex",justifyContent:"space-between",alignItems:"center"}}
-                    onMouseEnter={e=>e.currentTarget.style.background=T.bgAlt}
-                    onMouseLeave={e=>e.currentTarget.style.background=value===p.id?T.goldBg:"transparent"}>
-                    <span style={{fontWeight:value===p.id?600:400}}>{p.name}</span>
-                    <span style={{color:T.textMuted,fontSize:11}}>{$m(p.list)}</span>
-                  </div>
-                ))}
-              </>
-            )}
-            {fm.length===0&&fs.length===0 && <div style={{padding:"12px",fontSize:12,color:T.textMuted,textAlign:"center"}}>Sin resultados para "{q}"</div>}
-          </div>
-          {value && <div onClick={()=>pick("")} style={{padding:"8px 12px",fontSize:11,color:T.expense,cursor:"pointer",borderTop:`1px solid ${T.border}`,textAlign:"center"}}>✕ Quitar producto</div>}
-        </div>
-      )}
-    </div>
-  );
-}
-
 // ── CORTESÍAS (sobres que regalamos por gusto en una venta; opcionales) ───────
 // regalos = {pid: cantidad}. Cada sobre cuesta lo que nos cuesta: costo de la caja ÷ sobres de la caja.
 function RegalosForm({regalos,setRegalos,prods,isAdmin}){
@@ -774,7 +614,6 @@ function RegalosForm({regalos,setRegalos,prods,isAdmin}){
           {isAdmin&&<div style={{display:"flex",justifyContent:"space-between",borderTop:`0.5px solid ${T.goldBorder}`,marginTop:6,paddingTop:6,fontWeight:700}}>
             <span>Las cortesías te cuestan</span><span style={{color:T.expense}}>−{$m(costo)}</span>
           </div>}
-          <p style={{margin:"4px 0 0",fontSize:11,color:T.textMuted}}>Se descuentan de los sobres sueltos del inventario{isAdmin?" y de la utilidad de esta venta":""}.</p>
         </div>
       )}
     </div>
@@ -882,7 +721,7 @@ function VentaRow({name,sub,dual,unitLabel,unit,setUnit,qty,otherQty,otherLabel,
       )}
       {qty>0&&isAdmin&&(unitCost>0
         ?<p style={{margin:"6px 0 0",fontSize:12,fontWeight:600,color:ut>=0?T.profit:T.expense}}>Utilidad {$m(ut)} · {price>0?pct(ut/(price*qty)*100):"—"}</p>
-        :<p style={{margin:"6px 0 0",fontSize:12,color:"#B86010"}}>Falta el costo de este producto (Más → Productos y costos)</p>)}
+        :<p style={{margin:"6px 0 0",fontSize:12,color:"#B86010"}}>Falta el costo de este producto (Más → Catálogo)</p>)}
     </div>
   );
 }
@@ -909,7 +748,7 @@ function EnvioForm({conEnvio,setConEnvio,envKm,setEnvKm,envCostoOver,setEnvCosto
               <input type="number" min="0" value={envCostoOver} onChange={e=>setEnvCostoOver(e.target.value)} placeholder={envKm?String((+envKm||0)*ENVIO_TARIFA_KM):"$"+ENVIO_TARIFA_KM+" × km"}/>
             </F>
           </div>
-          <p style={{margin:"-4px 0 0",fontSize:11,color:T.textMuted}}>Se calcula solo a ${ENVIO_TARIFA_KM} por km. Escribe el monto solo si cobró distinto.</p>
+          <p style={{margin:"-4px 0 0",fontSize:11,color:T.textMuted}}>${ENVIO_TARIFA_KM} por km</p>
           <div>
             <p style={{margin:"0 0 6px",fontSize:11,fontWeight:600,color:T.textSub}}>¿CUÁNTO PAGA EL CLIENTE DE ENVÍO?</p>
             <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:4}}>
@@ -970,6 +809,7 @@ function EnvioForm({conEnvio,setConEnvio,envKm,setEnvKm,envCostoOver,setEnvCosto
 // ── NUEVA VENTA ───────────────────────────────────────────────────────────────
 function NuevaVenta({prods,setProds,pkgs,clients,setClients,sales,setSales,user,isAdmin,stockMoves,setStockMoves,cerrados=[]}){
   const[confirmDel,setConfirmDel]=useState(null);
+  const[histDate,setHistDate]=useState(today());
   const[date,setDate]=useState(today());
   const[step,setStep]=useState(1);
   const[clientId,setClientId]=useState("");
@@ -1105,7 +945,7 @@ function NuevaVenta({prods,setProds,pkgs,clients,setClients,sales,setSales,user,
       mixEfectivo:payMethod==="Mixto"?+mixEfectivo||0:0,
       mixTransferencia:payMethod==="Mixto"?+mixTransferencia||0:0,
       mixCuenta:payMethod==="Mixto"?mixCuenta:"",
-      ...envioFields,by:user?.name||"",bajoPrecio};
+      ...envioFields,by:user?.name||"",hora:horaAhora(),bajoPrecio};
     setSales([...sales,sale]);
     // deduct stock (suma todas las líneas del mismo producto: cajas y sobres por separado)
     setProds(prev=>prev.map(prod=>{
@@ -1169,7 +1009,6 @@ function NuevaVenta({prods,setProds,pkgs,clients,setClients,sales,setSales,user,
                   }}>✓ Guardar y continuar</GoldBtn>
                   <OutBtn onClick={()=>setNewCl(null)}>Cancelar</OutBtn>
                 </div>
-                <p style={{margin:"8px 0 0",fontSize:11,color:T.textMuted}}>Los precios especiales se ponen con el lápiz ✏️ de cada producto.</p>
               </div>
             )}
           </Card>
@@ -1307,47 +1146,51 @@ function NuevaVenta({prods,setProds,pkgs,clients,setClients,sales,setSales,user,
       </div>
       <div style={{height:80}}/>
 
-      {/* HISTORIAL */}
+      {/* HISTORIAL: ventas de un día en tarjetas */}
       <Card>
-        <STitle>{isAdmin?"Historial de ventas ("+sales.length+")":"Ventas de hoy"}</STitle>
-        {sales.length===0 ? <Empty icon="ti-shopping-cart" text="Sin ventas registradas"/> : (
-          <div style={{overflowX:"auto"}}>
-            <table style={{width:"100%",fontSize:12,borderCollapse:"collapse",minWidth:580}}>
-              <TH cols={isAdmin?["Fecha","Cliente","Descripción","Cobro","Ingresos","Envío","Utilidad","Margen","Registró",""]:["Fecha","Cliente","Descripción","Cobro","Total","Envío","Registró"]}/>
-              <tbody>
-                {[...sales].filter(s=>isAdmin||s.date===today()).sort((a,b)=>b.date.localeCompare(a.date)).map((s,i)=>{
-                  const c=clients.find(x=>x.id===s.clientId);
-                  const u=s.total-s.cost;const m=s.total>0?(u/s.total)*100:0;
-                  const label=s.payMethod;
-                  const pc=PAY_CLR[s.payMethod]||{};
-                  return(
-                    <tr key={s.id} style={{background:i%2===0?T.bg:T.bgRow,borderBottom:`0.5px solid ${T.border}`}}>
-                      <td style={{padding:"6px 10px",color:T.textSub,whiteSpace:"nowrap"}}>{s.date}</td>
-                      <td style={{padding:"6px 10px",fontWeight:500,maxWidth:110,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{c?.name||(s.tipo==="palomitas"?"🍿 Palomitas":"—")}</td>
-                      <td style={{padding:"6px 10px",color:T.textSub,maxWidth:150,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{s.desc}{isAdmin&&s.bajoPrecio&&<div><Chip label="⚠ bajo precio lista" bg="rgba(232,128,32,0.12)" color="#B86010"/></div>}{isAdmin&&(s.sinStock||[]).length>0&&<div><Chip label="⚠ vendido sin stock en sistema" bg="rgba(192,64,64,0.1)" color={T.expense}/></div>}</td>
-                      <td style={{padding:"6px 10px"}}>{label&&<Chip label={label} bg={pc.bg} color={pc.c}/>}</td>
-                      <td style={{padding:"6px 10px",fontWeight:600,color:T.revenue,whiteSpace:"nowrap"}}>{$m(s.total)}</td>
-                      <td style={{padding:"6px 10px",color:T.client,whiteSpace:"nowrap"}}>{(s.envio||0)>0?$m(s.envio):"—"}</td>
-                      {isAdmin&&<td style={{padding:"6px 10px",fontWeight:700,color:u>=0?T.profit:T.expense,whiteSpace:"nowrap"}}>{s.cost>0?$m(u):"—"}</td>}
-                      {isAdmin&&<td style={{padding:"6px 10px",color:m>0?T.profit:T.expense,whiteSpace:"nowrap"}}>{s.cost>0?pct(m):"—"}</td>}
-                      <td style={{padding:"6px 10px",color:T.textMuted,fontSize:11,whiteSpace:"nowrap"}}>{s.by||"—"}</td>
-                      {isAdmin&&<td style={{padding:"6px 10px",whiteSpace:"nowrap"}}>
-                        {confirmDel===s.id?(
-                          <>
-                            <button onClick={()=>{borrarVenta(s);setConfirmDel(null);}} style={{fontSize:11,background:T.expense,color:"#fff",border:"none",fontWeight:600,padding:"3px 8px",minHeight:28}}>Borrar</button>
-                            <button onClick={()=>setConfirmDel(null)} style={{fontSize:11,padding:"3px 8px",minHeight:28,marginLeft:4}}>No</button>
-                          </>
-                        ):(
-                          <OutBtn onClick={()=>setConfirmDel(s.id)} danger style={{fontSize:11,padding:"3px 8px"}}>🗑️</OutBtn>
-                        )}
-                      </td>}
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
-        )}
+        <STitle right={isAdmin&&<input type="date" value={histDate} onChange={e=>setHistDate(e.target.value||today())} style={{maxWidth:160,fontSize:13,minHeight:36,padding:"4px 8px"}}/>}>{histDate===today()?"Ventas de hoy":"Ventas del "+fechaLarga(histDate)}</STitle>
+        {(()=>{
+          const dia=sales.filter(s=>s.date===(isAdmin?histDate:today())).sort((a,b)=>(b.hora||"").localeCompare(a.hora||""));
+          if(dia.length===0)return <Empty icon="ti-shopping-cart" text="Sin ventas este día"/>;
+          const tot=dia.reduce((a,s)=>a+s.total+(s.envio||0),0),ut=dia.reduce((a,s)=>a+s.total-s.cost,0);
+          return(<>
+            <p style={{margin:"0 0 8px",fontSize:12,color:T.textSub}}>{dia.length} venta{dia.length!==1?"s":""} · <strong style={{color:T.revenue}}>{$m(tot)}</strong>{isAdmin&&<> · utilidad <strong style={{color:ut>=0?T.profit:T.expense}}>{$m(ut)}</strong></>}</p>
+            <div style={{display:"flex",flexDirection:"column",gap:8}}>
+              {dia.map(s=>{
+                const c=clients.find(x=>x.id===s.clientId);const u=s.total-s.cost;const pc=PAY_CLR[s.payMethod]||{};
+                return(
+                  <div key={s.id} style={{padding:"10px 12px",borderRadius:10,border:`0.5px solid ${T.border}`,background:T.bgRow}}>
+                    <div style={{display:"flex",justifyContent:"space-between",gap:8,alignItems:"flex-start"}}>
+                      <div style={{minWidth:0,flex:1}}>
+                        <p style={{margin:0,fontSize:14,fontWeight:700,color:T.text}}>{c?.name||(s.tipo==="palomitas"?"🍿 Palomitas":"—")}</p>
+                        <p style={{margin:"1px 0 0",fontSize:12,color:T.textSub}}>{s.desc}</p>
+                      </div>
+                      <div style={{textAlign:"right",flexShrink:0}}>
+                        <p style={{margin:0,fontSize:15,fontWeight:700,color:T.revenue}}>{$m(s.total+(s.envio||0))}</p>
+                        {isAdmin&&<p style={{margin:0,fontSize:11,fontWeight:600,color:u>=0?T.profit:T.expense}}>{s.cost>0?"utilidad "+$m(u):"sin costo"}</p>}
+                      </div>
+                    </div>
+                    <div style={{display:"flex",alignItems:"center",gap:6,flexWrap:"wrap",marginTop:6}}>
+                      {s.payMethod&&<Chip label={s.payMethod} bg={pc.bg} color={pc.c}/>}
+                      {s.conEnvio&&<Chip label={"🛵 envío "+$m(s.envio||0)} bg="rgba(40,96,176,0.1)" color={T.client}/>}
+                      {isAdmin&&s.bajoPrecio&&<Chip label="⚠ bajo precio lista" bg="rgba(232,128,32,0.12)" color="#B86010"/>}
+                      {isAdmin&&(s.sinStock||[]).length>0&&<Chip label="⚠ sin stock en sistema" bg="rgba(192,64,64,0.1)" color={T.expense}/>}
+                      <span style={{fontSize:11,color:T.textMuted,marginLeft:"auto"}}>{[s.hora,s.by].filter(Boolean).join(" · ")}</span>
+                      {isAdmin&&(confirmDel===s.id?(
+                        <>
+                          <button onClick={()=>{borrarVenta(s);setConfirmDel(null);}} style={{fontSize:11,background:T.expense,color:"#fff",border:"none",fontWeight:600,padding:"3px 8px",minHeight:28}}>Borrar</button>
+                          <button onClick={()=>setConfirmDel(null)} style={{fontSize:11,padding:"3px 8px",minHeight:28}}>No</button>
+                        </>
+                      ):(
+                        <OutBtn onClick={()=>setConfirmDel(s.id)} danger style={{fontSize:11,padding:"3px 8px"}}>🗑️</OutBtn>
+                      ))}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </>);
+        })()}
       </Card>
     </div>
   );
@@ -1382,7 +1225,6 @@ function GastosFijos({fixed,setFixed,expenses,setExpenses,user}){
         <span>Al mes: <strong style={{color:T.expense}}>{$m(mensual)}</strong></span>
         <span>Por día: <strong style={{color:T.expense}}>{$m(mensual*12/365)}</strong></span>
       </div>
-      <p style={{margin:"0 0 12px",fontSize:11,color:T.textMuted}}>Es lo mínimo de utilidad que necesitan sacar al día solo para cubrir los fijos.</p>
       {!edit?(
         <div style={{display:"flex",flexDirection:"column",gap:8}}>
           {(fixed||[]).map(f=>{
@@ -1435,8 +1277,55 @@ function GastosFijos({fixed,setFixed,expenses,setExpenses,user}){
   );
 }
 
+// ── INGRESOS EXTRA (antes "Utilidad extra" en el Corte; solo socios, va en Gastos) ─
+function IngresosExtra({extras,setExtras,user}){
+  const blank={date:today(),amount:"",desc:"",tipo:"utilidad",via:"Efectivo"};
+  const[f,setF]=useState(blank);
+  const[open,setOpen]=useState(false);
+  const[err,setErr]=useState("");
+  const[confirmDel,setConfirmDel]=useState(null);
+  const guardar=()=>{
+    if(!f.amount||+f.amount<=0){setErr("Escribe el monto");return;}
+    setExtras([...(extras||[]),{...f,id:uid(),amount:+f.amount,desc:f.desc.trim()||"Ingreso extra",by:user?.name||""}]);
+    setF(blank);setErr("");
+  };
+  const lista=[...(extras||[])].sort((a,b)=>b.date.localeCompare(a.date));
+  const TIPO={utilidad:"Utilidad de tercero",comision:"Comisión",otro:"Otro ingreso"};
+  return(
+    <Card>
+      <STitle right={<OutBtn onClick={()=>setOpen(!open)} style={{fontSize:11}}>{open?"Cerrar":"+ Registrar"}</OutBtn>}>Ingresos extra</STitle>
+      {open&&(
+        <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(150px,1fr))",gap:10,marginBottom:12}}>
+          <F label="Fecha"><input type="date" value={f.date} onChange={e=>setF({...f,date:e.target.value})}/></F>
+          <F label="Monto ($)"><input type="number" min="0" value={f.amount} onChange={e=>setF({...f,amount:e.target.value})} placeholder="0.00"/></F>
+          <F label="Tipo"><select value={f.tipo} onChange={e=>setF({...f,tipo:e.target.value})}>{Object.entries(TIPO).map(([v,l])=><option key={v} value={v}>{l}</option>)}</select></F>
+          <F label="¿A dónde llegó?"><select value={f.via} onChange={e=>setF({...f,via:e.target.value})}>{CUENTAS.map(c=><option key={c} value={c}>{CUENTA_LABEL[c]}</option>)}</select></F>
+          <F label="Descripción" style={{gridColumn:"1/-1"}}><input value={f.desc} onChange={e=>setF({...f,desc:e.target.value})} placeholder="Ej. comisión por venta de Andrés"/></F>
+          <div style={{gridColumn:"1/-1"}}><GoldBtn onClick={guardar} style={{minHeight:44,width:"100%"}}>Guardar ingreso</GoldBtn><ErrMsg msg={err}/></div>
+        </div>
+      )}
+      {lista.length===0?<p style={{margin:0,fontSize:12,color:T.textMuted}}>Sin ingresos extra</p>:(
+        <div style={{display:"flex",flexDirection:"column",gap:6}}>
+          {lista.slice(0,20).map(x=>(
+            <div key={x.id} style={{display:"flex",alignItems:"center",gap:8,padding:"8px 10px",borderRadius:8,border:`0.5px solid ${T.border}`,background:T.bgRow}}>
+              <div style={{flex:1,minWidth:0}}>
+                <p style={{margin:0,fontSize:13,color:T.text,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{x.desc||"—"}</p>
+                <p style={{margin:0,fontSize:11,color:T.textMuted}}>{x.date} · {TIPO[x.tipo]||"Otro"} · {x.via||"Efectivo"}</p>
+              </div>
+              <span style={{fontWeight:700,color:T.profit}}>{$m(x.amount)}</span>
+              {confirmDel===x.id
+                ?<><button onClick={()=>{setExtras((extras||[]).filter(e=>e.id!==x.id));setConfirmDel(null);}} style={{fontSize:11,background:T.expense,color:"#fff",border:"none",fontWeight:600,padding:"4px 8px",minHeight:30}}>Borrar</button><button onClick={()=>setConfirmDel(null)} style={{fontSize:11,padding:"4px 8px",minHeight:30}}>No</button></>
+                :<OutBtn onClick={()=>setConfirmDel(x.id)} danger style={{fontSize:11,padding:"4px 8px"}}>🗑️</OutBtn>}
+            </div>
+          ))}
+        </div>
+      )}
+    </Card>
+  );
+}
+
 // ── GASTOS ────────────────────────────────────────────────────────────────────
-function Gastos({expenses,setExpenses,user,isAdmin,fixed,setFixed}){
+function Gastos({expenses,setExpenses,user,isAdmin,fixed,setFixed,extras,setExtras}){
   const cats=isAdmin?EXP_CATS:EXP_CATS.filter(c=>!FIXED_CATS.includes(c));
   // deCaja: el efectivo salió de la caja del local (cuenta en el Cierre del día). Si lo pagó un socio, no.
   const blank={date:today(),cat:isAdmin?"Importación":"Insumos palomitas",amount:"",desc:"",pagadoCon:"Efectivo",deCaja:!isAdmin};
@@ -1448,7 +1337,8 @@ function Gastos({expenses,setExpenses,user,isAdmin,fixed,setFixed}){
   const visibles=isAdmin?expenses:expenses.filter(e=>e.by===user?.name);
   const total=expenses.reduce((s,e)=>s+e.amount,0);
   const EXP_CLR=["#C4962A","#1A8C5A","#2860B0","#C04040","#7038D0","#9A6020"];
-  const byCat=EXP_CATS.map((c,i)=>({name:c,v:+expenses.filter(e=>e.cat===c).reduce((s,e)=>s+e.amount,0).toFixed(0),fill:EXP_CLR[i%EXP_CLR.length]})).filter(x=>x.v>0);
+  // Incluye categorías viejas que ya tengan gastos, para que no desaparezcan de la gráfica
+  const byCat=[...new Set([...EXP_CATS,...expenses.map(e=>e.cat).filter(Boolean)])].map((c,i)=>({name:c,v:+expenses.filter(e=>e.cat===c).reduce((s,e)=>s+e.amount,0).toFixed(0),fill:EXP_CLR[i%EXP_CLR.length]})).filter(x=>x.v>0);
   const save=()=>{
     if(!form.amount||+form.amount<=0){setErr("Escribe el monto");return;}
     if(!form.desc.trim()){setErr("Escribe en qué se gastó");return;}
@@ -1459,6 +1349,7 @@ function Gastos({expenses,setExpenses,user,isAdmin,fixed,setFixed}){
   return(
     <div style={{display:"flex",flexDirection:"column",gap:"1.25rem"}}>
       {isAdmin&&<GastosFijos fixed={fixed} setFixed={setFixed} expenses={expenses} setExpenses={setExpenses} user={user}/>}
+      {isAdmin&&<IngresosExtra extras={extras} setExtras={setExtras} user={user}/>}
       <Card>
         <STitle>Registrar gasto</STitle>
         <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(150px,1fr))",gap:12}}>
@@ -1538,21 +1429,14 @@ function Gastos({expenses,setExpenses,user,isAdmin,fixed,setFixed}){
 // ── INVENTARIO ────────────────────────────────────────────────────────────────
 function Inventario({prods,setProds,sales,stockMoves,setStockMoves,user,isAdmin,popCfg,setPopCfg}){
   const by=user?.name||"";
-  const[entForm,setEntForm]=useState({date:today(),pid:"",cajas:"",note:""});
   const[abrirForm,setAbrirForm]=useState({pid:"",cajas:1});
   const[invErr,setInvErr]=useState("");
-  const[physCajas,setPhysCajas]=useState({});
-  const[physSobres,setPhysSobres]=useState({});
-  const mielProds=prods.filter(p=>p.cat==="Miel"&&(p.spc||1)>1);
-  const otherProds=prods.filter(p=>p.cat!=="Miel"||(p.spc||1)===1);
-
-  const addEntrada=()=>{
-    if(!entForm.pid||!entForm.cajas||+entForm.cajas<=0)return;
-    const qty=+entForm.cajas;
-    setProds(prods.map(p=>p.id===entForm.pid?{...p,stockCajas:(p.stockCajas||0)+qty}:p));
-    setStockMoves([...stockMoves,{id:uid(),date:entForm.date,pid:entForm.pid,type:"entrada",cajas:qty,note:entForm.note||"+"+qty+" cajas",by}]);
-    setEntForm({date:today(),pid:"",cajas:"",note:""});
-  };
+  const[cajasIn,setCajasIn]=useState({});
+  const[sueltosIn,setSueltosIn]=useState({});
+  const[nota,setNota]=useState("");
+  const[okMsg,setOkMsg]=useState("");
+  const mielProds=prods.filter(p=>(p.spc||1)>1);
+  const ord=p=>{const i=GOM_IDS.indexOf(p.id);return i<0?99:i;};
 
   const abrirCaja=()=>{
     const prod=prods.find(p=>p.id===abrirForm.pid);
@@ -1561,217 +1445,126 @@ function Inventario({prods,setProds,sales,stockMoves,setStockMoves,user,isAdmin,
     if((prod.stockCajas||0)<qty){setInvErr(isAdmin?"Solo tienes "+(prod.stockCajas||0)+" cajas de "+prod.name:"En el sistema no hay suficientes cajas cerradas de "+prod.name+". Avísale a un socio.");return;}
     const nuevos=qty*(prod.spc||1);
     setProds(prods.map(p=>p.id===abrirForm.pid?{...p,stockCajas:(p.stockCajas||0)-qty,stockSobres:(p.stockSobres||0)+nuevos}:p));
-    setStockMoves([...stockMoves,{id:uid(),date:today(),pid:abrirForm.pid,type:"apertura",cajas:qty,sobres:nuevos,note:"Apertura menudeo: "+qty+" caja"+(qty>1?"s":"")+" → "+nuevos+" sobres",by}]);
+    setStockMoves([...stockMoves,{id:uid(),date:today(),pid:abrirForm.pid,type:"apertura",cajas:qty,sobres:nuevos,note:"Se abrieron "+qty+" caja"+(qty>1?"s":"")+" → "+nuevos+" sueltos",by}]);
     setInvErr("");setAbrirForm({pid:"",cajas:1});
   };
 
-  const[bulkMap,setBulkMap]=useState({});
-  const[bulkMapSobres,setBulkMapSobres]=useState({});
-  const[showBulk,setShowBulk]=useState(true);
-  const[confirmReset,setConfirmReset]=useState(false);
-
-  const saveBulk=()=>{
-    const hayCajas=Object.values(bulkMap).some(v=>+v>0);
-    const haySobres=Object.values(bulkMapSobres).some(v=>+v>0);
-    if(!hayCajas&&!haySobres)return;
-    const newMoves=[];
-    setProds(prods.map(p=>{
-      const cajas=+bulkMap[p.id]||0;
-      const sobres=+bulkMapSobres[p.id]||0;
-      if(cajas>0)newMoves.push({id:uid(),date:today(),pid:p.id,type:"entrada",cajas,note:"Carga de stock: "+cajas+" cajas",by});
-      if(sobres>0)newMoves.push({id:uid(),date:today(),pid:p.id,type:"apertura",cajas:0,sobres,note:"Carga de sueltos: "+sobres,by});
-      return {...p,stockCajas:(p.stockCajas||0)+cajas,stockSobres:(p.stockSobres||0)+sobres};
-    }));
-    setStockMoves([...stockMoves,...newMoves]);
-    setBulkMap({});
-    setBulkMapSobres({});
+  // Mercancía que llegó: cajas cerradas y/o sueltos (o piezas) de cada producto, en un solo guardado
+  const guardarEntrada=()=>{
+    const moves=[];
+    const next=prods.map(p=>{
+      const c=+cajasIn[p.id]||0,sS=+sueltosIn[p.id]||0;
+      if(c<=0&&sS<=0)return p;
+      moves.push({id:uid(),date:today(),pid:p.id,type:"entrada",cajas:c,sobres:sS,note:nota.trim()||"Llegó mercancía",by});
+      return{...p,stockCajas:(p.stockCajas||0)+c,stockSobres:(p.stockSobres||0)+sS};
+    });
+    if(moves.length===0){setInvErr("Escribe cuántas llegaron de al menos un producto");return;}
+    setProds(next);setStockMoves([...stockMoves,...moves]);
+    setCajasIn({});setSueltosIn({});setNota("");setInvErr("");
+    setOkMsg("✓ Se registraron "+moves.length+" producto"+(moves.length>1?"s":""));setTimeout(()=>setOkMsg(""),3000);
   };
-
-  const resetStock=()=>{
-    setProds(prods.map(p=>({...p,stockCajas:0,stockSobres:0})));
-    setStockMoves([]);
-    setConfirmReset(false);
-  };
+  const hayEntrada=Object.values(cajasIn).some(v=>+v>0)||Object.values(sueltosIn).some(v=>+v>0);
+  const inp=(val,set,id,ph)=><input type="number" min="0" inputMode="numeric" value={val[id]||""} onChange={e=>set({...val,[id]:e.target.value})} placeholder={ph} style={{textAlign:"center",fontWeight:700}}/>;
 
   return(
     <div style={{display:"flex",flexDirection:"column",gap:"1.25rem"}}>
+      {okMsg&&<div style={{padding:"10px 14px",background:"rgba(26,140,90,0.1)",border:"1px solid rgba(26,140,90,0.3)",borderRadius:10,fontSize:14,color:T.profit,fontWeight:600}}>{okMsg}</div>}
 
-      {!isAdmin&&<Card><p style={{margin:0,fontSize:12,color:T.textSub}}>📦 Aquí registras la mercancía que llega y las cajas que abres para vender por sobre. El conteo se hace en 🔒 Cierre.</p></Card>}
-      {isAdmin&&<>
-      {/* ── STOCK EN MASA ── */}
-      <Card style={{borderColor:T.gold,borderWidth:1}}>
-        <STitle right={
-          <div style={{display:"flex",gap:8,alignItems:"center"}}>
-            {isAdmin&&(confirmReset?(
-              <>
-                <span style={{fontSize:11,color:T.expense,fontWeight:600}}>¿Resetear todo a cero?</span>
-                <button onClick={resetStock} style={{padding:"4px 12px",fontSize:11,background:T.expense,color:"#fff",border:"none",borderRadius:6,cursor:"pointer",fontWeight:600}}>Sí, resetear</button>
-                <button onClick={()=>setConfirmReset(false)} style={{padding:"4px 10px",fontSize:11,background:"transparent",color:T.textSub,border:`1px solid ${T.border}`,borderRadius:6,cursor:"pointer"}}>No</button>
-              </>
-            ):(
-              <OutBtn onClick={()=>setConfirmReset(true)} danger style={{fontSize:11}}>🗑️ Resetear todo a cero</OutBtn>
-            ))}
-            <button onClick={()=>setShowBulk(!showBulk)} style={{fontSize:11,color:T.textSub,background:"none",border:"none",cursor:"pointer"}}>{showBulk?"▲ Ocultar":"▼ Cargar stock"}</button>
-          </div>
-        }>
-          Cargar / actualizar stock
-        </STitle>
-        {showBulk && (
-          <>
-            <p style={{margin:"0 0 12px",fontSize:12,color:T.textSub}}>
-              📦 <strong>Cajas</strong> = cajas selladas · 🔓 <strong>Sobres</strong> = sobres sueltos que ya tienes abiertos
-            </p>
-            <div style={{display:"flex",flexDirection:"column",gap:10,marginBottom:14}}>
-              {prods.filter(p=>p.id!=="sob").map(p=>(
-                <div key={p.id} style={{background:T.bgAlt,borderRadius:10,padding:"12px 14px",border:`0.5px solid ${T.border}`}}>
-                  <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:10,flexWrap:"wrap",gap:6}}>
-                    <div>
-                      <p style={{margin:"0 0 2px",fontSize:13,fontWeight:600,color:T.text}}>{p.name}</p>
-                      <p style={{margin:0,fontSize:11,color:T.textMuted}}>{p.spc>1?p.spc+" "+(p.spcu||"sobres")+"/caja":p.unit}</p>
-                    </div>
-                    <div style={{display:"flex",gap:5,flexWrap:"wrap"}}>
-                      {(p.stockCajas||0)>0&&<Chip label={(p.stockCajas||0)+" cajas"} bg={T.goldBg} color={T.goldText}/>}
-                      {(p.stockSobres||0)>0&&<Chip label={(p.stockSobres||0)+" "+(p.spcu||"sobres")} bg="rgba(40,96,176,0.1)" color={T.client}/>}
-                      {(p.stockCajas||0)===0&&(p.stockSobres||0)===0&&<Chip label="Sin stock" bg="rgba(192,64,64,0.08)" color={T.expense}/>}
-                    </div>
+      <Card>
+        <STitle>📦 Registrar mercancía que llegó</STitle>
+        {GRUPOS.filter(([g])=>g!=="pkg").map(([g,label])=>{
+          const lista=prods.filter(p=>grupoDe(p)===g).sort((a,b)=>g==="gom"?ord(a)-ord(b):0);
+          if(!lista.length)return null;
+          return(
+            <div key={g} style={{marginBottom:10}}>
+              <p style={{margin:"6px 0",fontSize:11,fontWeight:700,color:T.textMuted,textTransform:"uppercase",letterSpacing:"0.06em"}}>{label}</p>
+              {lista.map(p=>{const dual=(p.spc||1)>1;const uL=p.spcu==="piezas"?"piezas":"sobres";return(
+                <div key={p.id} style={{display:"grid",gridTemplateColumns:dual?"1fr 72px 72px":"1fr 72px",gap:8,alignItems:"center",padding:"6px 0",borderBottom:`0.5px solid ${T.border}`}}>
+                  <div style={{minWidth:0}}>
+                    <p style={{margin:0,fontSize:13,fontWeight:600,color:T.text}}>{p.name.replace(/\s*\(.*\)/,"")}</p>
+                    {isAdmin&&<p style={{margin:0,fontSize:11,color:T.textMuted}}>Hay {p.stockCajas||0} {dual?"cajas":p.unit||"pz"}{dual?" · "+(p.stockSobres||0)+" "+uL+" sueltos":""}</p>}
                   </div>
-                  <div style={{display:"grid",gridTemplateColumns:p.spc>1?"1fr 1fr":"1fr",gap:10}}>
-                    <F label={(p.spc>1?"📦 Cajas":"📦 Piezas")+(p.spc>1?" ("+p.spc+" "+(p.spcu||"sobres")+" c/u)":"")}>
-                      <input type="number" min="0" step="1" value={bulkMap[p.id]||""} onChange={e=>setBulkMap({...bulkMap,[p.id]:e.target.value})} placeholder="0" style={{textAlign:"center",fontWeight:700,fontSize:18}}/>
-                    </F>
-                    {p.spc>1&&(
-                      <F label={"🔓 "+(p.spcu||"Sobres")+" sueltos"}>
-                        <input type="number" min="0" step="1" value={bulkMapSobres[p.id]||""} onChange={e=>setBulkMapSobres({...bulkMapSobres,[p.id]:e.target.value})} placeholder="0" style={{textAlign:"center",fontWeight:700,fontSize:18}}/>
-                      </F>
-                    )}
-                  </div>
+                  {inp(cajasIn,setCajasIn,p.id,dual?"cajas":"piezas")}
+                  {dual&&inp(sueltosIn,setSueltosIn,p.id,uL)}
                 </div>
-              ))}
+              );})}
             </div>
-            {(Object.values(bulkMap).some(v=>+v>0)||Object.values(bulkMapSobres).some(v=>+v>0))&&(
-              <div style={{marginBottom:12,padding:"10px 14px",background:T.goldBg,borderRadius:8,fontSize:12,color:T.goldText,lineHeight:1.8}}>
-                <strong>Se agregarán:</strong><br/>
-                {[...Object.entries(bulkMap).filter(([,v])=>+v>0).map(([pid,v])=>{const p=prods.find(x=>x.id===pid);return "📦 "+v+" caja"+(+v!==1?"s":"")+" de "+(p?.name||pid);}),
-                  ...Object.entries(bulkMapSobres).filter(([,v])=>+v>0).map(([pid,v])=>{const p=prods.find(x=>x.id===pid);return "🔓 "+v+" sueltos de "+(p?.name||pid);})
-                ].join(" · ")}
-              </div>
-            )}
-            <GoldBtn onClick={saveBulk} style={{fontSize:13,padding:"9px 24px"}}>📦 Guardar stock</GoldBtn>
-          </>
-        )}
-      </Card>
-
-      <Card>
-        <STitle right={<span style={{fontSize:11,color:T.textMuted}}>🛡️ Conteo físico activa el control anti-robo</span>}>Inventario en cajas</STitle>
-        <div style={{overflowX:"auto"}}>
-          <table style={{width:"100%",borderCollapse:"collapse",minWidth:650,fontSize:12}}>
-            <TH cols={["Producto","Cajas selladas","Sobres menudeo","Vendido","Conteo físico (cajas · sobres)","Diferencia"]}/>
-            <tbody>
-              {mielProds.map((p,idx)=>{
-                const spc=p.spc||1;
-                const cajas=p.stockCajas||0;
-                const sobres=p.stockSobres||0;
-                const soldC=sales.reduce((s,sl)=>s+(sl.items||[]).filter(i=>i.pid===p.id&&(i.su||"caja")==="caja").reduce((a,i)=>a+(+i.qty||0),0),0);
-                const soldS=sales.reduce((s,sl)=>s+(sl.items||[]).filter(i=>i.pid===p.id&&i.su==="sobre").reduce((a,i)=>a+(+i.qty||0),0),0);
-                const pC=physCajas[p.id]!==undefined?parseInt(physCajas[p.id])||0:null;
-                const pS=physSobres[p.id]!==undefined?parseInt(physSobres[p.id])||0:null;
-                const dC=pC!==null?pC-cajas:null;
-                const dS=pS!==null?pS-sobres:null;
-                const hasDiff=(dC!==null&&dC!==0)||(dS!==null&&dS!==0);
-                const dc=d=>d===0?T.profit:d<0?T.expense:T.client;
-                return(
-                  <tr key={p.id} style={{background:hasDiff?"rgba(192,64,64,0.04)":idx%2===0?T.bg:T.bgRow,borderBottom:`0.5px solid ${T.border}`}}>
-                    <td style={{padding:"9px 10px",fontWeight:600,color:T.text}}>{p.name}<div style={{fontSize:10,color:T.textMuted,fontWeight:400}}>{spc} sobres/caja</div></td>
-                    <td style={{padding:"9px 10px",textAlign:"center"}}><span style={{fontSize:18,fontWeight:700,color:cajas<=0?T.expense:cajas<=2?"#E88020":T.profit}}>{cajas}</span><div style={{fontSize:10,color:T.textMuted}}>cajas</div></td>
-                    <td style={{padding:"9px 10px",textAlign:"center"}}>{sobres>0?<span style={{fontSize:18,fontWeight:700,color:T.client}}>{sobres}<div style={{fontSize:10,color:T.textMuted,fontWeight:400}}>sobres</div></span>:<span style={{color:T.textMuted}}>—</span>}</td>
-                    <td style={{padding:"9px 10px",fontSize:11,color:T.textSub}}>{soldC>0&&<div>{soldC} caja{soldC!==1?"s":""}</div>}{soldS>0&&<div style={{color:T.client}}>{soldS} sobre{soldS!==1?"s":""}</div>}{soldC===0&&soldS===0&&"—"}</td>
-                    <td style={{padding:"9px 10px"}}>
-                      <div style={{display:"flex",gap:4}}>
-                        <input type="number" min="0" placeholder="Cajas" value={physCajas[p.id]!==undefined?physCajas[p.id]:""} onChange={e=>setPhysCajas({...physCajas,[p.id]:e.target.value})} style={{width:58,fontSize:11}}/>
-                        <input type="number" min="0" placeholder="Sobres" value={physSobres[p.id]!==undefined?physSobres[p.id]:""} onChange={e=>setPhysSobres({...physSobres,[p.id]:e.target.value})} style={{width:58,fontSize:11}}/>
-                      </div>
-                    </td>
-                    <td style={{padding:"9px 10px",fontSize:12}}>
-                      {(dC!==null||dS!==null)?(
-                        <div>
-                          {dC!==null&&<div style={{fontWeight:600,color:dc(dC)}}>{dC===0?"✓ cajas OK":dC<0?dC+" cajas ⚠":"+"+dC+" cajas"}</div>}
-                          {dS!==null&&<div style={{fontWeight:600,color:dc(dS)}}>{dS===0?"✓ sobres OK":dS<0?dS+" sobres ⚠":"+"+dS+" sobres"}</div>}
-                          {hasDiff&&(()=>{const tot=(dC||0)*p.list+(dS||0)*(p.list/(spc||1));return <div style={{fontSize:10,color:tot<0?T.expense:T.client}}>{tot<0?"−":"+"}{$m(Math.abs(tot))} en valor</div>;})()}
-                        </div>
-                      ):<span style={{color:T.textMuted}}>sin conteo</span>}
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
-      </Card>
-
-      <OtrosTable prods={prods} sales={sales}/>
-      <VasosCard popCfg={popCfg} setPopCfg={setPopCfg} stockMoves={stockMoves} setStockMoves={setStockMoves} user={user}/>
-      </>}
-
-      <Card>
-        <STitle>Abrir caja para menudeo</STitle>
-        <p style={{margin:"0 0 12px",fontSize:12,color:T.textSub}}>Descuenta cajas selladas y agrega los sobres al stock de menudeo.</p>
-        <div style={{display:"grid",gridTemplateColumns:"2fr 1fr 1fr",gap:12,alignItems:"flex-end"}}>
-          <F label="Producto">
-            <select value={abrirForm.pid} onChange={e=>{setInvErr("");setAbrirForm({...abrirForm,pid:e.target.value});}}>
-              <option value="">Selecciona…</option>
-              {mielProds.map(p=><option key={p.id} value={p.id} disabled={isAdmin&&(p.stockCajas||0)===0}>{p.name}{isAdmin?" — "+(p.stockCajas||0)+" cajas":""}</option>)}
-            </select>
-          </F>
-          <F label="Cajas a abrir">
-            <input type="number" min="1" value={abrirForm.cajas} onChange={e=>setAbrirForm({...abrirForm,cajas:e.target.value})} style={{width:80}}/>
-          </F>
-          <div>
-            {abrirForm.pid&&+abrirForm.cajas>0&&(()=>{const prod=prods.find(p=>p.id===abrirForm.pid);const s=(+abrirForm.cajas||0)*(prod?.spc||1);return <div style={{fontSize:12,color:T.textSub,marginBottom:6}}>= <strong style={{color:T.client}}>{s} sobres</strong></div>;})()}
-            <GoldBtn onClick={abrirCaja} style={{width:"100%"}}>🔓 Abrir para menudeo</GoldBtn>
-          </div>
-        </div>
+          );
+        })}
+        <F label="Nota (proveedor, factura…)"><input value={nota} onChange={e=>setNota(e.target.value)} placeholder="Opcional"/></F>
+        <GoldBtn onClick={guardarEntrada} style={{marginTop:10,width:"100%",minHeight:48,fontSize:14,opacity:hayEntrada?1:0.6}}>📦 Guardar mercancía</GoldBtn>
         <ErrMsg msg={invErr}/>
       </Card>
 
       <Card>
-        <STitle>Registrar entrada de mercancía</STitle>
-        <div style={{display:"grid",gridTemplateColumns:"2fr 1fr 1fr 2fr",gap:12,alignItems:"flex-end"}}>
+        <STitle>🔓 Abrir caja para vender suelto</STitle>
+        <div style={{display:"grid",gridTemplateColumns:"1fr 90px",gap:10,alignItems:"flex-end"}}>
           <F label="Producto">
-            <select value={entForm.pid} onChange={e=>setEntForm({...entForm,pid:e.target.value})}>
+            <select value={abrirForm.pid} onChange={e=>{setInvErr("");setAbrirForm({...abrirForm,pid:e.target.value});}}>
               <option value="">Selecciona…</option>
-              {prods.map(p=><option key={p.id} value={p.id}>{p.name}</option>)}
+              {mielProds.map(p=><option key={p.id} value={p.id} disabled={isAdmin&&(p.stockCajas||0)===0}>{p.name.replace(/\s*\(.*\)/,"")}{isAdmin?" — "+(p.stockCajas||0)+" cajas":""}</option>)}
             </select>
           </F>
-          <F label="Cajas recibidas"><input type="number" min="1" value={entForm.cajas} onChange={e=>setEntForm({...entForm,cajas:e.target.value})} placeholder="0"/></F>
-          <F label="Fecha"><input type="date" value={entForm.date} onChange={e=>setEntForm({...entForm,date:e.target.value})}/></F>
-          <F label="Nota (factura, proveedor…)"><input value={entForm.note} onChange={e=>setEntForm({...entForm,note:e.target.value})} placeholder="Opcional"/></F>
+          <F label="Cajas"><input type="number" min="1" value={abrirForm.cajas} onChange={e=>setAbrirForm({...abrirForm,cajas:e.target.value})}/></F>
         </div>
-        {entForm.pid&&+entForm.cajas>0&&(()=>{const prod=prods.find(p=>p.id===entForm.pid);return <div style={{marginTop:8,padding:"8px 12px",background:T.goldBg,borderRadius:8,fontSize:12,color:T.goldText}}>{isAdmin?<>Stock actual: <strong>{prod?.stockCajas||0}</strong> → Nuevo total: <strong style={{color:T.profit}}>{(prod?.stockCajas||0)+(+entForm.cajas||0)} cajas</strong></>:<>Se van a agregar <strong>{+entForm.cajas||0}</strong> de {prod?.name}</>}</div>;})()}
-        <GoldBtn onClick={addEntrada} style={{marginTop:12}}>📦 Registrar entrada</GoldBtn>
+        {abrirForm.pid&&+abrirForm.cajas>0&&(()=>{const prod=prods.find(p=>p.id===abrirForm.pid);return <p style={{margin:"8px 0 0",fontSize:12,color:T.textSub}}>= <strong style={{color:T.client}}>{(+abrirForm.cajas||0)*(prod?.spc||1)} {prod?.spcu==="piezas"?"piezas":"sobres"}</strong> sueltos</p>;})()}
+        <GoldBtn onClick={abrirCaja} style={{marginTop:10,width:"100%",minHeight:44}}>🔓 Abrir</GoldBtn>
       </Card>
+
+      {isAdmin&&<>
+        <Card>
+          <STitle>Mieles, gomitas y chocolates</STitle>
+          <div style={{overflowX:"auto"}}>
+            <table style={{width:"100%",borderCollapse:"collapse",fontSize:12}}>
+              <TH cols={["Producto","Cajas","Sueltos","Vendido"]}/>
+              <tbody>
+                {[...mielProds].sort((a,b)=>(grupoDe(a)===grupoDe(b)?ord(a)-ord(b):grupoDe(a)==="miel"?-1:1)).map((p,idx)=>{
+                  const cajas=p.stockCajas||0,sobres=p.stockSobres||0;
+                  const soldC=sales.reduce((s,sl)=>s+(sl.items||[]).filter(i=>i.pid===p.id&&(i.su||"caja")==="caja").reduce((a,i)=>a+(+i.qty||0),0),0);
+                  const soldS=sales.reduce((s,sl)=>s+(sl.items||[]).filter(i=>i.pid===p.id&&i.su==="sobre").reduce((a,i)=>a+(+i.qty||0),0),0);
+                  return(
+                    <tr key={p.id} style={{background:idx%2===0?T.bg:T.bgRow,borderBottom:`0.5px solid ${T.border}`}}>
+                      <td style={{padding:"8px 10px",fontWeight:600,color:T.text}}>{p.name.replace(/\s*\(.*\)/,"")}</td>
+                      <td style={{padding:"8px 10px",fontSize:16,fontWeight:700,color:cajas<=0?T.expense:cajas<=2?"#E88020":T.profit}}>{cajas}</td>
+                      <td style={{padding:"8px 10px",fontSize:16,fontWeight:700,color:sobres>0?T.client:T.textMuted}}>{sobres||"—"}</td>
+                      <td style={{padding:"8px 10px",fontSize:11,color:T.textSub}}>{soldC||soldS?[soldC&&soldC+" cj",soldS&&soldS+" s"].filter(Boolean).join(" · "):"—"}</td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        </Card>
+        <OtrosTable prods={prods} sales={sales}/>
+        <VasosCard popCfg={popCfg} setPopCfg={setPopCfg} stockMoves={stockMoves} setStockMoves={setStockMoves} user={user}/>
+      </>}
 
       {isAdmin&&stockMoves.length>0 && (
         <Card>
           <STitle>Historial de movimientos ({stockMoves.length})</STitle>
+          <div style={{overflowX:"auto"}}>
           <table style={{width:"100%",fontSize:12,borderCollapse:"collapse"}}>
             <TH cols={["Fecha","Tipo","Producto","Cantidad","Nota","Registró",""]}/>
             <tbody>
-              {[...stockMoves].sort((a,b)=>b.date.localeCompare(a.date)).map((m,i)=>{
+              {[...stockMoves].sort((a,b)=>b.date.localeCompare(a.date)).slice(0,60).map((m,i)=>{
                 const prod=prods.find(p=>p.id===m.pid);
                 const isE=m.type==="entrada",isA=m.type==="apertura",isAj=m.type==="ajuste",isD=m.type==="devolucion";
                 const isPop=(m.pid||"").startsWith("pop_");const popK=isPop?m.pid.slice(4):"";
+                const cant=isE?[m.cajas?"+"+m.cajas+(isPop?" vasos":(prod&&(prod.spc||1)===1?" pz":" cj")):"",m.sobres?"+"+m.sobres+" s":""].filter(Boolean).join(" · ")
+                  :isA?"−"+m.cajas+" cj → +"+m.sobres+" s"
+                  :isAj?[m.cajas?(m.cajas>0?"+":"")+m.cajas:"",m.sobres?(m.sobres>0?"+":"")+m.sobres+" s":""].filter(Boolean).join(" · "):"";
                 return(
                   <tr key={m.id} style={{background:i%2===0?T.bg:T.bgRow,borderBottom:`0.5px solid ${T.border}`}}>
                     <td style={{padding:"7px 10px",color:T.textSub,whiteSpace:"nowrap"}}>{m.date}</td>
-                    <td style={{padding:"7px 10px"}}><Chip label={isE?"Entrada":isA?"Apertura menudeo":isAj?"Ajuste de conteo":isD?"Venta borrada":"Otro"} bg={isE?"rgba(26,140,90,0.1)":isA?"rgba(40,96,176,0.1)":T.goldBg} color={isE?T.profit:isA?T.client:T.gold}/></td>
-                    <td style={{padding:"7px 10px",fontWeight:500}}>{isPop?"Vasos "+(popCfg?.[popK]?.name||popK):isD?"—":(prod?.name||m.pid)}</td>
-                    <td style={{padding:"7px 10px",color:isE?T.profit:T.client,fontWeight:600}}>{isE?"+"+m.cajas+(isPop?" vasos":(prod&&(prod.spc||1)===1?" pz":" caja"+(m.cajas!==1?"s":""))):isA?"−"+m.cajas+"c → +"+m.sobres+"s":isAj?[m.cajas?(m.cajas>0?"+":"")+m.cajas:"",m.sobres?(m.sobres>0?"+":"")+m.sobres+"s":""].filter(Boolean).join(" · "):""}</td>
+                    <td style={{padding:"7px 10px"}}><Chip label={isE?"Entrada":isA?"Caja abierta":isAj?"Ajuste de conteo":isD?"Venta borrada":"Otro"} bg={isE?"rgba(26,140,90,0.1)":isA?"rgba(40,96,176,0.1)":T.goldBg} color={isE?T.profit:isA?T.client:T.gold}/></td>
+                    <td style={{padding:"7px 10px",fontWeight:500}}>{isPop?"Vasos "+(popCfg?.[popK]?.name||popK):isD?"—":(prod?.name.replace(/\s*\(.*\)/,"")||m.pid)}</td>
+                    <td style={{padding:"7px 10px",color:isE?T.profit:T.client,fontWeight:600,whiteSpace:"nowrap"}}>{cant}</td>
                     <td style={{padding:"7px 10px",color:T.textSub,fontSize:11}}>{m.note}</td>
                     <td style={{padding:"7px 10px",color:T.textMuted,fontSize:11}}>{m.by||"—"}</td>
                     <td style={{padding:"7px 10px"}}>
-                      {isAdmin&&(isE||isA)&&<OutBtn onClick={()=>{
+                      {(isE||isA)&&<OutBtn onClick={()=>{
                         if(isE&&isPop)setPopCfg(prev=>({...prev,[popK]:{...prev[popK],stock:(+prev[popK].stock||0)-m.cajas}}));
-                        else if(isE)setProds(prods.map(p=>p.id===m.pid?{...p,stockCajas:Math.max(0,(p.stockCajas||0)-m.cajas)}:p));
+                        else if(isE)setProds(prods.map(p=>p.id===m.pid?{...p,stockCajas:Math.max(0,(p.stockCajas||0)-(m.cajas||0)),stockSobres:Math.max(0,(p.stockSobres||0)-(m.sobres||0))}:p));
                         if(isA)setProds(prods.map(p=>p.id===m.pid?{...p,stockCajas:(p.stockCajas||0)+m.cajas,stockSobres:Math.max(0,(p.stockSobres||0)-m.sobres)}:p));
                         setStockMoves(stockMoves.filter(x=>x.id!==m.id));
                       }} danger style={{fontSize:11,padding:"3px 8px"}}>🗑️</OutBtn>}
@@ -1781,6 +1574,7 @@ function Inventario({prods,setProds,sales,stockMoves,setStockMoves,user,isAdmin,
               })}
             </tbody>
           </table>
+          </div>
         </Card>
       )}
     </div>
@@ -1897,7 +1691,7 @@ function CierreDia({prods,setProds,sales,expenses,extras,popCfg,setPopCfg,cierre
         <>
           <Card>
             <STitle>🔒 Cierre del día · {fechaLarga(hoy)}</STitle>
-            <p style={{margin:"0 0 4px",fontSize:12,color:T.textSub}}>Hazlo después de las 7:30 pm, cuando ya no haya ventas. Cuenta lo que hay de verdad, sin adivinar.</p>
+            <p style={{margin:"0 0 4px",fontSize:12,color:T.textSub}}>Al cerrar, cuando ya no haya ventas.</p>
           </Card>
 
           <Card>
@@ -1912,12 +1706,12 @@ function CierreDia({prods,setProds,sales,expenses,extras,popCfg,setPopCfg,cierre
             <F label="Monedas (total en $)" style={{marginTop:8}}>
               <input type="number" min="0" inputMode="decimal" value={monedas} onChange={e=>setMonedas(e.target.value)} placeholder="0" style={{textAlign:"center",fontWeight:700}}/>
             </F>
-            <p style={{margin:"8px 0 0",fontSize:11,color:T.textMuted}}>Cuenta TODO lo que hay en la caja, incluidos los {$m(FONDO_CAJA)} de fondo.</p>
+            <p style={{margin:"8px 0 0",fontSize:11,color:T.textMuted}}>Todo lo que hay en la caja, con los {$m(FONDO_CAJA)} de fondo.</p>
           </Card>
 
           <Card>
             <STitle right={<span style={{fontSize:12,color:faltan.length?T.expense:T.profit,fontWeight:600}}>{faltan.length?faltan.length+" por contar":"✓ Todo contado"}</span>}>2 · Cuenta el inventario</STitle>
-            <p style={{margin:"0 0 10px",fontSize:12,color:T.textSub}}>Pon cuántos hay físicamente. Si no hay, pon 0.</p>
+            <p style={{margin:"0 0 10px",fontSize:12,color:T.textSub}}>Si no hay, pon 0.</p>
             <div style={{display:"flex",flexDirection:"column",gap:8}}>
               {items.map(r=>(
                 <div key={r.key} style={{padding:"10px 12px",borderRadius:10,border:`1px solid ${faltan.includes(r)?T.goldBorder:"rgba(26,140,90,0.3)"}`,background:T.bgRow}}>
@@ -2005,7 +1799,6 @@ function CierreDia({prods,setProds,sales,expenses,extras,popCfg,setPopCfg,cierre
               })}
             </div>
           )}
-          <p style={{margin:"10px 0 0",fontSize:11,color:T.textMuted}}>"Debía haber" = fondo de {$m(FONDO_CAJA)} + efectivo del día (ventas, envíos y mixtos en efectivo − gastos pagados de la caja − pagos a repartidores en efectivo). Lo que paga un socio de su bolsa no cuenta. El empleado no ve esta cifra.</p>
         </Card>
       )}
     </div>
@@ -2025,7 +1818,6 @@ function VasosCard({popCfg,setPopCfg,stockMoves,setStockMoves,user}){
   return(
     <Card>
       <STitle>🍿 Vasos de palomitas</STitle>
-      <p style={{margin:"0 0 10px",fontSize:12,color:T.textSub}}>Cada palomita vendida descuenta un vaso de su tamaño.</p>
       <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:8}}>
         {POP_SIZES.map(k=>{const st=+popCfg[k].stock||0;return(
           <div key={k} style={{padding:10,borderRadius:10,background:T.bgAlt,border:`0.5px solid ${T.border}`,textAlign:"center"}}>
@@ -2059,178 +1851,58 @@ function OtrosTable({prods,sales}){
           </tbody>
         </table>
       </div>
-      <p style={{margin:"8px 0 0",fontSize:11,color:T.textMuted}}>Cárgalos arriba en "Cargar / actualizar stock" (campo Piezas).</p>
     </Card>
   );
 }
 
-// ── CORTE DE CAJA ─────────────────────────────────────────────────────────────
-function CorteCaja({sales,expenses,extras=[],setExtras,user}){
-  const[period,setPeriod]=useState("semana");
+// ── CAJA: dinero por cuenta (solo socios; va debajo del Cierre en la pestaña Caja) ──
+function CorteCaja({sales,expenses,extras=[]}){
+  const[period,setPeriod]=useState("dia");
   const[refDate,setRefDate]=useState(today());
-  const[exForm,setExForm]=useState({date:today(),amount:"",desc:"",tipo:"utilidad",via:"Efectivo"});
-  const[exSaved,setExSaved]=useState(false);
-  const saveExtra=()=>{
-    if(!exForm.amount||+exForm.amount<=0)return;
-    setExtras([...(extras||[]),{...exForm,id:uid(),amount:+exForm.amount,desc:exForm.desc||exForm.tipo,by:user?.name||""}]);
-    setExForm({date:today(),amount:"",desc:"",tipo:"utilidad",via:"Efectivo"});
-    setExSaved(true);
-    setTimeout(()=>setExSaved(false),3000);
-  };
   const getRange=()=>{
-    const d=new Date(refDate+"T12:00:00");
-    if(period==="dia")return{start:refDate,end:refDate,label:refDate};
-    if(period==="semana"){const day=d.getDay();const mon=new Date(d);mon.setDate(d.getDate()-(day===0?6:day-1));const sun=new Date(mon);sun.setDate(mon.getDate()+6);return{start:mon.toISOString().slice(0,10),end:sun.toISOString().slice(0,10),label:"Sem "+mon.toLocaleDateString("es-MX",{day:"2-digit",month:"short"})+" – "+sun.toLocaleDateString("es-MX",{day:"2-digit",month:"short"})};}
+    if(period==="dia")return{start:refDate,end:refDate,label:fechaLarga(refDate)};
+    if(period==="semana"){const st=weekStartOf(refDate);const e=new Date(st+"T12:00:00");e.setDate(e.getDate()+6);const o={day:"numeric",month:"short"};
+      return{start:st,end:ymd(e),label:new Date(st+"T12:00:00").toLocaleDateString("es-MX",o)+" – "+e.toLocaleDateString("es-MX",o)};}
     const m=refDate.slice(0,7);return{start:m+"-01",end:m+"-31",label:new Date(refDate+"T12:00:00").toLocaleDateString("es-MX",{month:"long",year:"numeric"})};
   };
   const range=getRange();
   const fSales=sales.filter(s=>s.date>=range.start&&s.date<=range.end);
-  const fExp=expenses.filter(e=>e.date>=range.start&&e.date<=range.end);
-  const rev=fSales.reduce((s,v)=>s+v.total,0);
-  const envTotal=fSales.reduce((s,v)=>s+(v.envio||0),0);
-  const gastos=fExp.reduce((s,e)=>s+e.amount,0);
-  const costo=fSales.reduce((s,v)=>s+(v.cost||0),0);
-  const fExtrasP=(extras||[]).filter(x=>x.date>=range.start&&x.date<=range.end);
-  const extrasTotal=fExtrasP.reduce((a,x)=>a+x.amount,0);
-  const utilNeta=rev-costo-gastos+extrasTotal;
-  const extraEfectivo=fExtrasP.filter(x=>x.via==="Efectivo").reduce((a,x)=>a+x.amount,0);
-  const extraMarcel=fExtrasP.filter(x=>x.via==="SPIN Marcel").reduce((a,x)=>a+x.amount,0);
-  const extraGustavo=fExtrasP.filter(x=>x.via==="SPIN Gustavo").reduce((a,x)=>a+x.amount,0);
-  const mixSales=fSales.filter(s=>s.payMethod==="Mixto");
-  const mixEfectivoTotal=mixSales.reduce((a,s)=>a+(s.mixEfectivo||0),0);
-  const mixMarcelTotal=mixSales.filter(s=>s.mixCuenta==="SPIN Marcel").reduce((a,s)=>a+(s.mixTransferencia||0),0);
-  const mixGustavoTotal=mixSales.filter(s=>s.mixCuenta==="SPIN Gustavo").reduce((a,s)=>a+(s.mixTransferencia||0),0);
-  const byMethod=PAY_METHODS.filter(m=>m!=="Mixto").map(m=>cuentaResumen(m,range,sales,expenses,extras));
-  const DAYS=["Lunes","Martes","Miércoles","Jueves","Viernes","Sábado","Domingo"];
-  const byDay=DAYS.map((d,i)=>{const dn=(i+1)%7;const ds=fSales.filter(s=>{const w=new Date(s.date+"T12:00:00").getDay();return w===dn||(i===6&&w===0);});return{day:d,total:ds.reduce((a,s)=>a+s.total,0),util:ds.reduce((a,s)=>a+s.total-s.cost,0),count:ds.length};});
+  // "Tercero" ya no se usa: solo aparece si hay ventas viejas con esa forma de pago
+  const metodos=[...PAY_METHODS.filter(m=>m!=="Mixto"),...(fSales.some(s=>s.payMethod==="Tercero")?["Tercero"]:[])];
+  const byMethod=metodos.map(m=>cuentaResumen(m,range,sales,expenses,extras));
+  const traen=fSales.filter(s=>s.envioContra&&!s.envioDineroRecibido).reduce((a,s)=>a+(s.envioDebe||0),0);
   const sinMetodo=fSales.filter(s=>!s.payMethod).length;
   return(
-    <div style={{display:"flex",flexDirection:"column",gap:"1.25rem"}}>
-      <Card>
-        <div style={{display:"flex",gap:10,alignItems:"center",flexWrap:"wrap"}}>
-          <div style={{display:"flex",gap:4}}>
-            {[["dia","Día"],["semana","Semana"],["mes","Mes"]].map(([v,l])=>(
-              <button key={v} onClick={()=>setPeriod(v)} style={{padding:"6px 14px",borderRadius:20,border:`1px solid ${period===v?T.gold:T.border}`,background:period===v?T.gold:"transparent",color:period===v?"#fff":T.textSub,fontSize:12,fontWeight:period===v?600:400,cursor:"pointer"}}>{l}</button>
-            ))}
-          </div>
-          <input type="date" value={refDate} onChange={e=>setRefDate(e.target.value)} style={{fontSize:12,padding:"5px 10px"}}/>
-          <span style={{fontSize:13,fontWeight:600,color:T.gold}}>{range.label}</span>
-        </div>
-      </Card>
-      <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(140px,1fr))",gap:10}}>
-        <KCard icon="ti-trending-up" label="Ingresos" value={$m(rev)} color={T.revenue}/>
-        <KCard icon="ti-motorbike"   label="Envíos cobrados" value={$m(envTotal)} sub={"Repartidores: "+$m(fSales.reduce((a,v)=>a+(v.costoEnvio||0),0))} color={T.client}/>
-        <KCard icon="ti-wallet"      label="Gastos" value={$m(gastos)} color={T.expense}/>
-        <KCard icon="ti-sparkles"    label="Utilidad neta" value={$m(utilNeta)} sub="ventas − costo − gastos + extras" color={utilNeta>=0?T.profit:T.expense}/>
+    <Card>
+      <STitle>Dinero por cuenta</STitle>
+      <div style={{display:"flex",gap:6,alignItems:"center",flexWrap:"wrap",marginBottom:12}}>
+        {[["dia","Día"],["semana","Semana"],["mes","Mes"]].map(([v,l])=>(
+          <button key={v} onClick={()=>setPeriod(v)} style={{padding:"6px 14px",borderRadius:20,border:`1px solid ${period===v?T.gold:T.border}`,background:period===v?T.gold:"transparent",color:period===v?"#fff":T.textSub,fontSize:12,fontWeight:period===v?600:400}}>{l}</button>
+        ))}
+        <input type="date" value={refDate} onChange={e=>setRefDate(e.target.value)} style={{flex:1,minWidth:140}}/>
       </div>
-      {sinMetodo>0 && <div style={{background:"rgba(192,64,64,0.08)",border:"1px solid rgba(192,64,64,0.25)",borderRadius:10,padding:"10px 16px",fontSize:13,color:T.expense,display:"flex",gap:8,alignItems:"center"}}><i className="ti ti-alert-triangle" style={{fontSize:18}}/><strong>{sinMetodo} venta{sinMetodo>1?"s":""}</strong> sin forma de pago. Ve a Ventas y corrígelas.</div>}
-      <Card>
-        <STitle>Desglose por forma de cobro</STitle>
-        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
-          {byMethod.map(bm=>(
-            <div key={bm.method} style={{background:bm.bg||T.goldBg,borderRadius:10,padding:"14px 16px",border:`0.5px solid ${bm.c||T.gold}30`}}>
-              <p style={{margin:"0 0 8px",fontWeight:700,fontSize:13,color:bm.c||T.gold}}>{bm.method} <span style={{fontWeight:400,fontSize:11,color:T.textMuted}}>({bm.count} venta{bm.count!==1?"s":""})</span></p>
-              {bm.ventasTotal>0&&<p style={{margin:"2px 0",fontSize:12,color:T.textSub}}>Ventas: <strong style={{color:bm.c||T.gold}}>{$m(bm.ventasTotal)}</strong></p>}
-              {bm.mixAmt>0&&<p style={{margin:"2px 0",fontSize:12,color:T.textSub}}>Mixto: <strong style={{color:bm.c||T.gold}}>+{$m(bm.mixAmt)}</strong></p>}
-              {bm.extraAmt>0&&<p style={{margin:"2px 0",fontSize:12,color:T.textSub}}>Extra: <strong style={{color:T.profit}}>+{$m(bm.extraAmt)}</strong></p>}
-              {bm.gastosDeEsta>0&&<p style={{margin:"2px 0",fontSize:12,color:T.textSub}}>Gastos: <strong style={{color:T.expense}}>−{$m(bm.gastosDeEsta)}</strong></p>}
-              {bm.envCobrado>0&&<p style={{margin:"2px 0",fontSize:12,color:T.textSub}}>Envíos cobrados: <strong style={{color:bm.c||T.gold}}>+{$m(bm.envCobrado)}</strong></p>}
-              {bm.repPagado>0&&<p style={{margin:"2px 0",fontSize:12,color:T.textSub}}>Pagado a repartidores: <strong style={{color:T.expense}}>−{$m(bm.repPagado)}</strong></p>}
-              {bm.comisionAmt>0&&<p style={{margin:"2px 0",fontSize:12,color:T.textSub}}>Comisión MP: <strong style={{color:T.expense}}>−{$m(bm.comisionAmt)}</strong></p>}
-              <div style={{borderTop:`1px solid ${bm.c||T.gold}30`,marginTop:8,paddingTop:8}}>
-                <p style={{margin:0,fontSize:20,fontWeight:700,color:bm.neto>=0?T.profit:T.expense}}>{$m(bm.neto)}</p>
-                <p style={{margin:"2px 0 0",fontSize:10,color:T.textMuted}}>neto en esta cuenta</p>
-              </div>
-            </div>
-          ))}
-        </div>
-        <div style={{marginTop:12,padding:"10px 14px",background:T.goldBg,borderRadius:8,fontSize:12,color:T.goldText}}>
-          {(()=>{const x=fSales.filter(s=>s.envioContra&&!s.envioDineroRecibido).reduce((a,s)=>a+(s.envioDebe||0),0);
-            return x>0?<div style={{marginBottom:6,color:T.expense,fontWeight:600}}>⚠ De tu efectivo, {$m(x)} todavía lo traen los repartidores (ve a 🛵 Envíos).</div>:null;})()}
-          🛡️ <strong>Verifica:</strong> Efectivo debe estar en caja física · SPIN Marcel debe coincidir con la app de Marcel · SPIN Gustavo con la de Gustavo · Transferencia MP + Terminal MP (ya sin comisión) = lo que entró a tu Mercado Pago
-        </div>
-      </Card>
-      {period==="semana" && (
-        <Card>
-          <STitle>Ventas por día — {range.label}</STitle>
-          <table style={{width:"100%",fontSize:13,borderCollapse:"collapse"}}>
-            <TH cols={["Día","Ventas","Ingresos","Utilidad"]}/>
-            <tbody>
-              {byDay.map((d,i)=>(
-                <tr key={d.day} style={{background:i%2===0?T.bg:T.bgRow,borderBottom:`0.5px solid ${T.border}`}}>
-                  <td style={{padding:"8px 10px",fontWeight:500}}>{d.day}</td>
-                  <td style={{padding:"8px 10px",color:T.textSub}}>{d.count||"—"}</td>
-                  <td style={{padding:"8px 10px",color:d.total>0?T.revenue:T.textMuted,fontWeight:d.total>0?600:400}}>{$m(d.total)}</td>
-                  <td style={{padding:"8px 10px",color:d.util>0?T.profit:T.textMuted,fontWeight:d.util>0?600:400}}>{d.util>0?$m(d.util):"—"}</td>
-                </tr>
-              ))}
-              <tr style={{background:T.goldBg,borderTop:`1px solid ${T.goldBorder}`}}>
-                <td style={{padding:"8px 10px",fontWeight:700,color:T.goldText}}>TOTAL</td>
-                <td style={{padding:"8px 10px",fontWeight:700,color:T.goldText}}>{fSales.length}</td>
-                <td style={{padding:"8px 10px",fontWeight:700,color:T.revenue}}>{$m(rev)}</td>
-                <td style={{padding:"8px 10px",fontWeight:700,color:T.profit}}>{$m(fSales.reduce((a,s)=>a+s.total-s.cost,0))}</td>
-              </tr>
-            </tbody>
-          </table>
-        </Card>
-      )}
-
-      {/* ── UTILIDAD EXTRA ── */}
-      <Card>
-        <STitle>Utilidad extra / negocios externos</STitle>
-        <div style={{display:"flex",flexDirection:"column",gap:10,marginBottom:12}}>
-          <F label="Fecha"><input type="date" value={exForm.date} onChange={e=>setExForm({...exForm,date:e.target.value})}/></F>
-          <F label="Monto recibido ($)"><input type="number" min="0" value={exForm.amount} onChange={e=>setExForm({...exForm,amount:e.target.value})} placeholder="0.00"/></F>
-          <F label="Tipo">
-            <select value={exForm.tipo} onChange={e=>setExForm({...exForm,tipo:e.target.value})}>
-              <option value="utilidad">Utilidad de tercero</option>
-              <option value="comision">Comisión</option>
-              <option value="otro">Otro ingreso</option>
-            </select>
-          </F>
-          <F label="¿Cómo llegó el dinero?">
-            <select value={exForm.via||"Efectivo"} onChange={e=>setExForm({...exForm,via:e.target.value})}>
-              {CUENTAS.map(c=><option key={c} value={c}>{CUENTA_LABEL[c]}</option>)}
-            </select>
-          </F>
-          <F label="Descripción (opcional)"><input value={exForm.desc} onChange={e=>setExForm({...exForm,desc:e.target.value})} placeholder="Ej. comisión por venta de Andrés…"/></F>
-        </div>
-        <GoldBtn onClick={saveExtra}>+ Registrar utilidad extra</GoldBtn>
-        {exSaved&&<div style={{marginTop:8,padding:"10px 14px",background:"rgba(26,140,90,0.1)",border:"1px solid rgba(26,140,90,0.3)",borderRadius:8,fontSize:13,color:T.profit}}>✓ ¡Registrado correctamente!</div>}
-        {(extras||[]).length>0&&(
-          <div style={{marginTop:16}}>
-            <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:10}}>
-              <p style={{margin:0,fontSize:12,fontWeight:600,color:T.text}}>Historial completo</p>
-              <Chip label={"Total: "+$m((extras||[]).reduce((s,x)=>s+x.amount,0))} bg="rgba(26,140,90,0.1)" color={T.profit}/>
-            </div>
-            <div style={{display:"flex",flexDirection:"column",gap:8}}>
-              {[...(extras||[])].sort((a,b)=>b.date.localeCompare(a.date)).map((x,i)=>{
-                const pc=PAY_CLR[x.via||"Efectivo"]||{bg:T.goldBg,c:T.goldText};
-                return(
-                  <div key={x.id} style={{background:i%2===0?T.bg:T.bgRow,borderRadius:8,padding:"10px 12px",border:`0.5px solid ${T.border}`,display:"flex",alignItems:"center",gap:10}}>
-                    <div style={{flex:1,minWidth:0}}>
-                      <div style={{display:"flex",gap:6,flexWrap:"wrap",marginBottom:4,alignItems:"center"}}>
-                        <span style={{fontSize:11,color:T.textMuted,whiteSpace:"nowrap"}}>{x.date}</span>
-                        <Chip label={x.tipo==="utilidad"?"Utilidad":x.tipo==="comision"?"Comisión":"Otro"} bg="rgba(26,140,90,0.1)" color={T.profit}/>
-                        <Chip label={x.via||"Efectivo"} bg={pc.bg} color={pc.c}/>
-                      </div>
-                      <p style={{margin:0,fontSize:13,color:T.text,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{x.desc||"—"}</p>
-                    </div>
-                    <div style={{display:"flex",alignItems:"center",gap:8,flexShrink:0}}>
-                      <span style={{fontWeight:700,fontSize:15,color:T.profit}}>{$m(x.amount)}</span>
-                      <OutBtn onClick={()=>setExtras((extras||[]).filter(e=>e.id!==x.id))} danger style={{fontSize:11,padding:"4px 8px"}}>🗑️</OutBtn>
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
+      <p style={{margin:"0 0 10px",fontSize:13,fontWeight:600,color:T.gold}}>{range.label}</p>
+      {sinMetodo>0&&<ErrMsg msg={sinMetodo+" venta"+(sinMetodo>1?"s":"")+" sin forma de pago"}/>}
+      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
+        {byMethod.map(bm=>(
+          <div key={bm.method} style={{background:bm.bg||T.goldBg,borderRadius:10,padding:"12px 14px",border:`0.5px solid ${bm.c||T.gold}30`}}>
+            <p style={{margin:"0 0 6px",fontWeight:700,fontSize:13,color:bm.c||T.gold}}>{bm.method}</p>
+            {bm.ventasTotal>0&&<p style={{margin:"1px 0",fontSize:12,color:T.textSub}}>Ventas <strong style={{color:bm.c||T.gold}}>+{$m(bm.ventasTotal)}</strong></p>}
+            {bm.envCobrado>0&&<p style={{margin:"1px 0",fontSize:12,color:T.textSub}}>Envíos <strong style={{color:bm.c||T.gold}}>+{$m(bm.envCobrado)}</strong></p>}
+            {bm.mixAmt>0&&<p style={{margin:"1px 0",fontSize:12,color:T.textSub}}>Mixto <strong style={{color:bm.c||T.gold}}>+{$m(bm.mixAmt)}</strong></p>}
+            {bm.extraAmt>0&&<p style={{margin:"1px 0",fontSize:12,color:T.textSub}}>Extra <strong style={{color:T.profit}}>+{$m(bm.extraAmt)}</strong></p>}
+            {bm.gastosDeEsta>0&&<p style={{margin:"1px 0",fontSize:12,color:T.textSub}}>Gastos <strong style={{color:T.expense}}>−{$m(bm.gastosDeEsta)}</strong></p>}
+            {bm.repPagado>0&&<p style={{margin:"1px 0",fontSize:12,color:T.textSub}}>Repartidores <strong style={{color:T.expense}}>−{$m(bm.repPagado)}</strong></p>}
+            {bm.comisionAmt>0&&<p style={{margin:"1px 0",fontSize:12,color:T.textSub}}>Comisión <strong style={{color:T.expense}}>−{$m(bm.comisionAmt)}</strong></p>}
+            <p style={{margin:"6px 0 0",fontSize:19,fontWeight:700,color:bm.neto>=0?T.profit:T.expense,borderTop:`1px solid ${bm.c||T.gold}30`,paddingTop:6}}>{$m(bm.neto)}</p>
           </div>
-        )}
-      </Card>
-    </div>
+        ))}
+      </div>
+      {traen>0&&<p style={{margin:"10px 0 0",fontSize:12,color:T.expense,fontWeight:600}}>⚠ {$m(traen)} en efectivo todavía lo traen los repartidores</p>}
+      <p style={{margin:"10px 0 0",fontSize:11,color:T.textMuted}}>Revisa: Efectivo = lo que se llevó el socio · SPIN = app de cada quien · Mercado Pago = transferencia + terminal</p>
+    </Card>
   );
 }
-
 
 // ── REPARTO DE UTILIDADES ─────────────────────────────────────────────────────
 function RepartoCard({data,label,sublabel}){
@@ -2322,25 +1994,13 @@ function Reparto({sales,expenses,extras=[]}){
     return{name:nom,neta:Math.round(u.neta)};
   });
 
-  // Gráfica: utilidad neta por mes del año actual
-  const year=refDate.slice(0,4);
-  const NOM_MESES=["Ene","Feb","Mar","Abr","May","Jun","Jul","Ago","Sep","Oct","Nov","Dic"];
-  const monthChart=NOM_MESES.map((nom,i)=>{
-    const mm=String(i+1).padStart(2,"0");
-    const u=calcUtilidad(year+"-"+mm+"-01",year+"-"+mm+"-31");
-    return{name:nom,neta:Math.round(u.neta)};
-  });
-
   return(
     <div style={{display:"flex",flexDirection:"column",gap:"1.25rem"}}>
       <Card>
         <div style={{display:"flex",gap:10,alignItems:"center",flexWrap:"wrap"}}>
-          <span style={{fontSize:13,fontWeight:600,color:T.text}}>Selecciona fecha:</span>
           <input type="date" value={refDate} onChange={e=>setRefDate(e.target.value)} style={{fontSize:13,maxWidth:180}}/>
+          <span style={{fontSize:12,color:T.textSub}}>33% Marcel · 33% Gustavo · 34% reinversión</span>
         </div>
-        <p style={{margin:"10px 0 0",fontSize:12,color:T.textSub}}>
-          Reparto sobre la utilidad neta (ventas − costo − gastos + utilidades extra): <strong>33% Marcel · 33% Gustavo · 34% reinversión</strong>.
-        </p>
       </Card>
 
       <RepartoCard data={sem} label={weekLabel} sublabel="Reparto semanal"/>
@@ -2363,23 +2023,6 @@ function Reparto({sales,expenses,extras=[]}){
       </Card>
 
       <RepartoCard data={mes} label={monthLabel} sublabel="Resumen mensual"/>
-
-      {/* GRÁFICA MENSUAL */}
-      <Card>
-        <STitle>Utilidad neta por mes — {year}</STitle>
-        <div style={{width:"100%",height:240}}>
-          <ResponsiveContainer width="100%" height="100%">
-            <BarChart data={monthChart} margin={{top:10,right:10,left:-10,bottom:0}}>
-              <XAxis dataKey="name" tick={{fontSize:10,fill:T.textSub}} axisLine={{stroke:T.border}} tickLine={false}/>
-              <YAxis tick={{fontSize:10,fill:T.textMuted}} axisLine={false} tickLine={false} tickFormatter={v=>"$"+(v/1000).toFixed(0)+"k"}/>
-              <Tooltip formatter={v=>$m(v)} contentStyle={{fontSize:12,borderRadius:8,border:`1px solid ${T.goldBorder}`}}/>
-              <Bar dataKey="neta" radius={[6,6,0,0]}>
-                {monthChart.map((e,i)=><Cell key={i} fill={e.name===NOM_MESES[d.getMonth()]?T.gold:(e.neta>=0?"rgba(26,140,90,0.55)":T.expense)}/>)}
-              </Bar>
-            </BarChart>
-          </ResponsiveContainer>
-        </div>
-      </Card>
     </div>
   );
 }
@@ -2409,7 +2052,6 @@ function Envios({sales,setSales,clients,isAdmin,user}){
       {debe.length>0&&(
         <Card style={{borderColor:T.profit,borderWidth:1}}>
           <STitle right={<span style={{fontWeight:700,color:T.profit}}>{$m(sum(debe,"envioDebe"))}</span>}>💵 Te tienen que entregar</STitle>
-          <p style={{margin:"-4px 0 10px",fontSize:11,color:T.textMuted}}>Efectivo que cobraron los repartidores (ya descontado su envío).</p>
           <div style={{display:"flex",flexDirection:"column",gap:8}}>
             {Object.entries(porRepDebe).map(([rep,arr])=>(
               <div key={rep} style={{padding:10,borderRadius:10,border:"1px solid rgba(26,140,90,0.3)",background:"rgba(26,140,90,0.05)"}}>
@@ -2502,7 +2144,6 @@ function Envios({sales,setSales,clients,isAdmin,user}){
           </div>
         )}
       </Card>
-      <p style={{margin:0,fontSize:11,color:T.textMuted,textAlign:"center"}}>La cuota semanal de la plataforma de repartidores está en Gastos → Gastos fijos.</p>
     </div>
   );
 }
@@ -2532,7 +2173,7 @@ function Palomitas({sales,setSales,popCfg,setPopCfg,user,isAdmin,cerrados=[]}){
     const desc="🍿 "+POP_SIZES.filter(k=>qty[k]>0).map(k=>qty[k]+"× "+popCfg[k].name).join(", ");
     const comision=pay==="Terminal MP"?+(total*TERMINAL_FEE).toFixed(2):0;
     setSales(prev=>[...prev,{id:uid(),date:today(),tipo:"palomitas",clientId:"",pkgId:null,total,cost:cost+comision,comision,desc,items,note:"",payMethod:pay,
-      mixEfectivo:0,mixTransferencia:0,mixCuenta:"",envio:0,costoEnvio:0,envioTipo:"ninguno",envioDesc:"",by:user?.name||"",sinStock:sinVasos}]);
+      mixEfectivo:0,mixTransferencia:0,mixCuenta:"",envio:0,costoEnvio:0,by:user?.name||"",hora:horaAhora(),sinStock:sinVasos}]);
     setQty({s:0,m:0,l:0});setPay("Efectivo");
     setOkMsg("✓ Cobrado "+$m(total));
     setTimeout(()=>setOkMsg(""),2500);
@@ -2553,7 +2194,6 @@ function Palomitas({sales,setSales,popCfg,setPopCfg,user,isAdmin,cerrados=[]}){
       <Card>
         <STitle>🍿 Vender palomitas</STitle>
         {cerradoHoy&&<div style={{marginBottom:12,padding:"10px 12px",borderRadius:8,background:"rgba(192,64,64,0.08)",border:"1px solid rgba(192,64,64,0.3)",fontSize:13,color:T.expense,fontWeight:600}}>🔒 El día de hoy ya se cerró.</div>}
-        <p style={{margin:"0 0 12px",fontSize:12,color:T.textSub}}>Toca el tamaño para agregar. Usa − para quitar.</p>
         <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:8}}>
           {POP_SIZES.map(k=>{
             const c=popCfg[k];const on=qty[k]>0;
@@ -2651,7 +2291,7 @@ function Palomitas({sales,setSales,popCfg,setPopCfg,user,isAdmin,cerrados=[]}){
                 <F label="Insumos ($)"><input type="number" min="0" step="0.01" value={cfgForm[k].cost} onChange={e=>setCfgForm({...cfgForm,[k]:{...cfgForm[k],cost:e.target.value}})}/></F>
               </div>
             ))}
-            <p style={{margin:"0 0 10px",fontSize:11,color:T.textMuted}}>Insumos = lo que se va en cada tamaño de maíz, aceite, sal, mantequilla… Los cambios aplican a ventas nuevas.</p>
+            <p style={{margin:"0 0 10px",fontSize:11,color:T.textMuted}}>Aplica a ventas nuevas.</p>
             <div style={{display:"flex",gap:8}}>
               <GoldBtn onClick={()=>{const n={};POP_SIZES.forEach(k=>{n[k]={name:cfgForm[k].name.trim()||INIT_POP[k].name,price:+cfgForm[k].price||0,cost:+cfgForm[k].cost||0,vaso:+cfgForm[k].vaso||0};});setPopCfg(n);setShowCfg(false);}}>Guardar</GoldBtn>
               <OutBtn onClick={()=>setShowCfg(false)}>Cancelar</OutBtn>
@@ -2669,18 +2309,16 @@ const TABS=[
   {k:"dash", l:"Inicio",        s:"Inicio",  icon:"ti-home",          color:T.revenue, admin:true},
   {k:"venta",l:"Nueva venta",   s:"Vender",  icon:"ti-shopping-cart", color:T.profit},
   {k:"pop",  l:"Palomitas",     s:"Palomitas",e:"🍿",                 color:T.revenue},
-  {k:"corte",l:"Corte de caja", s:"Caja",    icon:"ti-report-money",  color:T.profit,  admin:true},
+  {k:"caja", l:"Caja",          s:"Caja",    icon:"ti-report-money",  color:T.profit},
   {k:"envios",l:"Envíos",       s:"Envíos",  icon:"ti-motorbike",     color:T.client},
-  {k:"cierre",l:"Cierre del día",s:"Cierre",  icon:"ti-lock",          color:T.profit},
   {k:"inv",  l:"Inventario",    s:"Inventario",icon:"ti-package",     color:T.client},
   {k:"gasto",l:"Gastos",        s:"Gastos",  icon:"ti-wallet",        color:T.expense},
   {k:"cli",  l:"Clientes",      s:"Clientes",icon:"ti-users",         color:T.client},
-  {k:"prod", l:"Productos y costos",s:"Productos",icon:"ti-droplet-half-2",color:T.cost,admin:true},
-  {k:"pkgs", l:"Paquetes",      s:"Paquetes",icon:"ti-packages",      color:T.pkg,     admin:true},
+  {k:"catalogo",l:"Catálogo",   s:"Catálogo",icon:"ti-droplet-half-2",color:T.cost,    admin:true},
   {k:"reparto",l:"Reparto de utilidades",s:"Reparto",icon:"ti-users-group",color:T.pkg,admin:true},
 ];
 // Qué va fijo en la barra de abajo; lo demás queda en "Más"
-const NAV_MAIN={admin:["dash","venta","pop","corte"],staff:["venta","pop","envios","inv","cierre"]};
+const NAV_MAIN={admin:["dash","venta","pop","caja"],staff:["venta","pop","envios","inv","caja"]};
 
 function TabIcon({t,size,color}){
   if(t.e)return <span style={{fontSize:size-2,lineHeight:1}}>{t.e}</span>;
@@ -2758,7 +2396,8 @@ function Dashboard_App({user,onLogout}){
       p=p.map(x=>{if(x.stockCajas!=null)return x;const spc=x.spc||1;const old=x.stock||0;return{...x,stockCajas:Math.floor(old/spc),stockSobres:old%spc,stock:undefined};});
       // Fix categories
       const fix=new Set(["gom","gom_f","gom_m","rchv","rhch","ppch"]);
-      p=p.filter(x=>x.id!=="gom"&&x.id!=="pp12");
+      // Productos que ya no existen. "sob" (sobre individual genérico): ahora cada sobre se vende por marca.
+      p=p.filter(x=>x.id!=="gom"&&x.id!=="pp12"&&x.id!=="sob");
       // Chocolates: vienen en sobres (no piezas) y el sobre vale $200. Solo se cambia si seguía el default viejo de $150.
       const CHOCO_IDS=["rchv","rhch","ppch"];
       p=p.map(x=>{if(!CHOCO_IDS.includes(x.id))return x;const{spcu,...r}=x;return{...r,listSobre:(x.listSobre&&x.listSobre!==150)?x.listSobre:200};});
@@ -2801,7 +2440,6 @@ function Dashboard_App({user,onLogout}){
   const repExpenses=expenses.filter(e=>e.date>=INICIO_OPERACION);
   const repExtras=extras.filter(x=>x.date>=INICIO_OPERACION);
   const props={prods,setProds,pkgs,setPkgs,clients,setClients,sales,setSales,expenses,setExpenses,stockMoves,setStockMoves,extras,setExtras,user,isAdmin,fixed,setFixed,goTab:setTab,popCfg,setPopCfg,cierres,setCierres,cerrados:cierres.map(c=>c.date)};
-  const warn=isAdmin&&prods.some(p=>p.cost===0);
   const cur=myTabs.find(t=>t.k===tab)||myTabs[0];
   const can=k=>myTabs.some(t=>t.k===k);
   // Al salir se desmonta todo y el debounce de 800 ms se cancelaría: guardamos todo antes
@@ -2822,28 +2460,24 @@ function Dashboard_App({user,onLogout}){
             <p style={{margin:0,fontSize:17,color:cur.color,fontWeight:700}}>{cur.l}</p>
           </div>
           <div style={{marginLeft:"auto",display:"flex",alignItems:"center",gap:6}}>
-            {warn&&tab!=="prod"&&(
-              <button onClick={()=>setTab("prod")} style={{fontSize:11,background:T.goldBg,color:T.goldText,border:`1px solid ${T.goldBorder}`,borderRadius:20,padding:"4px 10px",fontWeight:600,minHeight:30}}>
-                ⚠️ Costos
-              </button>
-            )}
             <button onClick={logout} title="Cambiar de usuario" style={{fontSize:11,color:T.textSub,border:`1px solid ${T.border}`,borderRadius:20,padding:"4px 10px",minHeight:30,whiteSpace:"nowrap"}}>
               {leaving?"Guardando…":user.name+" · Salir"}
             </button>
           </div>
         </div>
       </div>
-      {cur.k==="dash"  && <Dashboard  {...props} sales={repSales} expenses={repExpenses}/>}
-      {cur.k==="prod"  && <Productos  {...props}/>}
-      {cur.k==="pkgs"  && <Paquetes   {...props}/>}
+      {cur.k==="dash"  && <Dashboard  {...props} sales={repSales} expenses={repExpenses} extras={repExtras}/>}
+      {cur.k==="catalogo" && can("catalogo") && <div style={{display:"flex",flexDirection:"column",gap:"1.25rem"}}><Productos {...props}/><Paquetes {...props}/></div>}
       {cur.k==="cli"   && <Clientes   {...props}/>}
       {cur.k==="venta" && <NuevaVenta {...props}/>}
       {cur.k==="pop"   && <Palomitas sales={sales} setSales={setSales} popCfg={popCfg} setPopCfg={setPopCfg} user={user} isAdmin={isAdmin} cerrados={props.cerrados}/>}
       {cur.k==="gasto" && <Gastos     {...props}/>}
       {cur.k==="envios"&& <Envios     {...props}/>}
-      {cur.k==="cierre"&& <CierreDia  {...props}/>}
+      {cur.k==="caja"  && <div style={{display:"flex",flexDirection:"column",gap:"1.25rem"}}>
+        <CierreDia {...props}/>
+        {isAdmin&&<CorteCaja sales={repSales} expenses={repExpenses} extras={repExtras}/>}
+      </div>}
       {cur.k==="inv"   && <Inventario {...props}/>}
-      {cur.k==="corte" && can("corte") && <CorteCaja  sales={repSales} expenses={repExpenses} extras={extras} setExtras={setExtras} user={user}/>}
       {cur.k==="reparto" && can("reparto") && <Reparto sales={repSales} expenses={repExpenses} extras={repExtras}/>}
       <BottomNav tabs={myTabs} mainKeys={NAV_MAIN[user.role]||NAV_MAIN.staff} tab={cur.k} setTab={setTab}/>
     </div>

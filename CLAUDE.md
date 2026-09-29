@@ -12,7 +12,7 @@ Contexto para Claude Code. Léelo antes de tocar cualquier cosa.
 ## Stack
 - React 18 + Vite 5 + Recharts + Supabase JS.
 - Toda la app vive en UN solo archivo: `src/App.jsx`.
-- `src/supabase.js`: cliente + helpers `dbLoad(key, def)` / `dbSave(key, value)`.
+- El cliente de Supabase y `dbLoad(key, def)` / `dbSave(key, value)` están arriba de `App.jsx` (el viejo `src/supabase.js` se borró).
 - Base de datos: Supabase, proyecto `frsvrgojdttnajxdakxv`, tabla `msp_store` (key/value, value = JSON string).
 - Deploy: Vercel (msp-dashboard-kappa.vercel.app), auto-deploy al hacer push a `main`.
 - Repo: github.com/marcelcllr/msp-dashboard
@@ -20,7 +20,9 @@ Contexto para Claude Code. Léelo antes de tocar cualquier cosa.
 
 ## Usuarios y permisos
 - `USERS` en App.jsx: Marcel y Gustavo = `admin`, empleado = `staff`. Sesión en `sessionStorage` (`msp_user`).
-- Staff ve: Vender, Palomitas, Envíos, Inventario, Cierre (+ Gastos y Clientes en "Más"). No ve Inicio, Corte, Reparto, Productos (costos) ni Paquetes.
+- Menú socios: Inicio · Vender · Palomitas · Caja · Más (Envíos, Inventario, Gastos, Clientes, Catálogo, Reparto).
+- Menú empleado: Vender · Palomitas · Envíos · Inventario · Caja · Más (Gastos, Clientes). No ve Inicio, Catálogo (costos) ni Reparto.
+- **Caja** = `CierreDia` (todos) + `CorteCaja` "Dinero por cuenta" (solo socios). **Catálogo** = `Productos` + `Paquetes`.
 - Staff NO ve cantidades de inventario del sistema (para que el conteo del Cierre sea a ciegas): en Inventario solo tiene "Registrar entrada" y "Abrir caja". Tampoco puede cambiar la fecha de ventas ni de gastos.
 - Dentro de las pantallas, staff NO ve utilidad/margen/costos, no puede borrar ventas, gastos, movimientos ni clientes, no pone precios especiales, no ve ni registra gastos fijos (`FIXED_CATS`), solo ve sus propios gastos y las ventas de hoy.
 - Todo registro nuevo guarda `by` (quién lo hizo). Las ventas guardan `bajoPrecio` si se cobró debajo del precio de lista/cliente.
@@ -44,6 +46,15 @@ Contexto para Claude Code. Léelo antes de tocar cualquier cosa.
 - `sale.sinStock`: productos vendidos sin stock suficiente en sistema (se marca, no se bloquea).
 - Borrar venta regresa productos/regalos al inventario y deja movimiento `type:"devolucion"`.
 - Inventario incluye productos por pieza (Sex Shop) en el cargador y en `OtrosTable`.
+
+## Otras pantallas
+- Inicio: utilidad neta del mes (ventas − costo − gastos + ingresos extra, igual que Reparto), vendido, gastos, utilidad del año y gráfica de utilidad neta por mes.
+- Reparto: semanal + gráfica por día + resumen mensual (la gráfica mensual vive en Inicio).
+- Inventario: una sola forma de registrar mercancía (`guardarEntrada`, movimientos `entrada` con `cajas` y `sobres`), abrir cajas, tablas de stock (solo socios) e historial. Ya no hay conteo físico aquí (va en el Cierre) ni botón de resetear.
+- Gastos: fijos, **Ingresos extra** (`IngresosExtra`, antes "Utilidad extra" del Corte; se guardan en `extras` con `via`), registrar gasto, gráfica por categoría (incluye categorías viejas) e historial.
+- Vender: historial en tarjetas por día (socios eligen la fecha). Ventas nuevas guardan `hora`.
+- Formas de pago: Efectivo, SPIN Marcel, SPIN Gustavo, Transferencia MP, Terminal MP, Mixto. "Tercero" se quitó (solo se muestra en ventas viejas).
+- El producto genérico "Sobre individual" (`sob`) se eliminó: los sobres se venden por marca.
 
 ## Correr local
 ```
