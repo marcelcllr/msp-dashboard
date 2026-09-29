@@ -76,6 +76,7 @@ Antes de hacer push SIEMPRE correr `npm run build` y confirmar que compila.
 - Equipo: 2 socios (Marcel, Gustavo) + 1 empleado usan la app.
 - **Reparto de utilidades**: vista semanal (principal) y mensual, split 33% Marcel / 33% Gustavo / 34% Reinversión MSP, con gráficas de barras.
 - **KPI**: tarjeta "Utilidad Neta del Mes" con borde verde/rojo.
+- Chocolates (`rchv` Royal Choco VIP, `rhch` Rhino Choco, `ppch` Pink Pussycat Choco): caja de 12 sobres a $1,250, sobre a $200 (`listSobre`), costo caja $290 (Pink Pussycat Choco se agregó con el mismo costo, confirmar). Gomitas (`gom_m`, `gom_f`): caja de 6 piezas. El apartado "Gomitas y chocolates" se arma con `GOM_IDS` y en ese orden.
 - Catálogo: columnas por producto `costSobre`, `listSobre`, precio sobre (editables). Pink Pussycat 12 sobres fue descontinuado (eliminado).
 
 ## Reglas duras (bugs que ya nos pasaron)

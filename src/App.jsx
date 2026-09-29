@@ -123,8 +123,9 @@ const INIT_PRODS=[
   {id:"sob", name:"Sobre individual",                   cat:"Miel",    unit:"sobre",spc:1,  cost:10,  list:150, tiers:[{m:1,p:150},{m:4,p:125},{m:8,p:100}],stockCajas:0,stockSobres:0},
   {id:"gom_f",name:"Gomitas Bliss Bears — Mujer",        cat:"Miel",    unit:"caja", spc:6,  cost:130, list:400, tiers:TD,costSobre:22,listSobre:150,stockCajas:0,stockSobres:0,spcu:"piezas"},
   {id:"gom_m",name:"Gomitas Boner Bears — Hombre",       cat:"Miel",    unit:"caja", spc:6,  cost:130, list:400, tiers:TD,costSobre:22,listSobre:150,stockCajas:0,stockSobres:0,spcu:"piezas"},
-  {id:"rchv",name:"Royal Choco VIP",                    cat:"Miel",    unit:"caja", spc:12, cost:290, list:1250,tiers:TC,spcu:"piezas",costSobre:24,listSobre:150,stockCajas:0,stockSobres:0},
-  {id:"rhch",name:"Rhino Choco",                        cat:"Miel",    unit:"caja", spc:12, cost:290, list:1250,tiers:TC,spcu:"piezas",costSobre:24,listSobre:150,stockCajas:0,stockSobres:0},
+  {id:"rchv",name:"Royal Choco VIP",                    cat:"Miel",    unit:"caja", spc:12, cost:290, list:1250,tiers:TC,listSobre:200,stockCajas:0,stockSobres:0},
+  {id:"rhch",name:"Rhino Choco",                        cat:"Miel",    unit:"caja", spc:12, cost:290, list:1250,tiers:TC,listSobre:200,stockCajas:0,stockSobres:0},
+  {id:"ppch",name:"Pink Pussycat Choco",                cat:"Miel",    unit:"caja", spc:12, cost:290, list:1250,tiers:TC,listSobre:200,stockCajas:0,stockSobres:0},
   {id:"cond",name:"Condones + Lubricante",              cat:"SexShop", unit:"kit",  spc:1,  cost:0,   list:55,  tiers:[{m:1,p:55}],stockCajas:0,stockSobres:0},
   {id:"gel", name:"Gel de Masaje Sizzle Lips",          cat:"SexShop", unit:"pieza",spc:1,  cost:0,   list:645, tiers:[{m:1,p:645}],stockCajas:0,stockSobres:0},
   {id:"swn", name:"Swiss Navy Max Size",                cat:"SexShop", unit:"tubo", spc:1,  cost:0,   list:1680,tiers:[{m:1,p:1680}],stockCajas:0,stockSobres:0},
@@ -783,7 +784,10 @@ function RegalosForm({regalos,setRegalos,prods,isAdmin}){
 // ── VENDER: piezas de la pantalla (top-level, regla 2) ────────────────────────
 // Apartados de productos en Vender
 const GRUPOS=[["miel","Mieles","ti-droplet"],["gom","Gomitas y chocolates","ti-candy"],["sex","Sex shop","ti-heart"],["pkg","Paquetes","ti-packages"]];
-const grupoDe=p=>p.cat==="SexShop"?"sex":(p.spcu==="piezas"?"gom":"miel");
+// Gomitas y chocolates se identifican por producto (en datos viejos no siempre venía spcu)
+// (en este orden se muestran: primero los 3 chocolates, luego las gomitas)
+const GOM_IDS=["rchv","rhch","ppch","gom_m","gom_f"];
+const grupoDe=p=>p.cat==="SexShop"?"sex":(GOM_IDS.includes(p.id)||p.spcu==="piezas"?"gom":"miel");
 const iniciales=n=>(n||"?").split(" ").filter(Boolean).map(w=>w[0]).slice(0,2).join("").toUpperCase();
 
 function ClientePicker({clients,cl,onPick,onClear,onNew}){
@@ -1173,7 +1177,8 @@ function NuevaVenta({prods,setProds,pkgs,clients,setClients,sales,setSales,user,
           <Card>
             <STitle>Productos</STitle>
             {GRUPOS.map(([g,label,icon])=>{
-              const lista=g==="pkg"?pkgs:vendibles.filter(p=>grupoDe(p)===g);
+              const ordGom=p=>{const i=GOM_IDS.indexOf(p.id);return i<0?99:i;};
+              const lista=g==="pkg"?pkgs:vendibles.filter(p=>grupoDe(p)===g).sort((a,b)=>g==="gom"?ordGom(a)-ordGom(b):0);
               if(lista.length===0)return null;
               const cnt=g==="pkg"?lista.reduce((a,pk)=>a+(cart[keyK(pk)]||0),0):lista.reduce((a,p)=>a+(cart[keyP(p,"caja")]||0)+(cart[keyP(p,"sobre")]||0),0);
               const abierto=!!openG[g];
@@ -2748,12 +2753,15 @@ function Dashboard_App({user,onLogout}){
       INIT_PRODS.forEach(ip=>{if(!ids.has(ip.id))p.push(ip);});
       // Apply latest names/structure but RESPECT user-edited costs
       // Only set cost if the product doesn't have one yet (new products)
-      p=p.map(x=>{const ip=INIT_PRODS.find(i=>i.id===x.id);if(!ip)return x;return{...x,name:ip.name,spc:ip.spc,tiers:ip.tiers,cost:(x.cost!=null&&x.cost>0)?x.cost:ip.cost};});
+      p=p.map(x=>{const ip=INIT_PRODS.find(i=>i.id===x.id);if(!ip)return x;return{...x,name:ip.name,spc:ip.spc,tiers:ip.tiers,spcu:x.spcu||ip.spcu,cost:(x.cost!=null&&x.cost>0)?x.cost:ip.cost};});
       // Migrate old stock field
       p=p.map(x=>{if(x.stockCajas!=null)return x;const spc=x.spc||1;const old=x.stock||0;return{...x,stockCajas:Math.floor(old/spc),stockSobres:old%spc,stock:undefined};});
       // Fix categories
-      const fix=new Set(["gom","gom_f","gom_m","rchv","rhch"]);
+      const fix=new Set(["gom","gom_f","gom_m","rchv","rhch","ppch"]);
       p=p.filter(x=>x.id!=="gom"&&x.id!=="pp12");
+      // Chocolates: vienen en sobres (no piezas) y el sobre vale $200. Solo se cambia si seguía el default viejo de $150.
+      const CHOCO_IDS=["rchv","rhch","ppch"];
+      p=p.map(x=>{if(!CHOCO_IDS.includes(x.id))return x;const{spcu,...r}=x;return{...r,listSobre:(x.listSobre&&x.listSobre!==150)?x.listSobre:200};});
       p=p.map(x=>fix.has(x.id)?{...x,cat:"Miel"}:x);
       setProds(p);setPkgs(pk);setClients(c);setSales(s);setExpenses(e);setStockMoves(sm);setExtras(ex);
       // Igual que con productos: el default de insumos solo entra si no hay costo capturado (0 o vacío)
