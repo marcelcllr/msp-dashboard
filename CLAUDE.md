@@ -28,7 +28,7 @@ Contexto para Claude Code. Léelo antes de tocar cualquier cosa.
 - Menú inferior fijo (`BottomNav`); lo que no cabe va en "Más". `NAV_MAIN` define qué va fijo por rol.
 
 ## Gastos fijos
-- `msp-fx4`: guardado como `{v, items}`. Defaults: Renta $7,859/mes, Sueldo empleado $2,000/semana, Repartidor fijo $1,000/semana, Plan celular $150/mes, Apartado aguinaldo $357.14/mes (15 días de sueldo ÷ 12). Al subir `FIXED_VER` se agregan una sola vez los defaults que falten, sin tocar los editados.
+- `msp-fx4`: guardado como `{v, items}`. Defaults: Renta $7,859/mes, Sueldo empleado $2,000/semana, Repartidor fijo $1,000/semana, Plan celular $150/mes, Apartado aguinaldo $357.14/mes (15 días de sueldo ÷ 12), Publicidad $2,800/semana ($400 diarios, se paga semanal). Cada default tiene `ver`; al subir `FIXED_VER` solo se agregan los defaults con `ver` mayor a la versión guardada (si borraron uno viejo, no regresa). También existe `freq:"diario"`: junta los días sin registrar y se registran de un jalón (`fixedMissing`).
 - Luz, agua e internet los paga la plaza: no son gasto.
 - Al marcar "Ya se pagó" se crea un gasto normal con `fixedId` + `period` ("YYYY-MM" o el día que empieza su semana de cobro). Las semanas de cobro son bloques de 7 días desde `INICIO_OPERACION` (1–7 oct, 8–14 oct…), no lunes. Antes del arranque no hay pendientes ni se puede pagar. Pendientes salen como aviso en Inicio.
 

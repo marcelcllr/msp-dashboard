@@ -143,34 +143,47 @@ const INIT_PKGS=[
   {id:"dist",name:"Paquete Distribuidor", price:9400, items:[{pid:"bh",qty:5},{pid:"rhv",qty:4},{pid:"rh",qty:5},{pid:"pp24",qty:3},{pid:"hs",qty:3}]},
   {id:"may", name:"Paquete Mayorista",    price:39400,items:[{pid:"bh",qty:20},{pid:"rhv",qty:15},{pid:"rhp",qty:15},{pid:"hs",qty:10},{pid:"pp24",qty:5}]},
 ];
-const EXP_CATS=["Renta local","Sueldos","Aguinaldo (apartado)","Plan celular","Repartidor fijo","Comisiones terminal","Insumos palomitas","Bolsas / empaques","Merma / regalos","Gasolina","Repartidores","Importación","Transporte","Almacén","Marketing","Gastos generales","Otro"];
+const EXP_CATS=["Renta local","Sueldos","Aguinaldo (apartado)","Plan celular","Repartidor fijo","Publicidad","Comisiones terminal","Insumos palomitas","Bolsas / empaques","Merma / regalos","Gasolina","Repartidores","Importación","Transporte","Almacén","Marketing","Gastos generales","Otro"];
 
 // Gastos fijos: solo los socios los ven y registran
-const FIXED_CATS=["Renta local","Sueldos","Aguinaldo (apartado)","Plan celular","Repartidor fijo"];
+const FIXED_CATS=["Renta local","Sueldos","Aguinaldo (apartado)","Plan celular","Repartidor fijo","Publicidad"];
 // Aguinaldo: ley = mínimo 15 días de sueldo. $2,000/7 días × 15 = $4,285.71 al año → se aparta cada mes
+// ver = versión de la lista en que se agregó ese default (para agregarlo una sola vez a lo ya guardado)
 const INIT_FIXED=[
-  {id:"renta",     name:"Renta del local",       cat:"Renta local",          amount:7859,   freq:"mensual"},
-  {id:"sueldo",    name:"Sueldo empleado",       cat:"Sueldos",              amount:2000,   freq:"semanal"},
-  {id:"repartidor",name:"Repartidor fijo",       cat:"Repartidor fijo",      amount:1000,   freq:"semanal"},
-  {id:"celular",   name:"Plan celular",          cat:"Plan celular",         amount:150,    freq:"mensual"},
-  {id:"aguinaldo", name:"Apartado aguinaldo",    cat:"Aguinaldo (apartado)", amount:357.14, freq:"mensual"},
+  {id:"renta",     name:"Renta del local",       cat:"Renta local",          amount:7859,   freq:"mensual", ver:1},
+  {id:"sueldo",    name:"Sueldo empleado",       cat:"Sueldos",              amount:2000,   freq:"semanal", ver:1},
+  {id:"repartidor",name:"Repartidor fijo",       cat:"Repartidor fijo",      amount:1000,   freq:"semanal", ver:2},
+  {id:"celular",   name:"Plan celular",          cat:"Plan celular",         amount:150,    freq:"mensual", ver:2},
+  {id:"aguinaldo", name:"Apartado aguinaldo",    cat:"Aguinaldo (apartado)", amount:357.14, freq:"mensual", ver:2},
+  {id:"publicidad",name:"Publicidad ($400 diarios)",cat:"Publicidad",        amount:2800,   freq:"semanal", ver:3},
 ];
 // Versión de la lista de fijos: al subirla, se agregan los fijos nuevos por default una sola vez
-const FIXED_VER=2;
+const FIXED_VER=3;
 const ymd=d=>d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0");
 const weekStartOf=ds=>{const d=new Date(ds+"T12:00:00");const w=d.getDay();d.setDate(d.getDate()-(w===0?6:w-1));return ymd(d);};
 // Semanas de cobro de los fijos: bloques de 7 días a partir del arranque (1–7 oct, 8–14 oct…)
 const fixedWeekStart=ds=>{const d0=new Date(INICIO_OPERACION+"T12:00:00");const d=new Date(ds+"T12:00:00");const n=Math.floor(Math.round((d-d0)/86400000)/7);const st=new Date(d0);st.setDate(d0.getDate()+n*7);return ymd(st);};
 // Periodo actual de un gasto fijo: "2026-10" (mensual) o el día que empieza su semana de cobro (semanal)
-const fixedPeriod=(f,ds)=>f.freq==="semanal"?fixedWeekStart(ds):ds.slice(0,7);
+const fixedPeriod=(f,ds)=>f.freq==="diario"?ds:f.freq==="semanal"?fixedWeekStart(ds):ds.slice(0,7);
 const fixedPeriodLabel=(f,ds)=>{
+  if(f.freq==="diario")return new Date(ds+"T12:00:00").toLocaleDateString("es-MX",{weekday:"short",day:"numeric",month:"short"});
   if(f.freq==="semanal"){const a=new Date(fixedWeekStart(ds)+"T12:00:00");const b=new Date(a);b.setDate(a.getDate()+6);
     const o={day:"numeric",month:"short"};return "semana "+a.toLocaleDateString("es-MX",o)+" – "+b.toLocaleDateString("es-MX",o);}
   return new Date(ds.slice(0,7)+"-15T12:00:00").toLocaleDateString("es-MX",{month:"long",year:"numeric"});
 };
-const fixedMonthly=f=>f.freq==="semanal"?f.amount*52/12:f.amount;
+const fixedMonthly=f=>f.freq==="diario"?f.amount*365/12:f.freq==="semanal"?f.amount*52/12:f.amount;
+// Periodos sin pagar hasta la fecha ds. Diario: cada día desde el arranque que no se registró (máx. 62 días
+// hacia atrás), para registrar varios de un jalón. Semanal/mensual: solo el periodo actual.
+const fixedMissing=(f,expenses,ds)=>{
+  if(ds<INICIO_OPERACION)return[];
+  const paid=new Set(expenses.filter(e=>e.fixedId===f.id).map(e=>e.period));
+  if(f.freq!=="diario"){const p=fixedPeriod(f,ds);return paid.has(p)?[]:[p];}
+  const out=[];const d=new Date(ds+"T12:00:00");
+  for(let i=0;i<62;i++){const x=ymd(d);if(x<INICIO_OPERACION)break;if(!paid.has(x))out.push(x);d.setDate(d.getDate()-1);}
+  return out.reverse();
+};
 // Antes del arranque no hay nada pendiente: todos los fijos se cobran por primera vez el día de arranque
-const fixedPending=(fixed,expenses,ds)=>ds<INICIO_OPERACION?[]:(fixed||[]).filter(f=>!expenses.some(e=>e.fixedId===f.id&&e.period===fixedPeriod(f,ds)));
+const fixedPending=(fixed,expenses,ds)=>ds<INICIO_OPERACION?[]:(fixed||[]).filter(f=>fixedMissing(f,expenses,ds).length>0);
 
 // ── PALOMITAS ─────────────────────────────────────────────────────────────────
 const POP_SIZES=["s","m","l"];
@@ -1261,9 +1274,11 @@ function GastosFijos({fixed,setFixed,expenses,setExpenses,user}){
   const pend=fixedPending(fixed,expenses,hoy);
   const mensual=(fixed||[]).reduce((a,f)=>a+fixedMonthly(f),0);
   const pagar=f=>{
-    const per=fixedPeriod(f,hoy);
-    if(antes||expenses.some(e=>e.fixedId===f.id&&e.period===per))return;
-    setExpenses(prev=>[...prev,{id:uid(),date:hoyReal,cat:f.cat,amount:+f.amount,desc:f.name+" · "+fixedPeriodLabel(f,hoy),pagadoCon:payWith[f.id]||"Efectivo",deCaja:false,fixedId:f.id,period:per,by:user?.name||""}]);
+    const pers=antes?[]:fixedMissing(f,expenses,hoy);
+    if(!pers.length)return;
+    // Un gasto por cada periodo pendiente (los diarios llevan la fecha de su día)
+    setExpenses(prev=>[...prev,...pers.map(per=>({id:uid(),date:f.freq==="diario"?per:hoyReal,cat:f.cat,amount:+f.amount,
+      desc:f.name+" · "+fixedPeriodLabel(f,f.freq==="mensual"?per+"-01":per),pagadoCon:payWith[f.id]||"Efectivo",deCaja:false,fixedId:f.id,period:per,by:user?.name||""}))]);
   };
   const guardar=()=>{
     setFixed(rows.filter(r=>r.name.trim()&&+r.amount>0).map(r=>({...r,name:r.name.trim(),amount:+r.amount})));
@@ -1274,19 +1289,20 @@ function GastosFijos({fixed,setFixed,expenses,setExpenses,user}){
       <STitle right={!edit&&<OutBtn onClick={()=>{setRows((fixed||[]).map(f=>({...f,amount:String(f.amount)})));setEdit(true);}} style={{fontSize:11}}>⚙️ Editar</OutBtn>}>Gastos fijos</STitle>
       <div style={{display:"flex",gap:16,flexWrap:"wrap",marginBottom:12,fontSize:12,color:T.textSub}}>
         <span>Al mes: <strong style={{color:T.expense}}>{$m(mensual)}</strong></span>
-        <span>Por día: <strong style={{color:T.expense}}>{$m(mensual/30)}</strong></span>
+        <span>Por día: <strong style={{color:T.expense}}>{$m(mensual*12/365)}</strong></span>
       </div>
       <p style={{margin:"0 0 12px",fontSize:11,color:T.textMuted}}>Es lo mínimo de utilidad que necesitan sacar al día solo para cubrir los fijos.</p>
       {!edit?(
         <div style={{display:"flex",flexDirection:"column",gap:8}}>
           {(fixed||[]).map(f=>{
-            const paid=expenses.find(e=>e.fixedId===f.id&&e.period===fixedPeriod(f,hoy));
+            const miss=antes?[]:fixedMissing(f,expenses,hoy);
+            const paid=miss.length===0&&!antes?(expenses.find(e=>e.fixedId===f.id&&e.period===fixedPeriod(f,hoy))||{date:"—"}):null;
             return(
               <div key={f.id} style={{padding:"12px",borderRadius:10,border:`1px solid ${paid?"rgba(26,140,90,0.3)":"rgba(192,64,64,0.3)"}`,background:paid?"rgba(26,140,90,0.05)":"rgba(192,64,64,0.04)"}}>
                 <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:8}}>
                   <div>
                     <p style={{margin:0,fontSize:14,fontWeight:700,color:T.text}}>{f.name}</p>
-                    <p style={{margin:0,fontSize:11,color:T.textMuted}}>{$m(f.amount)} {f.freq==="semanal"?"por semana":"al mes"} · {fixedPeriodLabel(f,hoy)}</p>
+                    <p style={{margin:0,fontSize:11,color:T.textMuted}}>{$m(f.amount)} {f.freq==="diario"?"por día":f.freq==="semanal"?"por semana":"al mes"} · {fixedPeriodLabel(f,hoy)}</p>
                   </div>
                   {paid
                     ? <Chip label={"✓ Pagado "+paid.date.slice(5)} bg="rgba(26,140,90,0.12)" color={T.profit}/>
@@ -1299,7 +1315,7 @@ function GastosFijos({fixed,setFixed,expenses,setExpenses,user}){
                     <select value={payWith[f.id]||"Efectivo"} onChange={e=>setPayWith({...payWith,[f.id]:e.target.value})} style={{flex:1}}>
                       {CUENTAS.map(c=><option key={c} value={c}>{CUENTA_LABEL[c]}</option>)}
                     </select>
-                    <GoldBtn onClick={()=>pagar(f)} style={{minHeight:44}}>✓ Ya se pagó</GoldBtn>
+                    <GoldBtn onClick={()=>pagar(f)} style={{minHeight:44}}>{miss.length>1?"✓ Registrar "+miss.length+" días · "+$m(f.amount*miss.length):"✓ Ya se pagó"}</GoldBtn>
                   </div>
                 )}
               </div>
@@ -1312,7 +1328,7 @@ function GastosFijos({fixed,setFixed,expenses,setExpenses,user}){
             <div key={r.id} style={{padding:10,borderRadius:10,border:`0.5px solid ${T.border}`,marginBottom:8,display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(130px,1fr))",gap:8}}>
               <F label="Nombre"><input value={r.name} onChange={e=>{const a=[...rows];a[i]={...r,name:e.target.value};setRows(a);}}/></F>
               <F label="Monto ($)"><input type="number" min="0" value={r.amount} onChange={e=>{const a=[...rows];a[i]={...r,amount:e.target.value};setRows(a);}}/></F>
-              <F label="Cada cuándo"><select value={r.freq} onChange={e=>{const a=[...rows];a[i]={...r,freq:e.target.value};setRows(a);}}><option value="mensual">Cada mes</option><option value="semanal">Cada semana</option></select></F>
+              <F label="Cada cuándo"><select value={r.freq} onChange={e=>{const a=[...rows];a[i]={...r,freq:e.target.value};setRows(a);}}><option value="mensual">Cada mes</option><option value="semanal">Cada semana</option><option value="diario">Cada día</option></select></F>
               <F label="Categoría"><select value={r.cat} onChange={e=>{const a=[...rows];a[i]={...r,cat:e.target.value};setRows(a);}}>{EXP_CATS.map(c=><option key={c}>{c}</option>)}</select></F>
               <OutBtn onClick={()=>setRows(rows.filter((_,j)=>j!==i))} danger style={{alignSelf:"end",minHeight:44}}>Quitar</OutBtn>
             </div>
@@ -2662,7 +2678,8 @@ function Dashboard_App({user,onLogout}){
       const fxItems=Array.isArray(fx)?fx:(fx&&Array.isArray(fx.items)?fx.items:INIT_FIXED);
       const fxVer=Array.isArray(fx)?1:(fx&&fx.v)||1;
       setCierres(Array.isArray(ci)?ci:[]);
-      setFixed(fxVer>=FIXED_VER?fxItems:[...fxItems,...INIT_FIXED.filter(d=>!fxItems.some(x=>x.id===d.id))]);
+      // Solo se agregan los defaults que se crearon después de la versión guardada (si borraron uno viejo, no regresa)
+      setFixed(fxVer>=FIXED_VER?fxItems:[...fxItems,...INIT_FIXED.filter(d=>(d.ver||1)>fxVer&&!fxItems.some(x=>x.id===d.id))]);
       setReady(true);
     })();
   },[]);
