@@ -84,7 +84,7 @@ function LoginScreen({ onLogin }) {
 
 
 // ── STORAGE ──────────────────────────────────────────────────────────────────
-const SK = { p:"msp-p4",pk:"msp-pk4",c:"msp-c4",s:"msp-s4",e:"msp-e4",sm:"msp-sm4",ex:"msp-ex4",pop:"msp-pop4",fx:"msp-fx4",ci:"msp-ci4" };
+const SK = { p:"msp-p4",pk:"msp-pk4",c:"msp-c4",s:"msp-s4",e:"msp-e4",sm:"msp-sm4",ex:"msp-ex4",pop:"msp-pop4",fx:"msp-fx4",ci:"msp-ci4",mv:"msp-mv4" };
 const load = dbLoad;
 const save = dbSave;
 
@@ -151,42 +151,78 @@ const EXP_CATS=["Renta local","Sueldos","Aguinaldo (apartado)","Plan celular","R
 // Gastos fijos: solo los socios los ven y registran
 const FIXED_CATS=["Renta local","Sueldos","Aguinaldo (apartado)","Plan celular","Repartidor fijo","Publicidad"];
 // Aguinaldo: ley = mínimo 15 días de sueldo. $2,000/7 días × 15 = $4,285.71 al año → se aparta cada mes
-// ver = versión de la lista en que se agregó ese default (para agregarlo una sola vez a lo ya guardado)
+// Cuándo se paga cada fijo:
+//   mensual: una vez al mes; dia = desde qué día se puede pagar, limite = día que vence (sin limite = fin de mes)
+//   semanal: diaSemana (0 domingo … 3 miércoles … 6 sábado)
+//   variable: sin fecha ni monto fijo (publicidad); amount = estimado al mes para el punto de equilibrio
 const INIT_FIXED=[
-  {id:"renta",     name:"Renta del local",       cat:"Renta local",          amount:7859,   freq:"mensual", ver:1},
-  {id:"sueldo",    name:"Sueldo empleado",       cat:"Sueldos",              amount:2000,   freq:"semanal", ver:1},
-  {id:"repartidor",name:"Repartidor fijo",       cat:"Repartidor fijo",      amount:1000,   freq:"semanal", ver:2},
-  {id:"celular",   name:"Plan celular",          cat:"Plan celular",         amount:150,    freq:"mensual", ver:2},
-  {id:"aguinaldo", name:"Apartado aguinaldo",    cat:"Aguinaldo (apartado)", amount:357.14, freq:"mensual", ver:2},
-  {id:"publicidad",name:"Publicidad ($400 diarios)",cat:"Publicidad",        amount:2800,   freq:"semanal", ver:3},
+  {id:"renta",     name:"Renta del local",       cat:"Renta local",          amount:7859,   freq:"mensual", dia:8, limite:10, ver:1},
+  {id:"sueldo",    name:"Sueldo empleado",       cat:"Sueldos",              amount:2000,   freq:"semanal", diaSemana:3,      ver:1},
+  {id:"repartidor",name:"Repartidor fijo",       cat:"Repartidor fijo",      amount:1000,   freq:"semanal", diaSemana:3,      ver:2},
+  {id:"celular",   name:"Plan celular",          cat:"Plan celular",         amount:150,    freq:"mensual",                   ver:2},
+  {id:"aguinaldo", name:"Apartado aguinaldo",    cat:"Aguinaldo (apartado)", amount:357.14, freq:"mensual",                   ver:2},
+  {id:"publicidad",name:"Publicidad",            cat:"Publicidad",           amount:4000,   freq:"variable",                  ver:3},
 ];
-// Versión de la lista de fijos: al subirla, se agregan los fijos nuevos por default una sola vez
-const FIXED_VER=3;
+// Versión de la lista de fijos: al subirla, se agregan los fijos nuevos por default una sola vez.
+// v4: cada fijo trae su día de pago y la publicidad pasa a variable.
+const FIXED_VER=4;
 const ymd=d=>d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0");
 const weekStartOf=ds=>{const d=new Date(ds+"T12:00:00");const w=d.getDay();d.setDate(d.getDate()-(w===0?6:w-1));return ymd(d);};
-// Semanas de cobro de los fijos: bloques de 7 días a partir del arranque (1–7 oct, 8–14 oct…)
-const fixedWeekStart=ds=>{const d0=new Date(INICIO_OPERACION+"T12:00:00");const d=new Date(ds+"T12:00:00");const n=Math.floor(Math.round((d-d0)/86400000)/7);const st=new Date(d0);st.setDate(d0.getDate()+n*7);return ymd(st);};
-// Periodo actual de un gasto fijo: "2026-10" (mensual) o el día que empieza su semana de cobro (semanal)
-const fixedPeriod=(f,ds)=>f.freq==="diario"?ds:f.freq==="semanal"?fixedWeekStart(ds):ds.slice(0,7);
-const fixedPeriodLabel=(f,ds)=>{
-  if(f.freq==="diario")return new Date(ds+"T12:00:00").toLocaleDateString("es-MX",{weekday:"short",day:"numeric",month:"short"});
-  if(f.freq==="semanal"){const a=new Date(fixedWeekStart(ds)+"T12:00:00");const b=new Date(a);b.setDate(a.getDate()+6);
-    const o={day:"numeric",month:"short"};return "semana "+a.toLocaleDateString("es-MX",o)+" – "+b.toLocaleDateString("es-MX",o);}
-  return new Date(ds.slice(0,7)+"-15T12:00:00").toLocaleDateString("es-MX",{month:"long",year:"numeric"});
+const addDays=(ds,n)=>{const d=new Date(ds+"T12:00:00");d.setDate(d.getDate()+n);return ymd(d);};
+const DIAS=["domingo","lunes","martes","miércoles","jueves","viernes","sábado"];
+const fechaCorta=ds=>new Date(ds+"T12:00:00").toLocaleDateString("es-MX",{day:"numeric",month:"short"});
+// Fechas de vencimiento de un fijo desde el arranque hasta `hasta`, más la siguiente
+function fixedDues(f,hasta){
+  const out=[];
+  if(f.freq==="semanal"){
+    const d=new Date(INICIO_OPERACION+"T12:00:00");const dw=f.diaSemana??d.getDay();
+    while(d.getDay()!==dw)d.setDate(d.getDate()+1);
+    let x=ymd(d);
+    while(x<=hasta){out.push(x);x=addDays(x,7);}
+    out.push(x);
+  }else if(f.freq==="mensual"){
+    let y=+INICIO_OPERACION.slice(0,4),m=+INICIO_OPERACION.slice(5,7);
+    const due=()=>{const ld=new Date(y,m,0).getDate();return y+"-"+String(m).padStart(2,"0")+"-"+String(Math.min(f.limite||ld,ld)).padStart(2,"0");};
+    let x=due();
+    while(x<=hasta){out.push(x);m++;if(m>12){m=1;y++;}x=due();}
+    out.push(x);
+  }
+  return out;
+}
+// Cómo va un fijo hoy. Los pagos se acomodan en orden a los vencimientos (si se paga antes, cubre el siguiente).
+// estado: vencido (ya pasó) · urgente (vence hoy) · toca (ya se puede/debe pagar) · proximo (todavía no)
+function fixedStatus(f,expenses,hoy){
+  const pagos=expenses.filter(e=>e.fixedId===f.id&&e.date>=INICIO_OPERACION).sort((a,b)=>a.date.localeCompare(b.date));
+  if(f.freq==="variable"){
+    const mes=hoy.slice(0,7);
+    return{variable:true,mes:pagos.filter(e=>e.date.slice(0,7)===mes).reduce((a,e)=>a+e.amount,0),ult:pagos[pagos.length-1]};
+  }
+  const dues=fixedDues(f,hoy);
+  const pend=dues.slice(pagos.length);
+  const ult=pagos[pagos.length-1];
+  if(pend.length===0)return{estado:"adelantado",ult,due:null};
+  const due=pend[0];
+  let estado;
+  if(due<hoy)estado="vencido";
+  else if(due===hoy)estado="urgente";
+  else{
+    const desde=f.freq==="mensual"&&f.dia?due.slice(0,8)+String(f.dia).padStart(2,"0"):addDays(due,f.freq==="semanal"?-1:-3);
+    estado=hoy>=desde?"toca":"proximo";
+  }
+  return{estado,due,ult,atrasados:pend.filter(d=>d<hoy).length};
+}
+// Cuándo toca, en palabras
+const fixedCuando=(f,due)=>{
+  if(!due)return"";
+  if(f.freq==="semanal")return DIAS[new Date(due+"T12:00:00").getDay()]+" "+fechaCorta(due);
+  const mes=new Date(due+"T12:00:00").toLocaleDateString("es-MX",{month:"short"});
+  if(f.dia&&f.limite)return"del "+f.dia+" al "+f.limite+" "+mes;
+  if(f.limite)return"a más tardar el "+f.limite+" "+mes;
+  return"en "+new Date(due+"T12:00:00").toLocaleDateString("es-MX",{month:"long"});
 };
-const fixedMonthly=f=>f.freq==="diario"?f.amount*365/12:f.freq==="semanal"?f.amount*52/12:f.amount;
-// Periodos sin pagar hasta la fecha ds. Diario: cada día desde el arranque que no se registró (máx. 62 días
-// hacia atrás), para registrar varios de un jalón. Semanal/mensual: solo el periodo actual.
-const fixedMissing=(f,expenses,ds)=>{
-  if(ds<INICIO_OPERACION)return[];
-  const paid=new Set(expenses.filter(e=>e.fixedId===f.id).map(e=>e.period));
-  if(f.freq!=="diario"){const p=fixedPeriod(f,ds);return paid.has(p)?[]:[p];}
-  const out=[];const d=new Date(ds+"T12:00:00");
-  for(let i=0;i<62;i++){const x=ymd(d);if(x<INICIO_OPERACION)break;if(!paid.has(x))out.push(x);d.setDate(d.getDate()-1);}
-  return out.reverse();
-};
-// Antes del arranque no hay nada pendiente: todos los fijos se cobran por primera vez el día de arranque
-const fixedPending=(fixed,expenses,ds)=>ds<INICIO_OPERACION?[]:(fixed||[]).filter(f=>fixedMissing(f,expenses,ds).length>0);
+const fixedMonthly=f=>f.freq==="semanal"?f.amount*52/12:f.amount;
+// Los que hay que atender ya (para el aviso de Inicio)
+const fixedPending=(fixed,expenses,ds)=>(fixed||[]).map(f=>({f,st:fixedStatus(f,expenses,ds)})).filter(x=>["vencido","urgente","toca"].includes(x.st.estado));
 
 // ── PALOMITAS ─────────────────────────────────────────────────────────────────
 const POP_SIZES=["s","m","l"];
@@ -303,8 +339,8 @@ function Dashboard({sales,expenses,extras=[],fixed,goTab,cierres=[]}){
         <button onClick={()=>goTab&&goTab("gasto")} style={{textAlign:"left",background:"rgba(192,64,64,0.07)",border:"1px solid rgba(192,64,64,0.3)",borderRadius:12,padding:"12px 14px",display:"flex",alignItems:"center",gap:10}}>
           <i className="ti ti-bell-ringing" style={{fontSize:22,color:T.expense}}/>
           <div style={{flex:1}}>
-            <p style={{margin:0,fontSize:13,fontWeight:700,color:T.expense}}>Gastos fijos pendientes</p>
-            <p style={{margin:0,fontSize:12,color:T.textSub}}>{pendFijos.map(f=>f.name+" "+$m(f.amount)).join(" · ")}</p>
+            <p style={{margin:0,fontSize:13,fontWeight:700,color:T.expense}}>{pendFijos.some(x=>x.st.estado!=="toca")?"Pagos urgentes":"Pagos por hacer"}</p>
+            {pendFijos.map(({f,st})=><p key={f.id} style={{margin:0,fontSize:12,color:st.estado==="toca"?"#B86010":T.expense}}>{st.estado==="toca"?"🟡":"🔴"} {f.name} {$m(f.amount)} · {st.estado==="vencido"?"vencido":st.estado==="urgente"?"vence hoy":fixedCuando(f,st.due)}</p>)}
           </div>
           <i className="ti ti-chevron-right" style={{fontSize:18,color:T.textMuted}}/>
         </button>
@@ -1197,58 +1233,87 @@ function NuevaVenta({prods,setProds,pkgs,clients,setClients,sales,setSales,user,
 }
 
 // ── GASTOS FIJOS (solo socios) ────────────────────────────────────────────────
+const FIJO_EST={
+  vencido:{l:"🔴 Vencido",bg:"rgba(192,64,64,0.12)",c:T.expense,bd:"rgba(192,64,64,0.45)",card:"rgba(192,64,64,0.06)"},
+  urgente:{l:"🔴 Urgente · vence hoy",bg:"rgba(192,64,64,0.12)",c:T.expense,bd:"rgba(192,64,64,0.45)",card:"rgba(192,64,64,0.06)"},
+  toca:{l:"🟡 Toca pagar",bg:"rgba(232,128,32,0.14)",c:"#B86010",bd:"rgba(232,128,32,0.4)",card:"rgba(232,128,32,0.05)"},
+  proximo:{l:"Próximo",bg:T.goldBg,c:T.goldText,bd:T.goldBorder,card:T.bg},
+  adelantado:{l:"✓ Al corriente",bg:"rgba(26,140,90,0.12)",c:T.profit,bd:"rgba(26,140,90,0.3)",card:"rgba(26,140,90,0.04)"},
+};
+const FIJO_ORDEN={vencido:0,urgente:1,toca:2,proximo:3,adelantado:4};
+const CUENTAS_PAGO=["SPIN Marcel","SPIN Gustavo","Transferencia MP","Efectivo"];
+
 function GastosFijos({fixed,setFixed,expenses,setExpenses,user}){
-  const hoyReal=today();
-  // Antes del arranque se muestra el primer periodo (el que se cobra el día de arranque) sin dejar pagarlo
-  const antes=hoyReal<INICIO_OPERACION;
-  const hoy=antes?INICIO_OPERACION:hoyReal;
-  const[payWith,setPayWith]=useState({});
+  const hoy=today();
+  const[form,setForm]=useState({});
   const[edit,setEdit]=useState(false);
   const[rows,setRows]=useState([]);
-  const pend=fixedPending(fixed,expenses,hoy);
+  const[err,setErr]=useState({});
+  const lista=(fixed||[]).map(f=>({f,st:fixedStatus(f,expenses,hoy)}))
+    .sort((a,b)=>(a.st.variable?9:FIJO_ORDEN[a.st.estado])-(b.st.variable?9:FIJO_ORDEN[b.st.estado])||(a.st.due||"").localeCompare(b.st.due||""));
   const mensual=(fixed||[]).reduce((a,f)=>a+fixedMonthly(f),0);
-  const pagar=f=>{
-    const pers=antes?[]:fixedMissing(f,expenses,hoy);
-    if(!pers.length)return;
-    // Un gasto por cada periodo pendiente (los diarios llevan la fecha de su día)
-    setExpenses(prev=>[...prev,...pers.map(per=>({id:uid(),date:f.freq==="diario"?per:hoyReal,cat:f.cat,amount:+f.amount,
-      desc:f.name+" · "+fixedPeriodLabel(f,f.freq==="mensual"?per+"-01":per),pagadoCon:payWith[f.id]||"Efectivo",deCaja:false,fixedId:f.id,period:per,by:user?.name||""}))]);
+  const urg=lista.some(x=>["vencido","urgente"].includes(x.st.estado));
+  // Cuenta sugerida: la del último pago de ese fijo
+  const fv=(f,st)=>({fecha:hoy,cuenta:st.ult?.pagadoCon||"SPIN Marcel",monto:f.freq==="variable"?"":String(f.amount),...(form[f.id]||{})});
+  const setF=(id,k,v)=>setForm(p=>({...p,[id]:{...(p[id]||{}),[k]:v}}));
+  const pagar=(f,st)=>{
+    const v=fv(f,st);
+    if(!(+v.monto>0)){setErr({...err,[f.id]:"Escribe el monto"});return;}
+    if(!v.fecha||v.fecha<INICIO_OPERACION){setErr({...err,[f.id]:"Elige la fecha en que se pagó"});return;}
+    setExpenses(prev=>[...prev,{id:uid(),date:v.fecha,cat:f.cat,amount:+v.monto,
+      desc:f.name+(st.due?" · "+fixedCuando(f,st.due):""),pagadoCon:v.cuenta,deCaja:false,
+      fixedId:f.id,period:st.due||v.fecha,by:user?.name||""}]);
+    setForm(p=>{const x={...p};delete x[f.id];return x;});setErr({...err,[f.id]:""});
   };
   const guardar=()=>{
-    setFixed(rows.filter(r=>r.name.trim()&&+r.amount>0).map(r=>({...r,name:r.name.trim(),amount:+r.amount})));
+    setFixed(rows.filter(r=>r.name.trim()&&+r.amount>0).map(r=>({...r,name:r.name.trim(),amount:+r.amount,
+      dia:r.freq==="mensual"&&+r.dia?+r.dia:undefined,limite:r.freq==="mensual"&&+r.limite?+r.limite:undefined,
+      diaSemana:r.freq==="semanal"?+(r.diaSemana??3):undefined})));
     setEdit(false);
   };
+  const setRow=(i,k,v)=>{const a=[...rows];a[i]={...a[i],[k]:v};setRows(a);};
   return(
-    <Card style={{borderColor:pend.length>0?T.expense:T.goldBorder,borderWidth:pend.length>0?1:0.5}}>
+    <Card style={{borderColor:urg?T.expense:T.goldBorder,borderWidth:urg?1:0.5}}>
       <STitle right={!edit&&<OutBtn onClick={()=>{setRows((fixed||[]).map(f=>({...f,amount:String(f.amount)})));setEdit(true);}} style={{fontSize:11}}>⚙️ Editar</OutBtn>}>Gastos fijos</STitle>
-      <div style={{display:"flex",gap:16,flexWrap:"wrap",marginBottom:12,fontSize:12,color:T.textSub}}>
-        <span>Al mes: <strong style={{color:T.expense}}>{$m(mensual)}</strong></span>
-        <span>Por día: <strong style={{color:T.expense}}>{$m(mensual*12/365)}</strong></span>
-      </div>
+      <p style={{margin:"0 0 12px",fontSize:12,color:T.textSub}}>Al mes aprox: <strong style={{color:T.expense}}>{$m(mensual)}</strong> · por día <strong style={{color:T.expense}}>{$m(mensual*12/365)}</strong></p>
       {!edit?(
         <div style={{display:"flex",flexDirection:"column",gap:8}}>
-          {(fixed||[]).map(f=>{
-            const miss=antes?[]:fixedMissing(f,expenses,hoy);
-            const paid=miss.length===0&&!antes?(expenses.find(e=>e.fixedId===f.id&&e.period===fixedPeriod(f,hoy))||{date:"—"}):null;
+          {lista.map(({f,st})=>{
+            const E=st.variable?FIJO_EST.proximo:FIJO_EST[st.estado];
+            const v=fv(f,st);
+            const mostrarPago=st.variable||["vencido","urgente","toca"].includes(st.estado);
             return(
-              <div key={f.id} style={{padding:"12px",borderRadius:10,border:`1px solid ${paid?"rgba(26,140,90,0.3)":"rgba(192,64,64,0.3)"}`,background:paid?"rgba(26,140,90,0.05)":"rgba(192,64,64,0.04)"}}>
-                <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:8}}>
-                  <div>
+              <div key={f.id} style={{padding:12,borderRadius:12,border:`1px solid ${E.bd}`,background:E.card}}>
+                <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:8}}>
+                  <div style={{minWidth:0}}>
                     <p style={{margin:0,fontSize:14,fontWeight:700,color:T.text}}>{f.name}</p>
-                    <p style={{margin:0,fontSize:11,color:T.textMuted}}>{$m(f.amount)} {f.freq==="diario"?"por día":f.freq==="semanal"?"por semana":"al mes"} · {fixedPeriodLabel(f,hoy)}</p>
+                    <p style={{margin:"1px 0 0",fontSize:12,color:T.textSub}}>
+                      {st.variable?<>Este mes: <strong style={{color:T.expense}}>{$m(st.mes)}</strong> · estimado {$m(f.amount)}</>
+                        :<>{$m(f.amount)} · {st.due?fixedCuando(f,st.due):"al corriente"}{st.atrasados>1?" · "+st.atrasados+" atrasados":""}</>}
+                    </p>
+                    {st.ult&&<p style={{margin:"1px 0 0",fontSize:11,color:T.textMuted}}>Último: {fechaCorta(st.ult.date)} · {$m(st.ult.amount)} · {st.ult.pagadoCon}</p>}
                   </div>
-                  {paid
-                    ? <Chip label={"✓ Pagado "+paid.date.slice(5)} bg="rgba(26,140,90,0.12)" color={T.profit}/>
-                    : antes
-                      ? <Chip label={"Se cobra el "+new Date(INICIO_OPERACION+"T12:00:00").toLocaleDateString("es-MX",{day:"numeric",month:"short"})} bg={T.goldBg} color={T.goldText}/>
-                      : <Chip label="Pendiente" bg="rgba(192,64,64,0.12)" color={T.expense}/>}
+                  {!st.variable&&<Chip label={E.l} bg={E.bg} color={E.c}/>}
                 </div>
-                {!paid&&!antes&&(
-                  <div style={{display:"flex",gap:8,marginTop:10}}>
-                    <select value={payWith[f.id]||"Efectivo"} onChange={e=>setPayWith({...payWith,[f.id]:e.target.value})} style={{flex:1}}>
-                      {CUENTAS.map(c=><option key={c} value={c}>{CUENTA_LABEL[c]}</option>)}
+                {mostrarPago?(
+                  <div style={{marginTop:10,display:"grid",gridTemplateColumns:"1fr 1fr",gap:6}}>
+                    <input type="date" value={v.fecha} min={INICIO_OPERACION} onChange={e=>setF(f.id,"fecha",e.target.value)} aria-label="Fecha de pago"/>
+                    <input type="number" min="0" value={v.monto} onChange={e=>setF(f.id,"monto",e.target.value)} placeholder="Monto" aria-label="Monto"/>
+                    <select value={v.cuenta} onChange={e=>setF(f.id,"cuenta",e.target.value)} style={{gridColumn:"1/-1"}}>
+                      {CUENTAS_PAGO.map(c=><option key={c} value={c}>Salió de: {CUENTA_LABEL[c]}</option>)}
                     </select>
-                    <GoldBtn onClick={()=>pagar(f)} style={{minHeight:44}}>{miss.length>1?"✓ Registrar "+miss.length+" días · "+$m(f.amount*miss.length):"✓ Ya se pagó"}</GoldBtn>
+                    <GoldBtn onClick={()=>pagar(f,st)} style={{gridColumn:"1/-1",minHeight:44,background:["vencido","urgente"].includes(st.estado)?T.expense:T.gold}}>{st.variable?"+ Registrar pago":"✓ Ya se pagó"}</GoldBtn>
+                    {err[f.id]&&<p style={{gridColumn:"1/-1",margin:0,fontSize:12,color:T.expense}}>{err[f.id]}</p>}
+                  </div>
+                ):(st.estado==="proximo"&&<button onClick={()=>setF(f.id,"abrir",!v.abrir)} style={{marginTop:8,border:"none",padding:0,minHeight:0,fontSize:12,color:T.client}}>{v.abrir?"Cerrar":"Pagar antes"}</button>)}
+                {!mostrarPago&&v.abrir&&(
+                  <div style={{marginTop:8,display:"grid",gridTemplateColumns:"1fr 1fr",gap:6}}>
+                    <input type="date" value={v.fecha} min={INICIO_OPERACION} onChange={e=>setF(f.id,"fecha",e.target.value)} aria-label="Fecha de pago"/>
+                    <input type="number" min="0" value={v.monto} onChange={e=>setF(f.id,"monto",e.target.value)} aria-label="Monto"/>
+                    <select value={v.cuenta} onChange={e=>setF(f.id,"cuenta",e.target.value)} style={{gridColumn:"1/-1"}}>
+                      {CUENTAS_PAGO.map(c=><option key={c} value={c}>Salió de: {CUENTA_LABEL[c]}</option>)}
+                    </select>
+                    <GoldBtn onClick={()=>pagar(f,st)} style={{gridColumn:"1/-1",minHeight:44}}>✓ Ya se pagó</GoldBtn>
                   </div>
                 )}
               </div>
@@ -1258,15 +1323,18 @@ function GastosFijos({fixed,setFixed,expenses,setExpenses,user}){
       ):(
         <>
           {rows.map((r,i)=>(
-            <div key={r.id} style={{padding:10,borderRadius:10,border:`0.5px solid ${T.border}`,marginBottom:8,display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(130px,1fr))",gap:8}}>
-              <F label="Nombre"><input value={r.name} onChange={e=>{const a=[...rows];a[i]={...r,name:e.target.value};setRows(a);}}/></F>
-              <F label="Monto ($)"><input type="number" min="0" value={r.amount} onChange={e=>{const a=[...rows];a[i]={...r,amount:e.target.value};setRows(a);}}/></F>
-              <F label="Cada cuándo"><select value={r.freq} onChange={e=>{const a=[...rows];a[i]={...r,freq:e.target.value};setRows(a);}}><option value="mensual">Cada mes</option><option value="semanal">Cada semana</option><option value="diario">Cada día</option></select></F>
-              <F label="Categoría"><select value={r.cat} onChange={e=>{const a=[...rows];a[i]={...r,cat:e.target.value};setRows(a);}}>{EXP_CATS.map(c=><option key={c}>{c}</option>)}</select></F>
+            <div key={r.id} style={{padding:10,borderRadius:10,border:`0.5px solid ${T.border}`,marginBottom:8,display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
+              <F label="Nombre" style={{gridColumn:"1/-1"}}><input value={r.name} onChange={e=>setRow(i,"name",e.target.value)}/></F>
+              <F label={r.freq==="variable"?"Estimado al mes ($)":"Monto ($)"}><input type="number" min="0" value={r.amount} onChange={e=>setRow(i,"amount",e.target.value)}/></F>
+              <F label="Cada cuándo"><select value={r.freq} onChange={e=>setRow(i,"freq",e.target.value)}><option value="mensual">Cada mes</option><option value="semanal">Cada semana</option><option value="variable">Variable</option></select></F>
+              {r.freq==="mensual"&&<F label="Se paga desde el día"><input type="number" min="1" max="31" value={r.dia||""} onChange={e=>setRow(i,"dia",e.target.value)} placeholder="cualquiera"/></F>}
+              {r.freq==="mensual"&&<F label="Vence el día"><input type="number" min="1" max="31" value={r.limite||""} onChange={e=>setRow(i,"limite",e.target.value)} placeholder="fin de mes"/></F>}
+              {r.freq==="semanal"&&<F label="Día de pago" style={{gridColumn:"1/-1"}}><select value={r.diaSemana??3} onChange={e=>setRow(i,"diaSemana",+e.target.value)}>{DIAS.map((d,k)=><option key={k} value={k}>{d}</option>)}</select></F>}
+              <F label="Categoría"><select value={r.cat} onChange={e=>setRow(i,"cat",e.target.value)}>{EXP_CATS.map(c=><option key={c}>{c}</option>)}</select></F>
               <OutBtn onClick={()=>setRows(rows.filter((_,j)=>j!==i))} danger style={{alignSelf:"end",minHeight:44}}>Quitar</OutBtn>
             </div>
           ))}
-          <OutBtn onClick={()=>setRows([...rows,{id:uid(),name:"",cat:"Plan celular",amount:"",freq:"mensual"}])} style={{fontSize:12,marginBottom:12}}>+ Agregar gasto fijo</OutBtn>
+          <OutBtn onClick={()=>setRows([...rows,{id:uid(),name:"",cat:"Otro",amount:"",freq:"mensual"}])} style={{fontSize:12,marginBottom:12}}>+ Agregar gasto fijo</OutBtn>
           <div style={{display:"flex",gap:8}}>
             <GoldBtn onClick={guardar}>Guardar</GoldBtn>
             <OutBtn onClick={()=>setEdit(false)}>Cancelar</OutBtn>
@@ -1855,51 +1923,171 @@ function OtrosTable({prods,sales}){
   );
 }
 
-// ── CAJA: dinero por cuenta (solo socios; va debajo del Cierre en la pestaña Caja) ──
-function CorteCaja({sales,expenses,extras=[]}){
-  const[period,setPeriod]=useState("dia");
-  const[refDate,setRefDate]=useState(today());
-  const getRange=()=>{
-    if(period==="dia")return{start:refDate,end:refDate,label:fechaLarga(refDate)};
-    if(period==="semana"){const st=weekStartOf(refDate);const e=new Date(st+"T12:00:00");e.setDate(e.getDate()+6);const o={day:"numeric",month:"short"};
-      return{start:st,end:ymd(e),label:new Date(st+"T12:00:00").toLocaleDateString("es-MX",o)+" – "+e.toLocaleDateString("es-MX",o)};}
-    const m=refDate.slice(0,7);return{start:m+"-01",end:m+"-31",label:new Date(refDate+"T12:00:00").toLocaleDateString("es-MX",{month:"long",year:"numeric"})};
+// ── CUENTAS: cuánto hay en cada cuenta y todo lo que entra y sale (solo socios) ──
+// Las ventas, gastos, fijos, repartidores, comisiones, ingresos extra y cierres se anotan solos.
+// A mano (key msp-mv4): traspasos entre cuentas, retiros y aportaciones de socios, saldo inicial y cuadres.
+const ACCS=["Caja","Efectivo socios","SPIN Marcel","SPIN Gustavo","Mercado Pago"];
+const ACC_INFO={"Caja":{i:"🏪",d:"efectivo del local"},"Efectivo socios":{i:"🧑",d:"lo que se llevan del cierre"},"SPIN Marcel":{i:"📱",d:"SPIN by OXXO"},"SPIN Gustavo":{i:"📱",d:"SPIN by OXXO"},"Mercado Pago":{i:"🏦",d:"transferencias + terminal"}};
+const SOCIOS=["Marcel","Gustavo"];
+// A qué cuenta va cada forma de pago
+const accDe=m=>m==="Efectivo"?"Caja":(m==="Transferencia MP"||m==="Terminal MP")?"Mercado Pago":(m==="SPIN Marcel"||m==="SPIN Gustavo")?m:null;
+const accGasto=e=>(e.pagadoCon||"Efectivo")==="Efectivo"?(e.deCaja?"Caja":"Efectivo socios"):accDe(e.pagadoCon);
+
+// Lista de todos los movimientos con el saldo de cada cuenta después de cada uno
+function libroCuentas({sales,expenses,extras,cierres,movs,clients}){
+  const L=[];const add=(date,acc,monto,desc,tipo,extra)=>{if(acc&&monto)L.push({date,acc,monto:+(+monto).toFixed(2),desc,tipo,ord:tipo==="inicial"?0:tipo==="cierre"?9:1,...extra});};
+  const nom=s=>(clients||[]).find(c=>c.id===s.clientId)?.name||(s.tipo==="palomitas"?"Palomitas":"Venta");
+  sales.filter(s=>s.date>=INICIO_OPERACION).forEach(s=>{
+    if(s.payMethod==="Mixto"){add(s.date,"Caja",s.mixEfectivo||0,"Venta · "+nom(s),"venta");add(s.date,accDe(s.mixCuenta),s.mixTransferencia||0,"Venta · "+nom(s),"venta");}
+    else add(s.date,accDe(s.payMethod),s.total+(s.envio||0),"Venta · "+nom(s),"venta");
+    if(s.comision>0)add(s.date,"Mercado Pago",-s.comision,"Comisión terminal · "+nom(s),"comision");
+    if(s.envioPagado&&s.costoEnvio>0&&(s.envioPagadoFecha||s.date)>=INICIO_OPERACION)add(s.envioPagadoFecha||s.date,accDe(s.envioPagadoCon),-s.costoEnvio,"Repartidor · "+(s.repartidor||nom(s)),"repartidor");
+  });
+  expenses.filter(e=>e.date>=INICIO_OPERACION).forEach(e=>add(e.date,accGasto(e),-e.amount,(e.fixedId?"Fijo · ":"Gasto · ")+(e.desc||e.cat),"gasto"));
+  (extras||[]).filter(x=>x.date>=INICIO_OPERACION).forEach(x=>add(x.date,(x.via||"Efectivo")==="Efectivo"?"Efectivo socios":accDe(x.via),x.amount,"Ingreso extra · "+(x.desc||""),"extra"));
+  (movs||[]).forEach(m=>{
+    if(m.tipo==="inicial")L.push({date:m.date,acc:m.a,monto:+m.monto,desc:"Saldo inicial",tipo:"inicial",ord:0,id:m.id});
+    else if(m.tipo==="traspaso"){add(m.date,m.de,-m.monto,"Traspaso a "+m.a+(m.nota?" · "+m.nota:""),"traspaso",{id:m.id});add(m.date,m.a,m.monto,"Traspaso de "+m.de+(m.nota?" · "+m.nota:""),"traspaso",{id:m.id});}
+    else if(m.tipo==="retiro")add(m.date,m.de,-m.monto,"Retiro de "+m.socio+(m.nota?" · "+m.nota:""),"retiro",{id:m.id});
+    else if(m.tipo==="aportacion")add(m.date,m.a,m.monto,"Aportación de "+m.socio+(m.nota?" · "+m.nota:""),"aportacion",{id:m.id});
+    else if(m.tipo==="ajuste")add(m.date,m.a,m.monto,"Ajuste por cuadre"+(m.nota?" · "+m.nota:""),"ajuste",{id:m.id});
+  });
+  (cierres||[]).filter(c=>c.date>=INICIO_OPERACION).forEach(c=>L.push({date:c.date,acc:"Caja",tipo:"cierre",ord:9,cierre:c,monto:0,desc:""}));
+  L.sort((a,b)=>a.date.localeCompare(b.date)||a.ord-b.ord);
+  // Saldos: cada cuenta arranca en su último "saldo inicial" (la Caja, si no tiene, con el fondo de $500)
+  const bal={};ACCS.forEach(a=>bal[a]=a==="Caja"?FONDO_CAJA:0);
+  const tieneInicial={};
+  const out=[];
+  L.forEach(x=>{
+    if(x.tipo==="inicial"){bal[x.acc]=x.monto;tieneInicial[x.acc]=true;out.push({...x,saldo:bal[x.acc]});return;}
+    if(x.tipo==="cierre"){
+      // En el cierre la caja queda igual a lo que se contó, y lo que pasa del fondo se lo lleva un socio
+      const c=x.cierre;const dif=+(c.efectivoContado-bal.Caja).toFixed(2);
+      if(Math.abs(dif)>=0.01){bal.Caja+=dif;out.push({date:c.date,acc:"Caja",monto:dif,desc:dif<0?"Faltante en el cierre":"Sobrante en el cierre",tipo:"cierre",saldo:bal.Caja});}
+      const ent=Math.max(0,+(c.efectivoContado-(c.fondo||FONDO_CAJA)).toFixed(2));
+      if(ent>0){bal.Caja-=ent;out.push({date:c.date,acc:"Caja",monto:-ent,desc:"Entregado al socio en el cierre",tipo:"cierre",saldo:bal.Caja});
+        bal["Efectivo socios"]+=ent;out.push({date:c.date,acc:"Efectivo socios",monto:ent,desc:"Del cierre del día ("+(c.by||"")+")",tipo:"cierre",saldo:bal["Efectivo socios"]});}
+      return;
+    }
+    if(!(x.acc in bal))return;
+    bal[x.acc]=+(bal[x.acc]+x.monto).toFixed(2);out.push({...x,saldo:bal[x.acc]});
+  });
+  return{movs:out,bal,tieneInicial};
+}
+
+function Cuentas({sales,expenses,extras,cierres,movs,setMovs,clients,user}){
+  const hoy=today();
+  const{movs:lib,bal,tieneInicial}=libroCuentas({sales,expenses,extras,cierres,movs,clients});
+  const[open,setOpen]=useState(null);
+  const[accion,setAccion]=useState(null);
+  const[f,setF]=useState({});
+  const[err,setErr]=useState("");
+  const[per,setPer]=useState("mes");
+  const[real,setReal]=useState("");
+  const[ini,setIni]=useState({monto:"",date:hoy});
+  const[confirmDel,setConfirmDel]=useState(null);
+  const total=ACCS.reduce((a,k)=>a+bal[k],0);
+  const traen=sales.filter(s=>s.date>=INICIO_OPERACION&&s.envioContra&&!s.envioDineroRecibido).reduce((a,s)=>a+(s.envioDebe||0),0);
+  const nuevo=t=>{setAccion(accion===t?null:t);setErr("");setF({date:hoy,monto:"",nota:"",de:"SPIN Marcel",a:"Mercado Pago",socio:"Marcel"});};
+  const guardar=()=>{
+    if(!(+f.monto>0)){setErr("Escribe el monto");return;}
+    if(accion==="traspaso"&&f.de===f.a){setErr("Elige dos cuentas distintas");return;}
+    const m={id:uid(),tipo:accion,date:f.date||hoy,monto:+f.monto,nota:(f.nota||"").trim(),by:user?.name||""};
+    if(accion==="traspaso")Object.assign(m,{de:f.de,a:f.a});
+    if(accion==="retiro")Object.assign(m,{de:f.de,socio:f.socio});
+    if(accion==="aportacion")Object.assign(m,{a:f.a,socio:f.socio});
+    setMovs(prev=>[...(prev||[]),m]);setAccion(null);setErr("");
   };
-  const range=getRange();
-  const fSales=sales.filter(s=>s.date>=range.start&&s.date<=range.end);
-  // "Tercero" ya no se usa: solo aparece si hay ventas viejas con esa forma de pago
-  const metodos=[...PAY_METHODS.filter(m=>m!=="Mixto"),...(fSales.some(s=>s.payMethod==="Tercero")?["Tercero"]:[])];
-  const byMethod=metodos.map(m=>cuentaResumen(m,range,sales,expenses,extras));
-  const traen=fSales.filter(s=>s.envioContra&&!s.envioDineroRecibido).reduce((a,s)=>a+(s.envioDebe||0),0);
-  const sinMetodo=fSales.filter(s=>!s.payMethod).length;
+  const rango=()=>{if(per==="hoy")return[hoy,hoy];if(per==="semana")return[addDays(hoy,-6),hoy];if(per==="mes")return[hoy.slice(0,7)+"-01",hoy];return["0000",hoy];};
+  const sel=k=>v=>setF({...f,[k]:v.target.value});
+  const accSel=(k,label)=><F label={label}><select value={f[k]} onChange={sel(k)}>{ACCS.map(a=><option key={a} value={a}>{ACC_INFO[a].i} {a}</option>)}</select></F>;
   return(
     <Card>
-      <STitle>Dinero por cuenta</STitle>
-      <div style={{display:"flex",gap:6,alignItems:"center",flexWrap:"wrap",marginBottom:12}}>
-        {[["dia","Día"],["semana","Semana"],["mes","Mes"]].map(([v,l])=>(
-          <button key={v} onClick={()=>setPeriod(v)} style={{padding:"6px 14px",borderRadius:20,border:`1px solid ${period===v?T.gold:T.border}`,background:period===v?T.gold:"transparent",color:period===v?"#fff":T.textSub,fontSize:12,fontWeight:period===v?600:400}}>{l}</button>
-        ))}
-        <input type="date" value={refDate} onChange={e=>setRefDate(e.target.value)} style={{flex:1,minWidth:140}}/>
-      </div>
-      <p style={{margin:"0 0 10px",fontSize:13,fontWeight:600,color:T.gold}}>{range.label}</p>
-      {sinMetodo>0&&<ErrMsg msg={sinMetodo+" venta"+(sinMetodo>1?"s":"")+" sin forma de pago"}/>}
-      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
-        {byMethod.map(bm=>(
-          <div key={bm.method} style={{background:bm.bg||T.goldBg,borderRadius:10,padding:"12px 14px",border:`0.5px solid ${bm.c||T.gold}30`}}>
-            <p style={{margin:"0 0 6px",fontWeight:700,fontSize:13,color:bm.c||T.gold}}>{bm.method}</p>
-            {bm.ventasTotal>0&&<p style={{margin:"1px 0",fontSize:12,color:T.textSub}}>Ventas <strong style={{color:bm.c||T.gold}}>+{$m(bm.ventasTotal)}</strong></p>}
-            {bm.envCobrado>0&&<p style={{margin:"1px 0",fontSize:12,color:T.textSub}}>Envíos <strong style={{color:bm.c||T.gold}}>+{$m(bm.envCobrado)}</strong></p>}
-            {bm.mixAmt>0&&<p style={{margin:"1px 0",fontSize:12,color:T.textSub}}>Mixto <strong style={{color:bm.c||T.gold}}>+{$m(bm.mixAmt)}</strong></p>}
-            {bm.extraAmt>0&&<p style={{margin:"1px 0",fontSize:12,color:T.textSub}}>Extra <strong style={{color:T.profit}}>+{$m(bm.extraAmt)}</strong></p>}
-            {bm.gastosDeEsta>0&&<p style={{margin:"1px 0",fontSize:12,color:T.textSub}}>Gastos <strong style={{color:T.expense}}>−{$m(bm.gastosDeEsta)}</strong></p>}
-            {bm.repPagado>0&&<p style={{margin:"1px 0",fontSize:12,color:T.textSub}}>Repartidores <strong style={{color:T.expense}}>−{$m(bm.repPagado)}</strong></p>}
-            {bm.comisionAmt>0&&<p style={{margin:"1px 0",fontSize:12,color:T.textSub}}>Comisión <strong style={{color:T.expense}}>−{$m(bm.comisionAmt)}</strong></p>}
-            <p style={{margin:"6px 0 0",fontSize:19,fontWeight:700,color:bm.neto>=0?T.profit:T.expense,borderTop:`1px solid ${bm.c||T.gold}30`,paddingTop:6}}>{$m(bm.neto)}</p>
-          </div>
+      <STitle right={<span style={{fontWeight:700,fontSize:16,color:total>=0?T.profit:T.expense}}>{$m(total)}</span>}>Cuentas</STitle>
+      <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:6,marginBottom:12}}>
+        {[["traspaso","🔄 Traspaso"],["retiro","🧑 Retiro socio"],["aportacion","➕ Aportación"]].map(([t,l])=>(
+          <button key={t} onClick={()=>nuevo(t)} style={{fontSize:12,minHeight:42,padding:"4px",borderRadius:10,borderColor:accion===t?T.gold:T.goldBorder,background:accion===t?T.goldBg:"transparent",fontWeight:600}}>{l}</button>
         ))}
       </div>
-      {traen>0&&<p style={{margin:"10px 0 0",fontSize:12,color:T.expense,fontWeight:600}}>⚠ {$m(traen)} en efectivo todavía lo traen los repartidores</p>}
-      <p style={{margin:"10px 0 0",fontSize:11,color:T.textMuted}}>Revisa: Efectivo = lo que se llevó el socio · SPIN = app de cada quien · Mercado Pago = transferencia + terminal</p>
+      {accion&&(
+        <div style={{padding:10,borderRadius:10,background:T.bgAlt,border:`0.5px solid ${T.goldBorder}`,marginBottom:12,display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
+          {accion==="traspaso"&&<>{accSel("de","Sale de")}{accSel("a","Entra a")}</>}
+          {accion!=="traspaso"&&<F label="Socio"><select value={f.socio} onChange={sel("socio")}>{SOCIOS.map(s=><option key={s}>{s}</option>)}</select></F>}
+          {accion==="retiro"&&accSel("de","Sale de")}
+          {accion==="aportacion"&&accSel("a","Entra a")}
+          <F label="Monto ($)"><input type="number" min="0" value={f.monto} onChange={sel("monto")} placeholder="0.00"/></F>
+          <F label="Fecha"><input type="date" value={f.date} min={INICIO_OPERACION} onChange={sel("date")}/></F>
+          <F label="Nota" style={{gridColumn:"1/-1"}}><input value={f.nota} onChange={sel("nota")} placeholder={accion==="retiro"?"Ej. adelanto de utilidades":"Opcional"}/></F>
+          <GoldBtn onClick={guardar} style={{gridColumn:"1/-1",minHeight:44}}>Guardar</GoldBtn>
+          {accion==="retiro"&&<p style={{gridColumn:"1/-1",margin:0,fontSize:11,color:T.textMuted}}>Un retiro no es gasto: se descuenta de lo que le toca en el reparto.</p>}
+          {err&&<p style={{gridColumn:"1/-1",margin:0,fontSize:12,color:T.expense}}>{err}</p>}
+        </div>
+      )}
+      <div style={{display:"flex",flexDirection:"column",gap:8}}>
+        {ACCS.map(acc=>{
+          const abierto=open===acc;
+          const[d0,d1]=rango();
+          const ml=lib.filter(x=>x.acc===acc&&x.date>=d0&&x.date<=d1);
+          const ent=ml.filter(x=>x.monto>0&&x.tipo!=="inicial").reduce((a,x)=>a+x.monto,0),sal=ml.filter(x=>x.monto<0).reduce((a,x)=>a+x.monto,0);
+          const dif=real===""?null:+(+real-bal[acc]).toFixed(2);
+          return(
+            <div key={acc} style={{borderRadius:12,border:`1px solid ${abierto?T.gold:T.goldBorder}`,overflow:"hidden"}}>
+              <button onClick={()=>{setOpen(abierto?null:acc);setReal("");setIni({monto:"",date:hoy});}} style={{width:"100%",border:"none",borderRadius:0,display:"flex",alignItems:"center",gap:10,padding:"12px 14px",textAlign:"left",background:abierto?T.goldBg:"transparent",minHeight:56}}>
+                <span style={{fontSize:20}}>{ACC_INFO[acc].i}</span>
+                <span style={{flex:1,minWidth:0}}>
+                  <span style={{display:"block",fontSize:14,fontWeight:700,color:T.text}}>{acc}</span>
+                  <span style={{display:"block",fontSize:11,color:T.textMuted}}>{ACC_INFO[acc].d}{!tieneInicial[acc]&&acc!=="Caja"?" · falta saldo inicial":""}</span>
+                </span>
+                <span style={{fontSize:17,fontWeight:700,color:bal[acc]>=0?T.text:T.expense}}>{$m(bal[acc])}</span>
+              </button>
+              {acc==="Caja"&&traen>0&&<p style={{margin:"0 14px 8px",fontSize:11,color:T.expense}}>Además, {$m(traen)} los traen los repartidores</p>}
+              {abierto&&(
+                <div style={{padding:"10px 12px",borderTop:`0.5px solid ${T.goldBorder}`}}>
+                  <div style={{display:"flex",gap:4,marginBottom:8}}>
+                    {[["hoy","Hoy"],["semana","7 días"],["mes","Mes"],["todo","Todo"]].map(([v,l])=>(
+                      <button key={v} onClick={()=>setPer(v)} style={{flex:1,fontSize:12,minHeight:32,padding:"2px",borderRadius:16,background:per===v?T.gold:"transparent",color:per===v?"#fff":T.textSub,borderColor:per===v?T.gold:T.border}}>{l}</button>
+                    ))}
+                  </div>
+                  <p style={{margin:"0 0 6px",fontSize:12,color:T.textSub}}>Entró <strong style={{color:T.profit}}>{$m(ent)}</strong> · Salió <strong style={{color:T.expense}}>{$m(-sal)}</strong></p>
+                  <div style={{maxHeight:340,overflowY:"auto"}}>
+                    {[...ml].reverse().slice(0,80).map((x,i)=>(
+                      <div key={i} style={{display:"flex",alignItems:"center",gap:8,padding:"7px 0",borderBottom:`0.5px solid ${T.border}`}}>
+                        <div style={{flex:1,minWidth:0}}>
+                          <p style={{margin:0,fontSize:12,color:T.text,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{x.desc}</p>
+                          <p style={{margin:0,fontSize:10,color:T.textMuted}}>{fechaCorta(x.date)} · saldo {$m(x.saldo)}</p>
+                        </div>
+                        <span style={{fontSize:13,fontWeight:700,color:x.tipo==="inicial"?T.client:x.monto>=0?T.profit:T.expense,whiteSpace:"nowrap"}}>{x.tipo==="inicial"?"= ":x.monto>=0?"+":"−"}{$m(Math.abs(x.monto))}</span>
+                        {x.id&&(confirmDel===x.id+acc
+                          ?<button onClick={()=>{setMovs(prev=>(prev||[]).filter(m=>m.id!==x.id));setConfirmDel(null);}} style={{fontSize:11,background:T.expense,color:"#fff",border:"none",padding:"3px 8px",minHeight:28}}>Borrar</button>
+                          :<button onClick={()=>setConfirmDel(x.id+acc)} aria-label="Borrar movimiento" style={{border:"none",padding:"0 4px",minHeight:0,fontSize:13,color:T.textMuted}}>✕</button>)}
+                      </div>
+                    ))}
+                    {ml.length===0&&<p style={{fontSize:12,color:T.textMuted,margin:"6px 0"}}>Sin movimientos en este periodo</p>}
+                  </div>
+                  <div style={{marginTop:10,padding:10,borderRadius:10,background:T.bgAlt}}>
+                    <p style={{margin:"0 0 6px",fontSize:12,fontWeight:700,color:T.text}}>Cuadrar con tu app</p>
+                    <div style={{display:"flex",gap:6}}>
+                      <input type="number" value={real} onChange={e=>setReal(e.target.value)} placeholder="¿Cuánto dice de verdad?" style={{flex:1}}/>
+                    </div>
+                    {dif!==null&&(Math.abs(dif)<0.01
+                      ?<p style={{margin:"6px 0 0",fontSize:13,color:T.profit,fontWeight:700}}>✓ Cuadra</p>
+                      :<div style={{marginTop:6}}>
+                        <p style={{margin:0,fontSize:13,fontWeight:700,color:dif<0?T.expense:T.client}}>{dif<0?"Falta "+$m(-dif):"Sobra "+$m(dif)} contra lo que dice la app</p>
+                        <OutBtn onClick={()=>{setMovs(prev=>[...(prev||[]),{id:uid(),tipo:"ajuste",a:acc,date:hoy,monto:dif,nota:"real "+$m(+real),by:user?.name||""}]);setReal("");}} style={{marginTop:6,fontSize:12}}>Ajustar a {$m(+real)}</OutBtn>
+                      </div>)}
+                    <p style={{margin:"10px 0 6px",fontSize:12,fontWeight:700,color:T.text}}>Saldo inicial</p>
+                    <div style={{display:"grid",gridTemplateColumns:"1fr 1fr auto",gap:6}}>
+                      <input type="number" value={ini.monto} onChange={e=>setIni({...ini,monto:e.target.value})} placeholder="Cuánto había"/>
+                      <input type="date" value={ini.date} min={INICIO_OPERACION} onChange={e=>setIni({...ini,date:e.target.value})}/>
+                      <GoldBtn onClick={()=>{if(ini.monto==="")return;setMovs(prev=>[...(prev||[]),{id:uid(),tipo:"inicial",a:acc,date:ini.date||hoy,monto:+ini.monto,by:user?.name||""}]);setIni({monto:"",date:hoy});}} style={{minHeight:44}}>Poner</GoldBtn>
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
+          );
+        })}
+      </div>
     </Card>
   );
 }
@@ -1938,11 +2126,13 @@ function RepartoCard({data,label,sublabel}){
         <div style={{display:"grid",gridTemplateColumns:"1fr",gap:10}}>
           <div style={{background:"rgba(196,150,42,0.08)",borderRadius:10,padding:"14px 16px",border:`1px solid ${T.goldBorder}`,display:"flex",justifyContent:"space-between",alignItems:"center"}}>
             <div><p style={{margin:0,fontWeight:700,fontSize:14,color:T.goldText}}>🧑 Marcel</p><p style={{margin:0,fontSize:11,color:T.textMuted}}>33% de la utilidad</p></div>
-            <span style={{fontWeight:700,fontSize:22,color:T.goldText}}>{$m(marcel)}</span>
+            <div style={{textAlign:"right"}}><span style={{fontWeight:700,fontSize:22,color:T.goldText}}>{$m(marcel)}</span>
+              {data.retiros?.Marcel>0&&<p style={{margin:0,fontSize:11,color:T.textSub}}>ya retiró {$m(data.retiros.Marcel)} · le queda <strong>{$m(marcel-data.retiros.Marcel)}</strong></p>}</div>
           </div>
           <div style={{background:"rgba(112,56,208,0.08)",borderRadius:10,padding:"14px 16px",border:"1px solid rgba(112,56,208,0.25)",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
             <div><p style={{margin:0,fontWeight:700,fontSize:14,color:T.pkg}}>🧑 Gustavo</p><p style={{margin:0,fontSize:11,color:T.textMuted}}>33% de la utilidad</p></div>
-            <span style={{fontWeight:700,fontSize:22,color:T.pkg}}>{$m(gustavo)}</span>
+            <div style={{textAlign:"right"}}><span style={{fontWeight:700,fontSize:22,color:T.pkg}}>{$m(gustavo)}</span>
+              {data.retiros?.Gustavo>0&&<p style={{margin:0,fontSize:11,color:T.textSub}}>ya retiró {$m(data.retiros.Gustavo)} · le queda <strong>{$m(gustavo-data.retiros.Gustavo)}</strong></p>}</div>
           </div>
           <div style={{background:"rgba(26,140,90,0.08)",borderRadius:10,padding:"14px 16px",border:"1px solid rgba(26,140,90,0.25)",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
             <div><p style={{margin:0,fontWeight:700,fontSize:14,color:T.profit}}>🏢 Reinversión MSP</p><p style={{margin:0,fontSize:11,color:T.textMuted}}>34% para la empresa</p></div>
@@ -1958,7 +2148,7 @@ function RepartoCard({data,label,sublabel}){
   );
 }
 
-function Reparto({sales,expenses,extras=[]}){
+function Reparto({sales,expenses,extras=[],movs=[]}){
   const[refDate,setRefDate]=useState(today());
 
   const calcUtilidad=(start,end)=>{
@@ -1968,7 +2158,8 @@ function Reparto({sales,expenses,extras=[]}){
     const gastos=expenses.filter(e=>e.date>=start&&e.date<=end).reduce((a,e)=>a+e.amount,0);
     const extrasP=(extras||[]).filter(x=>x.date>=start&&x.date<=end).reduce((a,x)=>a+x.amount,0);
     const neta=(ingresos-costo)-gastos+extrasP;
-    return{ingresos,costo,gastos,extrasP,neta,ventas:ss.length};
+    const ret=n=>(movs||[]).filter(m=>m.tipo==="retiro"&&m.socio===n&&m.date>=start&&m.date<=end).reduce((a,m)=>a+m.monto,0);
+    return{ingresos,costo,gastos,extrasP,neta,ventas:ss.length,retiros:{Marcel:ret("Marcel"),Gustavo:ret("Gustavo")}};
   };
 
   const d=new Date(refDate+"T12:00:00");
@@ -2380,12 +2571,13 @@ function Dashboard_App({user,onLogout}){
   const[popCfg,setPopCfg]=useState(INIT_POP);
   const[fixed,setFixed]=useState(INIT_FIXED);
   const[cierres,setCierres]=useState([]);
+  const[movs,setMovs]=useState([]);
   const[ready,setReady]=useState(false);
   const[leaving,setLeaving]=useState(false);
 
   useEffect(()=>{
     (async()=>{
-      let[p,pk,c,s,e,sm,ex,pop,fx,ci]=await Promise.all([load(SK.p,INIT_PRODS),load(SK.pk,INIT_PKGS),load(SK.c,[]),load(SK.s,[]),load(SK.e,[]),load(SK.sm,[]),load(SK.ex,[]),load(SK.pop,INIT_POP),load(SK.fx,INIT_FIXED),load(SK.ci,[])]);
+      let[p,pk,c,s,e,sm,ex,pop,fx,ci,mv]=await Promise.all([load(SK.p,INIT_PRODS),load(SK.pk,INIT_PKGS),load(SK.c,[]),load(SK.s,[]),load(SK.e,[]),load(SK.sm,[]),load(SK.ex,[]),load(SK.pop,INIT_POP),load(SK.fx,INIT_FIXED),load(SK.ci,[]),load(SK.mv,[])]);
       // Merge new products
       const ids=new Set(p.map(x=>x.id));
       INIT_PRODS.forEach(ip=>{if(!ids.has(ip.id))p.push(ip);});
@@ -2411,8 +2603,16 @@ function Dashboard_App({user,onLogout}){
       const fxItems=Array.isArray(fx)?fx:(fx&&Array.isArray(fx.items)?fx.items:INIT_FIXED);
       const fxVer=Array.isArray(fx)?1:(fx&&fx.v)||1;
       setCierres(Array.isArray(ci)?ci:[]);
+      setMovs(Array.isArray(mv)?mv:[]);
       // Solo se agregan los defaults que se crearon después de la versión guardada (si borraron uno viejo, no regresa)
-      setFixed(fxVer>=FIXED_VER?fxItems:[...fxItems,...INIT_FIXED.filter(d=>(d.ver||1)>fxVer&&!fxItems.some(x=>x.id===d.id))]);
+      let fxList=fxVer>=FIXED_VER?fxItems:[...fxItems,...INIT_FIXED.filter(d=>(d.ver||1)>fxVer&&!fxItems.some(x=>x.id===d.id))];
+      if(fxVer<4)fxList=fxList.map(x=>{
+        if(x.id==="renta")return{...x,dia:x.dia??8,limite:x.limite??10};
+        if(x.id==="sueldo"||x.id==="repartidor")return{...x,diaSemana:x.diaSemana??3};
+        if(x.id==="publicidad"&&x.freq!=="variable")return{...x,freq:"variable",name:x.name==="Publicidad ($400 diarios)"?"Publicidad":x.name,amount:x.amount===2800?4000:x.amount};
+        if(x.freq==="diario")return{...x,freq:"variable"};
+        return x;});
+      setFixed(fxList);
       setReady(true);
     })();
   },[]);
@@ -2427,6 +2627,7 @@ function Dashboard_App({user,onLogout}){
   useEffect(()=>{if(ready){const t=setTimeout(()=>save(SK.pop,popCfg),800);return()=>clearTimeout(t);}},[popCfg,ready]);
   useEffect(()=>{if(ready){const t=setTimeout(()=>save(SK.fx,{v:FIXED_VER,items:fixed}),800);return()=>clearTimeout(t);}},[fixed,ready]);
   useEffect(()=>{if(ready){const t=setTimeout(()=>save(SK.ci,cierres),800);return()=>clearTimeout(t);}},[cierres,ready]);
+  useEffect(()=>{if(ready){const t=setTimeout(()=>save(SK.mv,movs),800);return()=>clearTimeout(t);}},[movs,ready]);
 
   if(!ready)return(
     <div style={{display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",padding:"3rem",gap:12,color:T.textSub}}>
@@ -2439,14 +2640,14 @@ function Dashboard_App({user,onLogout}){
   const repSales=sales.filter(s=>s.date>=INICIO_OPERACION);
   const repExpenses=expenses.filter(e=>e.date>=INICIO_OPERACION);
   const repExtras=extras.filter(x=>x.date>=INICIO_OPERACION);
-  const props={prods,setProds,pkgs,setPkgs,clients,setClients,sales,setSales,expenses,setExpenses,stockMoves,setStockMoves,extras,setExtras,user,isAdmin,fixed,setFixed,goTab:setTab,popCfg,setPopCfg,cierres,setCierres,cerrados:cierres.map(c=>c.date)};
+  const props={prods,setProds,pkgs,setPkgs,clients,setClients,sales,setSales,expenses,setExpenses,stockMoves,setStockMoves,extras,setExtras,user,isAdmin,fixed,setFixed,goTab:setTab,popCfg,setPopCfg,cierres,setCierres,movs,setMovs,cerrados:cierres.map(c=>c.date)};
   const cur=myTabs.find(t=>t.k===tab)||myTabs[0];
   const can=k=>myTabs.some(t=>t.k===k);
   // Al salir se desmonta todo y el debounce de 800 ms se cancelaría: guardamos todo antes
   const logout=async()=>{
     if(leaving)return;
     setLeaving(true);
-    await Promise.all([save(SK.p,prods),save(SK.pk,pkgs),save(SK.c,clients),save(SK.s,sales),save(SK.e,expenses),save(SK.sm,stockMoves),save(SK.ex,extras),save(SK.pop,popCfg),save(SK.fx,{v:FIXED_VER,items:fixed}),save(SK.ci,cierres)]);
+    await Promise.all([save(SK.p,prods),save(SK.pk,pkgs),save(SK.c,clients),save(SK.s,sales),save(SK.e,expenses),save(SK.sm,stockMoves),save(SK.ex,extras),save(SK.pop,popCfg),save(SK.fx,{v:FIXED_VER,items:fixed}),save(SK.ci,cierres),save(SK.mv,movs)]);
     onLogout();
   };
 
@@ -2475,10 +2676,10 @@ function Dashboard_App({user,onLogout}){
       {cur.k==="envios"&& <Envios     {...props}/>}
       {cur.k==="caja"  && <div style={{display:"flex",flexDirection:"column",gap:"1.25rem"}}>
         <CierreDia {...props}/>
-        {isAdmin&&<CorteCaja sales={repSales} expenses={repExpenses} extras={repExtras}/>}
+        {isAdmin&&<Cuentas sales={sales} expenses={expenses} extras={extras} cierres={cierres} movs={movs} setMovs={setMovs} clients={clients} user={user}/>}
       </div>}
       {cur.k==="inv"   && <Inventario {...props}/>}
-      {cur.k==="reparto" && can("reparto") && <Reparto sales={repSales} expenses={repExpenses} extras={repExtras}/>}
+      {cur.k==="reparto" && can("reparto") && <Reparto sales={repSales} expenses={repExpenses} extras={repExtras} movs={movs}/>}
       <BottomNav tabs={myTabs} mainKeys={NAV_MAIN[user.role]||NAV_MAIN.staff} tab={cur.k} setTab={setTab}/>
     </div>
   );

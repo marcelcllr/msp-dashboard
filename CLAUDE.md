@@ -22,17 +22,27 @@ Contexto para Claude Code. Léelo antes de tocar cualquier cosa.
 - `USERS` en App.jsx: Marcel y Gustavo = `admin`, empleado = `staff`. Sesión en `sessionStorage` (`msp_user`).
 - Menú socios: Inicio · Vender · Palomitas · Caja · Más (Envíos, Inventario, Gastos, Clientes, Catálogo, Reparto).
 - Menú empleado: Vender · Palomitas · Envíos · Inventario · Caja · Más (Gastos, Clientes). No ve Inicio, Catálogo (costos) ni Reparto.
-- **Caja** = `CierreDia` (todos) + `CorteCaja` "Dinero por cuenta" (solo socios). **Catálogo** = `Productos` + `Paquetes`.
+- **Caja** = `CierreDia` (todos) + `Cuentas` (solo socios). **Catálogo** = `Productos` + `Paquetes`.
 - Staff NO ve cantidades de inventario del sistema (para que el conteo del Cierre sea a ciegas): en Inventario solo tiene "Registrar entrada" y "Abrir caja". Tampoco puede cambiar la fecha de ventas ni de gastos.
 - Dentro de las pantallas, staff NO ve utilidad/margen/costos, no puede borrar ventas, gastos, movimientos ni clientes, no pone precios especiales, no ve ni registra gastos fijos (`FIXED_CATS`), solo ve sus propios gastos y las ventas de hoy.
 - Todo registro nuevo guarda `by` (quién lo hizo). Las ventas guardan `bajoPrecio` si se cobró debajo del precio de lista/cliente.
 - OJO: es control de pantalla, no seguridad real. La llave de Supabase es pública y las contraseñas `VITE_*` van dentro del JS. Seguridad real = Supabase Auth + RLS (pendiente).
 - Menú inferior fijo (`BottomNav`); lo que no cabe va en "Más". `NAV_MAIN` define qué va fijo por rol.
 
-## Gastos fijos
-- `msp-fx4`: guardado como `{v, items}`. Defaults: Renta $7,859/mes, Sueldo empleado $2,000/semana, Repartidor fijo $1,000/semana, Plan celular $150/mes, Apartado aguinaldo $357.14/mes (15 días de sueldo ÷ 12), Publicidad $2,800/semana ($400 diarios, se paga semanal). Cada default tiene `ver`; al subir `FIXED_VER` solo se agregan los defaults con `ver` mayor a la versión guardada (si borraron uno viejo, no regresa). También existe `freq:"diario"`: junta los días sin registrar y se registran de un jalón (`fixedMissing`).
+## Gastos fijos (`GastosFijos`, key `msp-fx4` = {v, items})
+- Cada fijo tiene su calendario: `mensual` (`dia` desde qué día se paga, `limite` día que vence; sin limite = fin de mes), `semanal` (`diaSemana` 0=dom … 3=miércoles) o `variable` (sin fecha ni monto fijo; `amount` = estimado al mes).
+- Defaults: Renta $7,859 del 8 al 10 de cada mes · Sueldo empleado $2,000 cada miércoles · Repartidor fijo (cuota) $1,000 cada miércoles · Plan celular $150 al mes · Apartado aguinaldo $357.14 al mes · Publicidad variable (estimado $4,000/mes).
+- `fixedDues` calcula los vencimientos desde `INICIO_OPERACION`; `fixedStatus` acomoda los pagos en orden (pagar antes cubre el siguiente) y da el estado: `vencido` / `urgente` (vence hoy) en rojo, `toca` en amarillo (renta desde el día 8; semanales 1 día antes; mensuales sin día 3 días antes), `proximo`, `adelantado` (al corriente).
+- Pagar crea un gasto normal con `fixedId`, `period` (= fecha de vencimiento que cubre), fecha elegida, monto editable y cuenta (`CUENTAS_PAGO`: SPIN Marcel, SPIN Gustavo, Mercado Pago, Efectivo) con `deCaja:false`. Solo cuentan pagos con fecha ≥ arranque.
+- Inicio avisa solo los `toca/urgente/vencido` (`fixedPending` devuelve [{f,st}]).
+- Migración v4: a los fijos guardados se les puso su día (si no lo tenían) y la publicidad pasó a variable.
 - Luz, agua e internet los paga la plaza: no son gasto.
-- Al marcar "Ya se pagó" se crea un gasto normal con `fixedId` + `period` ("YYYY-MM" o el día que empieza su semana de cobro). Las semanas de cobro son bloques de 7 días desde `INICIO_OPERACION` (1–7 oct, 8–14 oct…), no lunes. Antes del arranque no hay pendientes ni se puede pagar. Pendientes salen como aviso en Inicio.
+
+## Cuentas (`Cuentas` en la pestaña Caja, solo socios; manuales en key `msp-mv4`)
+- Cuentas: Caja (efectivo del local), Efectivo socios, SPIN Marcel, SPIN Gustavo, Mercado Pago (Transferencia MP + Terminal MP).
+- `libroCuentas` arma todos los movimientos desde el arranque: ventas (Mixto se reparte), comisión terminal, pagos a repartidores, gastos (efectivo con `deCaja` → Caja, si no → Efectivo socios), ingresos extra (efectivo → Efectivo socios) y cierres (la Caja queda igual a lo contado: faltante/sobrante + entrega al socio → Efectivo socios).
+- A mano: `traspaso` (de → a), `retiro` (socio, de; no es gasto, en Reparto se muestra "ya retiró / le queda"), `aportacion` (socio, a), `inicial` (saldo inicial; reinicia el saldo de esa cuenta desde su fecha; la Caja arranca en el fondo si no tiene), `ajuste` (botón Cuadrar: diferencia contra el saldo real).
+- Reemplazó a "Dinero por cuenta" (CorteCaja). `cuentaResumen` sigue existiendo para el esperado del Cierre.
 
 ## Cierre del día (`CierreDia`, key `msp-ci4`)
 - Lo hace el empleado después de las 7:30 pm. Cuenta efectivo por billetes (`DENOMS`) + monedas y TODO el inventario (`contables()`: productos cajas/sobres o piezas + vasos de palomitas) a ciegas.
