@@ -51,6 +51,12 @@ Contexto para Claude Code. Léelo antes de tocar cualquier cosa.
 - Día cerrado = no se pueden registrar ventas ni palomitas de esa fecha (prop `cerrados`). Inicio avisa si falta el cierre de ayer o hay cierres con diferencias sin revisar.
 - `cuentaResumen(m,range,…)` es el cálculo por cuenta compartido por Corte y Cierre.
 
+## Control contra robos (en Caja, solo socios)
+- **Transferencias**: `transDe(s)` = parte de la venta por SPIN/MP/terminal (o la parte no-efectivo de un Mixto). Cada una se confirma con `sale.transConf` "si"/"no" (+ `transConfPor`, `transConfFecha`). Las de días cerrados se confirman dentro de su cierre (`TransRow`); las de días sin cierre en `TransferenciasPend`. En Vender se puede anotar `sale.transRef` (quién transfirió, opcional).
+- **Efectivo recibido**: el socio confirma en el cierre cuánto le entregaron (`cierre.recibido`, `recibidoPor`). Si es menos que contado − fondo, el cierre queda "Algo no cuadra" y en Cuentas a Efectivo socios solo entra lo recibido.
+- `estadoCierre(c,sales)`: "mal" (efectivo o inventario no cuadran, transferencia que no llegó, o recibió menos), "ok" (todo cuadra, transferencias confirmadas y efectivo recibido confirmado), "pendiente". Inicio avisa cierres no "ok" sin revisar y transferencias sin confirmar de días anteriores.
+- **Conteo sorpresa** (`ConteoSorpresa`, key `msp-cs4`): los socios cuentan todo a ciegas cuando quieran; se compara contra el sistema y se puede ajustar (`aplicarConteo`, movimientos `ajuste`). No bloquea ventas.
+
 ## Candados de ventas
 - Pago mixto tiene que sumar exacto (productos + envío del cliente).
 - `sale.sinStock`: productos vendidos sin stock suficiente en sistema (se marca, no se bloquea).

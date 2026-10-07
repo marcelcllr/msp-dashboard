@@ -84,7 +84,7 @@ function LoginScreen({ onLogin }) {
 
 
 // ── STORAGE ──────────────────────────────────────────────────────────────────
-const SK = { p:"msp-p4",pk:"msp-pk4",c:"msp-c4",s:"msp-s4",e:"msp-e4",sm:"msp-sm4",ex:"msp-ex4",pop:"msp-pop4",fx:"msp-fx4",ci:"msp-ci4",mv:"msp-mv4" };
+const SK = { p:"msp-p4",pk:"msp-pk4",c:"msp-c4",s:"msp-s4",e:"msp-e4",sm:"msp-sm4",ex:"msp-ex4",pop:"msp-pop4",fx:"msp-fx4",ci:"msp-ci4",mv:"msp-mv4",cs:"msp-cs4" };
 const load = dbLoad;
 const save = dbSave;
 
@@ -319,17 +319,19 @@ function Dashboard({sales,expenses,extras=[],fixed,goTab,cierres=[]}){
   const pendFijos=fixedPending(fixed,expenses,todayStr);
   const ayer=(()=>{const d=new Date(todayStr+"T12:00:00");d.setDate(d.getDate()-1);return ymd(d);})();
   const faltaCierreAyer=ayer>=INICIO_OPERACION&&!cierres.some(c=>c.date===ayer);
-  const porRevisar=cierres.filter(c=>!c.revisado&&!cierreCuadra(c));
+  const porRevisar=cierres.filter(c=>c.date>=INICIO_OPERACION&&!c.revisado&&estadoCierre(c,sales)!=="ok");
+  const transPend=sales.filter(s=>s.date<todayStr&&transDe(s)&&s.transConf!=="si");
 
   return(
     <div style={{display:"flex",flexDirection:"column",gap:"1.25rem"}}>
 
-      {(faltaCierreAyer||porRevisar.length>0)&&(
+      {(faltaCierreAyer||porRevisar.length>0||transPend.length>0)&&(
         <button onClick={()=>goTab&&goTab("caja")} style={{textAlign:"left",background:"rgba(192,64,64,0.07)",border:"1px solid rgba(192,64,64,0.3)",borderRadius:12,padding:"12px 14px",display:"flex",alignItems:"center",gap:10}}>
           <i className="ti ti-lock-exclamation" style={{fontSize:22,color:T.expense}}/>
           <div style={{flex:1}}>
             {faltaCierreAyer&&<p style={{margin:0,fontSize:13,fontWeight:700,color:T.expense}}>No se hizo el cierre de ayer</p>}
-            {porRevisar.length>0&&<p style={{margin:0,fontSize:13,fontWeight:700,color:T.expense}}>{porRevisar.length} cierre{porRevisar.length>1?"s":""} con diferencias por revisar</p>}
+            {porRevisar.length>0&&<p style={{margin:0,fontSize:13,fontWeight:700,color:T.expense}}>{porRevisar.length} cierre{porRevisar.length>1?"s":""} por revisar</p>}
+            {transPend.length>0&&<p style={{margin:0,fontSize:13,fontWeight:700,color:T.expense}}>{transPend.length} transferencia{transPend.length>1?"s":""} sin confirmar · {$m(transPend.reduce((a,s)=>a+transDe(s).monto,0))}</p>}
           </div>
           <i className="ti ti-chevron-right" style={{fontSize:18,color:T.textMuted}}/>
         </button>
@@ -874,6 +876,7 @@ function NuevaVenta({prods,setProds,pkgs,clients,setClients,sales,setSales,user,
   const[envPagadoCon,setEnvPagadoCon]=useState("Efectivo");
   const[envCobro,setEnvCobro]=useState("transfer");
   const[note,setNote]=useState("");
+  const[transRef,setTransRef]=useState("");
   const[err,setErr]=useState("");
   const[okMsg,setOkMsg]=useState("");
   const[newCl,setNewCl]=useState(null);
@@ -981,7 +984,7 @@ function NuevaVenta({prods,setProds,pkgs,clients,setClients,sales,setSales,user,
       mixEfectivo:payMethod==="Mixto"?+mixEfectivo||0:0,
       mixTransferencia:payMethod==="Mixto"?+mixTransferencia||0:0,
       mixCuenta:payMethod==="Mixto"?mixCuenta:"",
-      ...envioFields,by:user?.name||"",hora:horaAhora(),bajoPrecio};
+      ...envioFields,transRef:transRef.trim(),by:user?.name||"",hora:horaAhora(),bajoPrecio};
     setSales([...sales,sale]);
     // deduct stock (suma todas las líneas del mismo producto: cajas y sobres por separado)
     setProds(prev=>prev.map(prod=>{
@@ -993,7 +996,7 @@ function NuevaVenta({prods,setProds,pkgs,clients,setClients,sales,setSales,user,
     }));
     setErr("");setStep(1);setClientId("");setCart({});setOver({});setUnitView({});setEditKey(null);
     setRegalos({});setConEnvio(false);setEnvKm("");setEnvCostoOver("");setEnvPct("100");setEnvOtro("");setEnvRep("");setEnvDir("");setEnvPagado("no");setEnvCobro("transfer");setNote("");
-    setPayMethod("Efectivo");setMixEfectivo("");setMixTransferencia("");setMixCuenta("SPIN Marcel");
+    setPayMethod("Efectivo");setMixEfectivo("");setMixTransferencia("");setMixCuenta("SPIN Marcel");setTransRef("");
     setOkMsg("✓ Venta de "+$m(total+ev.cliente)+" registrada"+(conEnvio?" · envío pendiente en 🛵 Envíos":"")+(sinStock.length?" · ⚠ en el sistema no había suficiente de: "+sinStock.join(", "):""));
     setTimeout(()=>setOkMsg(""),4000);
     window.scrollTo(0,0);
@@ -1148,6 +1151,11 @@ function NuevaVenta({prods,setProds,pkgs,clients,setClients,sales,setSales,user,
                   </F>
                 </div>
               </div>
+            )}
+            {(TRANS_METHODS.includes(payMethod)||(payMethod==="Mixto"&&mixCuenta!=="Efectivo"))&&!(conEnvio&&envCobro==="contra")&&(
+              <F label="¿Quién transfirió? (opcional)" style={{gridColumn:"1/-1"}}>
+                <input value={transRef} onChange={e=>setTransRef(e.target.value)} placeholder="Nombre o últimos números del folio"/>
+              </F>
             )}
             <F label="Nota interna (opcional)" style={{gridColumn:"1/-1"}}>
               <input value={note} onChange={e=>setNote(e.target.value)} placeholder="Observaciones…"/>
@@ -1701,7 +1709,9 @@ const cierreDifs=c=>(c.inv||[]).map(r=>({...r,dC:r.contC-r.sisC,dS:r.contS-r.sis
 const cierreCuadra=c=>Math.abs(c.efectivoContado-c.efectivoEsperado)<1&&cierreDifs(c).length===0;
 const fechaLarga=ds=>new Date(ds+"T12:00:00").toLocaleDateString("es-MX",{weekday:"long",day:"numeric",month:"short"}).replace(/^\w/,x=>x.toUpperCase());
 
-function CierreDia({prods,setProds,sales,expenses,extras,popCfg,setPopCfg,cierres,setCierres,stockMoves,setStockMoves,user,isAdmin}){
+function CierreDia({prods,setProds,sales,setSales,clients,expenses,extras,popCfg,setPopCfg,cierres,setCierres,stockMoves,setStockMoves,user,isAdmin}){
+  const[recIn,setRecIn]=useState({});
+  const markTrans=(id,v)=>setSales(prev=>prev.map(x=>x.id===id?{...x,transConf:v,transConfPor:user?.name||"",transConfFecha:today()}:x));
   const hoy=today();
   const cierreHoy=cierres.find(c=>c.date===hoy);
   const[den,setDen]=useState({});
@@ -1819,21 +1829,35 @@ function CierreDia({prods,setProds,sales,expenses,extras,popCfg,setPopCfg,cierre
                 const difs=cierreDifs(c);
                 const valV=difs.reduce((a,r)=>a+r.dC*r.pC+r.dS*r.pS,0);
                 const valC=difs.reduce((a,r)=>a+r.dC*r.cC+r.dS*r.cS,0);
-                const ok=cierreCuadra(c);
+                const est=estadoCierre(c,sales);const E=ESTADO_CIERRE[est];
+                const tr=transDelDia(sales,c.date);const trOk=tr.filter(x=>x.transConf==="si").length;
+                const entregar=Math.max(0,+(c.efectivoContado-(c.fondo||FONDO_CAJA)).toFixed(2));
                 return(
-                  <div key={c.id} style={{padding:12,borderRadius:10,border:`1px solid ${ok?"rgba(26,140,90,0.3)":"rgba(192,64,64,0.35)"}`,background:ok?"rgba(26,140,90,0.04)":"rgba(192,64,64,0.04)"}}>
+                  <div key={c.id} style={{padding:12,borderRadius:10,border:`1px solid ${E[3]}`,background:E[4]}}>
                     <div style={{display:"flex",justifyContent:"space-between",gap:8,alignItems:"center"}}>
                       <div>
                         <p style={{margin:0,fontWeight:700,fontSize:14}}>{fechaLarga(c.date)}</p>
                         <p style={{margin:0,fontSize:11,color:T.textMuted}}>{c.hora} · {c.by||"—"}{c.revisado?" · revisado"+(c.revisadoPor?" por "+c.revisadoPor:""):""}</p>
                       </div>
-                      <Chip label={ok?"✓ Cuadró":"⚠ Con diferencias"} bg={ok?"rgba(26,140,90,0.12)":"rgba(192,64,64,0.12)"} color={ok?T.profit:T.expense}/>
+                      <Chip label={E[0]} bg={E[1]} color={E[2]}/>
                     </div>
                     <div style={{marginTop:8,fontSize:13,lineHeight:1.7}}>
                       💵 Contado <strong>{$m(c.efectivoContado)}</strong> · Debía haber <strong>{$m(c.efectivoEsperado)}</strong>
                       {Math.abs(dif)>=1&&<span style={{fontWeight:700,color:dif<0?T.expense:T.client}}> · {dif<0?"Faltan "+$m(-dif):"Sobran "+$m(dif)}</span>}
-                      <br/>🤝 Entregó al socio: <strong>{$m(Math.max(0,c.entregar))}</strong>
+                      <br/>🤝 Entregó al socio: <strong>{$m(entregar)}</strong>
                     </div>
+                    {entregar>0&&(c.recibido!=null
+                      ?<p style={{margin:"4px 0 0",fontSize:12,fontWeight:600,color:c.recibido<entregar-0.5?T.expense:T.profit}}>{c.recibido<entregar-0.5?"⚠ "+(c.recibidoPor||"El socio")+" recibió "+$m(c.recibido)+": faltan "+$m(entregar-c.recibido):"✓ "+(c.recibidoPor||"El socio")+" recibió "+$m(c.recibido)}</p>
+                      :<div style={{display:"flex",gap:6,marginTop:6}}>
+                        <input type="number" min="0" value={recIn[c.id]??""} onChange={e=>setRecIn({...recIn,[c.id]:e.target.value})} placeholder="¿Cuánto recibiste?" style={{flex:1}}/>
+                        <OutBtn onClick={()=>{if(recIn[c.id]===undefined||recIn[c.id]==="")return;setCierres(prev=>prev.map(x=>x.id===c.id?{...x,recibido:+recIn[c.id],recibidoPor:user?.name||""}:x));}} style={{minHeight:44}}>Confirmar</OutBtn>
+                      </div>)}
+                    {tr.length>0&&(
+                      <div style={{marginTop:8,padding:"8px 10px",borderRadius:8,background:T.bg,border:`0.5px solid ${T.border}`}}>
+                        <p style={{margin:"0 0 2px",fontSize:12,fontWeight:700,color:T.text}}>🏦 Transferencias · {trOk} de {tr.length} confirmadas</p>
+                        {tr.map(x=><TransRow key={x.id} s={x} clients={clients} onMark={markTrans}/>)}
+                      </div>
+                    )}
                     {difs.length>0&&(
                       <div style={{marginTop:8,padding:"8px 10px",borderRadius:8,background:T.bg,border:`0.5px solid ${T.border}`,fontSize:12}}>
                         <p style={{margin:"0 0 4px",fontWeight:700,color:T.text}}>📦 Inventario que no cuadró</p>
@@ -1870,6 +1894,130 @@ function CierreDia({prods,setProds,sales,expenses,extras,popCfg,setPopCfg,cierre
         </Card>
       )}
     </div>
+  );
+}
+
+// ── CONTROL: transferencias confirmadas, efectivo recibido y conteo sorpresa ──
+const TRANS_METHODS=["SPIN Marcel","SPIN Gustavo","Transferencia MP","Terminal MP"];
+// Parte de una venta que llegó por transferencia o terminal (null si fue todo en efectivo)
+function transDe(s){
+  if(s.payMethod==="Mixto")return s.mixCuenta&&s.mixCuenta!=="Efectivo"&&(s.mixTransferencia||0)>0?{metodo:s.mixCuenta,acc:accDe(s.mixCuenta),monto:s.mixTransferencia}:null;
+  return TRANS_METHODS.includes(s.payMethod)?{metodo:s.payMethod,acc:accDe(s.payMethod),monto:s.total+(s.envio||0)}:null;
+}
+const transDelDia=(sales,d)=>sales.filter(s=>s.date===d&&transDe(s));
+// Estado completo de un cierre para los socios: efectivo, inventario, transferencias y lo que recibió el socio
+function estadoCierre(c,sales){
+  const tr=transDelDia(sales,c.date);
+  const ent=Math.max(0,+(c.efectivoContado-(c.fondo||FONDO_CAJA)).toFixed(2));
+  const malRec=c.recibido!=null&&c.recibido<ent-0.5;
+  if(!cierreCuadra(c)||tr.some(s=>s.transConf==="no")||malRec)return"mal";
+  if(tr.every(s=>s.transConf==="si")&&(c.recibido!=null||ent<=0))return"ok";
+  return"pendiente";
+}
+const ESTADO_CIERRE={ok:["✓ Todo cuadró","rgba(26,140,90,0.12)",T.profit,"rgba(26,140,90,0.3)","rgba(26,140,90,0.04)"],
+  mal:["⚠ Algo no cuadra","rgba(192,64,64,0.12)",T.expense,"rgba(192,64,64,0.35)","rgba(192,64,64,0.04)"],
+  pendiente:["Por revisar","rgba(232,128,32,0.14)","#B86010","rgba(232,128,32,0.4)","rgba(232,128,32,0.04)"]};
+
+// Fila de una transferencia con sus botones Llegó / No llegó
+function TransRow({s,clients,onMark}){
+  const t=transDe(s);const cl=(clients||[]).find(c=>c.id===s.clientId);
+  return(
+    <div style={{display:"flex",alignItems:"center",gap:8,padding:"7px 0",borderTop:`0.5px solid ${T.border}`}}>
+      <div style={{flex:1,minWidth:0}}>
+        <p style={{margin:0,fontSize:13,color:T.text,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{cl?.name||(s.tipo==="palomitas"?"Palomitas":"Venta")}{s.transRef?" · "+s.transRef:""}</p>
+        <p style={{margin:0,fontSize:11,color:T.textMuted}}>{t.metodo}{s.hora?" · "+s.hora:""} · <strong style={{color:T.text}}>{$m(t.monto)}</strong></p>
+      </div>
+      {s.transConf==="si"?<Chip label="✓ Llegó" bg="rgba(26,140,90,0.12)" color={T.profit}/>
+        :<div style={{display:"flex",gap:4,alignItems:"center"}}>
+          {s.transConf==="no"&&<Chip label="No llegó" bg="rgba(192,64,64,0.12)" color={T.expense}/>}
+          <button onClick={()=>onMark(s.id,"si")} style={{fontSize:12,minHeight:32,padding:"2px 10px",color:T.profit,borderColor:"rgba(26,140,90,0.4)"}}>Llegó</button>
+          {s.transConf!=="no"&&<button onClick={()=>onMark(s.id,"no")} style={{fontSize:12,minHeight:32,padding:"2px 10px",color:T.expense,borderColor:"rgba(192,64,64,0.35)"}}>No llegó</button>}
+        </div>}
+    </div>
+  );
+}
+// Transferencias de días que todavía no tienen cierre (las de días cerrados se confirman dentro de su cierre)
+function TransferenciasPend({sales,setSales,clients,cierres,user}){
+  const cerrados=new Set((cierres||[]).map(c=>c.date));
+  const pend=sales.filter(s=>s.date>=INICIO_OPERACION&&!cerrados.has(s.date)&&transDe(s)&&s.transConf!=="si").sort((a,b)=>b.date.localeCompare(a.date)||(b.hora||"").localeCompare(a.hora||""));
+  if(pend.length===0)return null;
+  const mark=(id,v)=>setSales(prev=>prev.map(x=>x.id===id?{...x,transConf:v,transConfPor:user?.name||"",transConfFecha:today()}:x));
+  const dias=[...new Set(pend.map(s=>s.date))];
+  return(
+    <Card>
+      <STitle right={<span style={{fontWeight:700,color:"#B86010"}}>{$m(pend.reduce((a,s)=>a+transDe(s).monto,0))}</span>}>🏦 Transferencias por confirmar</STitle>
+      {dias.map(d=>(
+        <div key={d} style={{marginBottom:6}}>
+          <p style={{margin:"4px 0",fontSize:11,fontWeight:700,color:T.textMuted,textTransform:"uppercase"}}>{d===today()?"Hoy":fechaLarga(d)}</p>
+          {pend.filter(s=>s.date===d).map(s=><TransRow key={s.id} s={s} clients={clients} onMark={mark}/>)}
+        </div>
+      ))}
+    </Card>
+  );
+}
+
+// Aplicar diferencias de un conteo al inventario (deja movimientos "ajuste")
+function aplicarConteo(difs,motivo,{setProds,setPopCfg,setStockMoves,user}){
+  if(!difs.length)return;
+  setProds(prev=>prev.map(p=>{const r=difs.find(x=>x.key===p.id);if(!r)return p;return{...p,stockCajas:Math.max(0,(p.stockCajas||0)+r.dC),stockSobres:Math.max(0,(p.stockSobres||0)+r.dS)};}));
+  setPopCfg(prev=>{const n={...prev};POP_SIZES.forEach(k=>{const r=difs.find(x=>x.key==="pop_"+k);if(r)n[k]={...n[k],stock:(+n[k].stock||0)+r.dC};});return n;});
+  setStockMoves(prev=>[...prev,...difs.map(r=>({id:uid(),date:today(),pid:r.key,type:"ajuste",cajas:r.dC,sobres:r.dS,note:motivo+(r.dC<0||r.dS<0?" (faltante)":" (sobrante)"),by:user?.name||""}))]);
+}
+
+// Conteo sorpresa (solo socios, key msp-cs4): cuentan el inventario sin avisar y se compara contra el sistema
+function ConteoSorpresa({prods,setProds,popCfg,setPopCfg,setStockMoves,conteos,setConteos,user}){
+  const[on,setOn]=useState(false);
+  const[cnt,setCnt]=useState({});
+  const[err,setErr]=useState("");
+  const items=contables(prods,popCfg);
+  const faltan=items.filter(r=>cnt[r.key+"C"]===undefined||cnt[r.key+"C"]===""||(r.dual&&(cnt[r.key+"S"]===undefined||cnt[r.key+"S"]==="")));
+  const guardar=()=>{
+    if(faltan.length){setErr("Faltan "+faltan.length+" productos por contar (pon 0 si no hay)");return;}
+    const d=new Date();
+    const inv=items.map(r=>({key:r.key,name:r.name,dual:r.dual,uC:r.uC,uS:r.uS,sisC:r.sisC,sisS:r.sisS,contC:+cnt[r.key+"C"]||0,contS:r.dual?(+cnt[r.key+"S"]||0):0,pC:r.pC,pS:r.pS,cC:r.cC,cS:r.cS}));
+    setConteos(prev=>[...(prev||[]),{id:uid(),date:today(),hora:String(d.getHours()).padStart(2,"0")+":"+String(d.getMinutes()).padStart(2,"0"),by:user?.name||"",inv,ajustado:false}]);
+    setOn(false);setCnt({});setErr("");
+  };
+  const lista=[...(conteos||[])].sort((a,b)=>(b.date+b.hora).localeCompare(a.date+a.hora)).slice(0,5);
+  return(
+    <Card>
+      <STitle right={!on&&<OutBtn onClick={()=>{setOn(true);setCnt({});}} style={{fontSize:12}}>🔍 Empezar</OutBtn>}>Conteo sorpresa</STitle>
+      {on&&(
+        <>
+          <p style={{margin:"0 0 8px",fontSize:12,color:T.textSub}}>Cuenta lo que hay físicamente, sin ver el sistema. Si no hay, pon 0.</p>
+          {items.map(r=>(
+            <div key={r.key} style={{display:"grid",gridTemplateColumns:r.dual?"1fr 70px 70px":"1fr 70px",gap:6,alignItems:"center",padding:"5px 0",borderBottom:`0.5px solid ${T.border}`}}>
+              <span style={{fontSize:13,color:T.text}}>{r.name.replace(/\s*\(.*\)/,"")}</span>
+              <input type="number" min="0" inputMode="numeric" value={cnt[r.key+"C"]??""} onChange={e=>setCnt({...cnt,[r.key+"C"]:e.target.value})} placeholder={r.dual?"cajas":r.uC} style={{textAlign:"center",fontWeight:700}}/>
+              {r.dual&&<input type="number" min="0" inputMode="numeric" value={cnt[r.key+"S"]??""} onChange={e=>setCnt({...cnt,[r.key+"S"]:e.target.value})} placeholder="sueltos" style={{textAlign:"center",fontWeight:700}}/>}
+            </div>
+          ))}
+          <div style={{display:"flex",gap:8,marginTop:10}}>
+            <GoldBtn onClick={guardar} style={{flex:1,minHeight:44}}>Guardar conteo</GoldBtn>
+            <OutBtn onClick={()=>{setOn(false);setErr("");}} style={{minHeight:44}}>Cancelar</OutBtn>
+          </div>
+          <ErrMsg msg={err}/>
+        </>
+      )}
+      {!on&&lista.length===0&&<p style={{margin:0,fontSize:12,color:T.textMuted}}>Cuenten el inventario sin avisar de vez en cuando para checar el conteo del cierre.</p>}
+      {!on&&lista.map(c=>{const difs=cierreDifs(c);const valV=difs.reduce((a,r)=>a+r.dC*r.pC+r.dS*r.pS,0);return(
+        <div key={c.id} style={{padding:10,borderRadius:10,marginTop:8,border:`1px solid ${difs.length?"rgba(192,64,64,0.35)":"rgba(26,140,90,0.3)"}`,background:difs.length?"rgba(192,64,64,0.04)":"rgba(26,140,90,0.04)"}}>
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:8}}>
+            <span style={{fontSize:13,fontWeight:700}}>{fechaLarga(c.date)} · {c.hora} · {c.by}</span>
+            <Chip label={difs.length?"⚠ "+difs.length+" no cuadran":"✓ Cuadró"} bg={difs.length?"rgba(192,64,64,0.12)":"rgba(26,140,90,0.12)"} color={difs.length?T.expense:T.profit}/>
+          </div>
+          {difs.map(r=>(
+            <div key={r.key} style={{display:"flex",justifyContent:"space-between",gap:8,fontSize:12,padding:"2px 0"}}>
+              <span style={{color:T.textSub}}>{r.name.replace(/\s*\(.*\)/,"")}</span>
+              <span style={{fontWeight:600,color:(r.dC<0||r.dS<0)?T.expense:T.client}}>{r.dC!==0&&(r.dC>0?"+":"")+r.dC+" "+r.uC}{r.dC!==0&&r.dS!==0&&" · "}{r.dS!==0&&(r.dS>0?"+":"")+r.dS+" "+r.uS}</span>
+            </div>
+          ))}
+          {difs.length>0&&<p style={{margin:"4px 0 0",fontSize:12,fontWeight:600,color:valV<0?T.expense:T.client}}>{valV<0?"Faltante":"Sobrante"}: {$m(Math.abs(valV))} a precio de venta</p>}
+          {difs.length>0&&!c.ajustado&&<OutBtn onClick={()=>{aplicarConteo(difs,"Ajuste por conteo sorpresa del "+c.date,{setProds,setPopCfg,setStockMoves,user});setConteos(prev=>prev.map(x=>x.id===c.id?{...x,ajustado:true}:x));}} style={{marginTop:6,fontSize:12,color:T.client,borderColor:"rgba(40,96,176,0.3)"}}>📦 Ajustar inventario al conteo</OutBtn>}
+          {c.ajustado&&<Chip label="Inventario ajustado" bg="rgba(40,96,176,0.1)" color={T.client}/>}
+        </div>
+      );})}
+    </Card>
   );
 }
 
@@ -1965,8 +2113,9 @@ function libroCuentas({sales,expenses,extras,cierres,movs,clients}){
       const c=x.cierre;const dif=+(c.efectivoContado-bal.Caja).toFixed(2);
       if(Math.abs(dif)>=0.01){bal.Caja+=dif;out.push({date:c.date,acc:"Caja",monto:dif,desc:dif<0?"Faltante en el cierre":"Sobrante en el cierre",tipo:"cierre",saldo:bal.Caja});}
       const ent=Math.max(0,+(c.efectivoContado-(c.fondo||FONDO_CAJA)).toFixed(2));
+      const rec=c.recibido!=null?Math.min(ent,+c.recibido):ent;
       if(ent>0){bal.Caja-=ent;out.push({date:c.date,acc:"Caja",monto:-ent,desc:"Entregado al socio en el cierre",tipo:"cierre",saldo:bal.Caja});
-        bal["Efectivo socios"]+=ent;out.push({date:c.date,acc:"Efectivo socios",monto:ent,desc:"Del cierre del día ("+(c.by||"")+")",tipo:"cierre",saldo:bal["Efectivo socios"]});}
+        if(rec>0){bal["Efectivo socios"]+=rec;out.push({date:c.date,acc:"Efectivo socios",monto:rec,desc:"Del cierre del día ("+(c.by||"")+")",tipo:"cierre",saldo:bal["Efectivo socios"]});}}
       return;
     }
     if(!(x.acc in bal))return;
@@ -2572,12 +2721,13 @@ function Dashboard_App({user,onLogout}){
   const[fixed,setFixed]=useState(INIT_FIXED);
   const[cierres,setCierres]=useState([]);
   const[movs,setMovs]=useState([]);
+  const[conteos,setConteos]=useState([]);
   const[ready,setReady]=useState(false);
   const[leaving,setLeaving]=useState(false);
 
   useEffect(()=>{
     (async()=>{
-      let[p,pk,c,s,e,sm,ex,pop,fx,ci,mv]=await Promise.all([load(SK.p,INIT_PRODS),load(SK.pk,INIT_PKGS),load(SK.c,[]),load(SK.s,[]),load(SK.e,[]),load(SK.sm,[]),load(SK.ex,[]),load(SK.pop,INIT_POP),load(SK.fx,INIT_FIXED),load(SK.ci,[]),load(SK.mv,[])]);
+      let[p,pk,c,s,e,sm,ex,pop,fx,ci,mv,cs]=await Promise.all([load(SK.p,INIT_PRODS),load(SK.pk,INIT_PKGS),load(SK.c,[]),load(SK.s,[]),load(SK.e,[]),load(SK.sm,[]),load(SK.ex,[]),load(SK.pop,INIT_POP),load(SK.fx,INIT_FIXED),load(SK.ci,[]),load(SK.mv,[]),load(SK.cs,[])]);
       // Merge new products
       const ids=new Set(p.map(x=>x.id));
       INIT_PRODS.forEach(ip=>{if(!ids.has(ip.id))p.push(ip);});
@@ -2604,6 +2754,7 @@ function Dashboard_App({user,onLogout}){
       const fxVer=Array.isArray(fx)?1:(fx&&fx.v)||1;
       setCierres(Array.isArray(ci)?ci:[]);
       setMovs(Array.isArray(mv)?mv:[]);
+      setConteos(Array.isArray(cs)?cs:[]);
       // Solo se agregan los defaults que se crearon después de la versión guardada (si borraron uno viejo, no regresa)
       let fxList=fxVer>=FIXED_VER?fxItems:[...fxItems,...INIT_FIXED.filter(d=>(d.ver||1)>fxVer&&!fxItems.some(x=>x.id===d.id))];
       if(fxVer<4)fxList=fxList.map(x=>{
@@ -2628,6 +2779,7 @@ function Dashboard_App({user,onLogout}){
   useEffect(()=>{if(ready){const t=setTimeout(()=>save(SK.fx,{v:FIXED_VER,items:fixed}),800);return()=>clearTimeout(t);}},[fixed,ready]);
   useEffect(()=>{if(ready){const t=setTimeout(()=>save(SK.ci,cierres),800);return()=>clearTimeout(t);}},[cierres,ready]);
   useEffect(()=>{if(ready){const t=setTimeout(()=>save(SK.mv,movs),800);return()=>clearTimeout(t);}},[movs,ready]);
+  useEffect(()=>{if(ready){const t=setTimeout(()=>save(SK.cs,conteos),800);return()=>clearTimeout(t);}},[conteos,ready]);
 
   if(!ready)return(
     <div style={{display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",padding:"3rem",gap:12,color:T.textSub}}>
@@ -2647,7 +2799,7 @@ function Dashboard_App({user,onLogout}){
   const logout=async()=>{
     if(leaving)return;
     setLeaving(true);
-    await Promise.all([save(SK.p,prods),save(SK.pk,pkgs),save(SK.c,clients),save(SK.s,sales),save(SK.e,expenses),save(SK.sm,stockMoves),save(SK.ex,extras),save(SK.pop,popCfg),save(SK.fx,{v:FIXED_VER,items:fixed}),save(SK.ci,cierres),save(SK.mv,movs)]);
+    await Promise.all([save(SK.p,prods),save(SK.pk,pkgs),save(SK.c,clients),save(SK.s,sales),save(SK.e,expenses),save(SK.sm,stockMoves),save(SK.ex,extras),save(SK.pop,popCfg),save(SK.fx,{v:FIXED_VER,items:fixed}),save(SK.ci,cierres),save(SK.mv,movs),save(SK.cs,conteos)]);
     onLogout();
   };
 
@@ -2676,6 +2828,8 @@ function Dashboard_App({user,onLogout}){
       {cur.k==="envios"&& <Envios     {...props}/>}
       {cur.k==="caja"  && <div style={{display:"flex",flexDirection:"column",gap:"1.25rem"}}>
         <CierreDia {...props}/>
+        {isAdmin&&<TransferenciasPend sales={sales} setSales={setSales} clients={clients} cierres={cierres} user={user}/>}
+        {isAdmin&&<ConteoSorpresa prods={prods} setProds={setProds} popCfg={popCfg} setPopCfg={setPopCfg} setStockMoves={setStockMoves} conteos={conteos} setConteos={setConteos} user={user}/>}
         {isAdmin&&<Cuentas sales={sales} expenses={expenses} extras={extras} cierres={cierres} movs={movs} setMovs={setMovs} clients={clients} user={user}/>}
       </div>}
       {cur.k==="inv"   && <Inventario {...props}/>}
