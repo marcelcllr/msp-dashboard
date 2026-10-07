@@ -775,8 +775,8 @@ function EnvioForm({conEnvio,setConEnvio,envKm,setEnvKm,envCostoOver,setEnvCosto
   return(
     <div style={{borderTop:`1px solid ${T.goldBorder}`,paddingTop:12,marginTop:4,marginBottom:12}}>
       <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:6}}>
-        <button onClick={()=>setConEnvio(false)} style={pill(!conEnvio,T.textSub)}>🏪 Se lo lleva / sin envío</button>
-        <button onClick={()=>setConEnvio(true)} style={pill(conEnvio,T.client)}>🛵 Con envío</button>
+        <button onClick={()=>setConEnvio(false)} style={pill(!conEnvio,T.textSub)}>🏪 Venta en local</button>
+        <button onClick={()=>setConEnvio(true)} style={pill(conEnvio,T.client)}>🛵 Venta con envío</button>
       </div>
       {conEnvio&&(
         <div style={{marginTop:10,padding:12,borderRadius:10,background:"rgba(40,96,176,0.05)",border:"1px solid rgba(40,96,176,0.2)",display:"flex",flexDirection:"column",gap:10}}>
@@ -2389,6 +2389,11 @@ function Envios({sales,setSales,clients,isAdmin,user}){
   const env=envAll.filter(s=>s.date>=range.start&&s.date<=range.end).sort((a,b)=>b.date.localeCompare(a.date));
   const pend=envAll.filter(s=>!s.envioPagado);
   const debe=envAll.filter(s=>s.envioContra&&!s.envioDineroRecibido);
+  // Entregados que el cliente todavía no paga (pago por transferencia/terminal sin confirmar)
+  const diasDesde=ds=>Math.max(0,Math.round((new Date(today()+"T12:00:00")-new Date(ds+"T12:00:00"))/86400000));
+  const sinPagar=envAll.filter(s=>s.date>=INICIO_OPERACION&&!s.envioContra&&transDe(s)&&s.transConf!=="si"&&s.envioStatus==="entregado")
+    .sort((a,b)=>(a.envioEntregadoFecha||a.date).localeCompare(b.envioEntregadoFecha||b.date));
+  const marcarPagado=id=>setSales(prev=>prev.map(x=>x.id===id?{...x,transConf:"si",transConfPor:user?.name||"",transConfFecha:today()}:x));
   const porRepDebe={};debe.forEach(s=>{const k=s.repartidor||"Sin nombre";(porRepDebe[k]=porRepDebe[k]||[]).push(s);});
   const recibir=ids=>{const set=new Set(ids);const h=horaAhora();setSales(prev=>prev.map(s=>set.has(s.id)?{...s,envioDineroRecibido:true,envioDineroHora:h,envioDineroFecha:today(),envioDineroPor:user?.name||""}:s));};
   const upd=(id,patch)=>setSales(prev=>prev.map(s=>s.id===id?{...s,...patch}:s));
@@ -2399,6 +2404,24 @@ function Envios({sales,setSales,clients,isAdmin,user}){
   const ST={pendiente:{l:"⏳ Por salir",c:"#B86010"},salio:{l:"🛵 En camino",c:T.client},entregado:{l:"✓ Entregado",c:T.profit}};
   return(
     <div style={{display:"flex",flexDirection:"column",gap:"1.25rem"}}>
+      {sinPagar.length>0&&(
+        <Card style={{borderColor:T.expense,borderWidth:1}}>
+          <STitle right={<span style={{fontWeight:700,color:T.expense}}>{$m(sinPagar.reduce((a,s)=>a+transDe(s).monto,0))}</span>}>💰 Entregados sin pagar</STitle>
+          <div style={{display:"flex",flexDirection:"column",gap:6}}>
+            {sinPagar.map(s=>{const cl=clients.find(c=>c.id===s.clientId);const d=diasDesde(s.envioEntregadoFecha||s.date);const t=transDe(s);return(
+              <div key={s.id} style={{display:"flex",alignItems:"center",gap:8,padding:"8px 10px",borderRadius:10,border:`1px solid ${d>=1?"rgba(192,64,64,0.4)":T.border}`,background:d>=1?"rgba(192,64,64,0.05)":T.bgRow}}>
+                <div style={{flex:1,minWidth:0}}>
+                  <p style={{margin:0,fontSize:13,fontWeight:700,color:T.text}}>{cl?.name||"Cliente"}</p>
+                  <p style={{margin:0,fontSize:11,color:d>=1?T.expense:T.textMuted,fontWeight:d>=1?700:400}}>{d===0?"Entregado hoy":"Entregado hace "+d+" día"+(d>1?"s":"")+" · cobrar"} · {t.metodo}</p>
+                </div>
+                <span style={{fontWeight:700,color:T.text}}>{$m(t.monto)}</span>
+                {isAdmin&&<button onClick={()=>marcarPagado(s.id)} style={{fontSize:12,minHeight:36,padding:"2px 10px",color:T.profit,borderColor:"rgba(26,140,90,0.4)"}}>💰 Pagado</button>}
+              </div>
+            );})}
+          </div>
+        </Card>
+      )}
+
       {debe.length>0&&(
         <Card style={{borderColor:T.profit,borderWidth:1}}>
           <STitle right={<span style={{fontWeight:700,color:T.profit}}>{$m(sum(debe,"envioDebe"))}</span>}>💵 Te tienen que entregar</STitle>
@@ -2473,19 +2496,21 @@ function Envios({sales,setSales,clients,isAdmin,user}){
                     <Chip label={st.l} bg={st.c+"18"} color={st.c}/>
                   </div>
                   <div style={{display:"flex",gap:12,flexWrap:"wrap",marginTop:8,fontSize:12}}>
-                    <span>Cliente pagó: <strong style={{color:T.revenue}}>{$m(s.envio||0)}</strong></span>
+                    <span>Envío cobrado: <strong style={{color:T.revenue}}>{$m(s.envio||0)}</strong></span>
                     <span>Repartidor: <strong style={{color:T.cost}}>{$m(s.costoEnvio||0)}</strong></span>
                     {isAdmin&&(s.envioNeto||0)>0&&<span>Absorbes: <strong style={{color:T.expense}}>{$m(s.envioNeto)}</strong></span>}
                   </div>
                   <div style={{fontSize:11,color:T.textMuted,marginTop:4}}>
                     {s.envioSalio&&<span>Salió {s.envioSalio} </span>}{s.envioEntregado&&<span>· Entregado {s.envioEntregado} </span>}
                     <span>· {s.envioContra?"💵 Contra entrega (se cobró su envío)":s.envioPagado?"✓ Repartidor pagado"+(s.envioPagadoCon?" ("+s.envioPagadoCon+")":""):"⏳ Falta pagar al repartidor"}</span>
+                    {!s.envioContra&&transDe(s)&&<div style={{marginTop:2,color:s.transConf==="si"?T.profit:"#B86010",fontWeight:600}}>{s.transConf==="si"?"💰 El cliente ya pagó "+$m(transDe(s).monto):"⏳ El cliente no ha pagado "+$m(transDe(s).monto)+" ("+transDe(s).metodo+")"}</div>}
                     {s.envioContra&&<div style={{marginTop:2,color:s.envioDineroRecibido?T.profit:T.expense,fontWeight:600}}>{s.envioDineroRecibido?"✓ Entregó "+$m(s.envioDebe||0)+" a las "+s.envioDineroHora:"⏳ Te debe entregar "+$m(s.envioDebe||0)}</div>}
                   </div>
                   <div style={{display:"flex",gap:6,marginTop:8}}>
                     {(s.envioStatus||"pendiente")==="pendiente"&&<GoldBtn onClick={()=>upd(s.id,{envioStatus:"salio",envioSalio:horaAhora()})} style={{flex:1,minHeight:40,background:T.client}}>🛵 Ya salió</GoldBtn>}
-                    {s.envioStatus==="salio"&&<GoldBtn onClick={()=>upd(s.id,{envioStatus:"entregado",envioEntregado:horaAhora()})} style={{flex:1,minHeight:40,background:T.profit}}>✓ Entregado</GoldBtn>}
+                    {s.envioStatus==="salio"&&<GoldBtn onClick={()=>upd(s.id,{envioStatus:"entregado",envioEntregado:horaAhora(),envioEntregadoFecha:today()})} style={{flex:1,minHeight:40,background:T.profit}}>✓ Entregado</GoldBtn>}
                     {!s.envioPagado&&<OutBtn onClick={()=>pagar([s.id],"Efectivo")} style={{flex:1,minHeight:40}}>💵 Pagarle en efectivo</OutBtn>}
+                    {isAdmin&&!s.envioContra&&transDe(s)&&s.transConf!=="si"&&<OutBtn onClick={()=>marcarPagado(s.id)} style={{flex:1,minHeight:40,color:T.profit,borderColor:"rgba(26,140,90,0.4)"}}>💰 Pagado</OutBtn>}
                     {s.envioContra&&!s.envioDineroRecibido&&<OutBtn onClick={()=>recibir([s.id])} style={{flex:1,minHeight:40,color:T.profit,borderColor:"rgba(26,140,90,0.4)"}}>✓ Ya entregó el dinero</OutBtn>}
                   </div>
                 </div>
