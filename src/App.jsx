@@ -112,19 +112,19 @@ function pkgPrice(cl,pkgId,std){if(cl?.pkgPrices?.[pkgId]!=null)return+cl.pkgPri
 // ── CATALOG ───────────────────────────────────────────────────────────────────
 const COSTS={"bh":225,"rhv":220,"hs":235,"rh":125,"rhp":170,"pp24":220,"vf":340,"sob":10,"gom":130,"rchv":290,"rhch":290};
 const INIT_PRODS=[
-  {id:"bh",  name:"Black Horse (24 sobres)",           cat:"Miel",    unit:"caja", spc:24, cost:225, list:1199,tiers:TA,costSobre:9,listSobre:150,stockCajas:0,stockSobres:0},
-  {id:"rhv", name:"Royal Honey VIP (24 sobres)",        cat:"Miel",    unit:"caja", spc:24, cost:220, list:1199,tiers:TA,costSobre:9,listSobre:150,stockCajas:0,stockSobres:0},
-  {id:"hs",  name:"Hard Steel (24 sobres)",             cat:"Miel",    unit:"caja", spc:24, cost:235, list:1199,tiers:TA,costSobre:10,listSobre:150,stockCajas:0,stockSobres:0},
-  {id:"rh",  name:"Royal Honey (12 sobres)",            cat:"Miel",    unit:"caja", spc:12, cost:125, list:999, tiers:TB,costSobre:10,listSobre:150,stockCajas:0,stockSobres:0},
-  {id:"rhp", name:"Royal Honey Platinum (12 sobres)",   cat:"Miel",    unit:"caja", spc:12, cost:183, list:999, tiers:TB,costSobre:15,listSobre:150,stockCajas:0,stockSobres:0},
+  {id:"bh",  name:"Black Horse (24 sobres)",           cat:"Miel",    unit:"caja", spc:24, cost:160, list:1199,tiers:TA,costSobre:9,listSobre:150,stockCajas:0,stockSobres:0},
+  {id:"rhv", name:"Royal Honey VIP (24 sobres)",        cat:"Miel",    unit:"caja", spc:24, cost:160, list:1199,tiers:TA,costSobre:9,listSobre:150,stockCajas:0,stockSobres:0},
+  {id:"hs",  name:"Hard Steel (24 sobres)",             cat:"Miel",    unit:"caja", spc:24, cost:160, list:1199,tiers:TA,costSobre:10,listSobre:150,stockCajas:0,stockSobres:0},
+  {id:"rh",  name:"Royal Honey (12 sobres)",            cat:"Miel",    unit:"caja", spc:12, cost:100, list:999, tiers:TB,costSobre:10,listSobre:150,stockCajas:0,stockSobres:0},
+  {id:"rhp", name:"Royal Honey Platinum (12 sobres)",   cat:"Miel",    unit:"caja", spc:12, cost:157, list:999, tiers:TB,costSobre:15,listSobre:150,stockCajas:0,stockSobres:0},
   {id:"rhh", name:"Royal Honey for Her (12 sobres)",    cat:"Miel",    unit:"caja", spc:12, cost:173, list:999, tiers:TB,costSobre:14,listSobre:150,stockCajas:0,stockSobres:0},
-  {id:"pp24",name:"Pink Pussycat (24 sobres)",          cat:"Miel",    unit:"caja", spc:24, cost:220, list:1199,tiers:TA,costSobre:9,listSobre:150,stockCajas:0,stockSobres:0},
-  {id:"vf",  name:"Vitafer-L (16 sobres)",              cat:"Miel",    unit:"caja", spc:16, cost:340, list:1199,tiers:TA,costSobre:21,listSobre:150,stockCajas:0,stockSobres:0},
+  {id:"pp24",name:"Pink Pussycat (24 sobres)",          cat:"Miel",    unit:"caja", spc:24, cost:160, list:1199,tiers:TA,costSobre:9,listSobre:150,stockCajas:0,stockSobres:0},
+  {id:"vf",  name:"Vitafer-L (16 sobres)",              cat:"Miel",    unit:"caja", spc:16, cost:230, list:1199,tiers:TA,costSobre:21,listSobre:150,stockCajas:0,stockSobres:0},
   {id:"gom_f",name:"Gomitas Bliss Bears — Mujer",        cat:"Miel",    unit:"caja", spc:6,  cost:130, list:400, tiers:TD,costSobre:22,listSobre:150,stockCajas:0,stockSobres:0,spcu:"piezas"},
   {id:"gom_m",name:"Gomitas Boner Bears — Hombre",       cat:"Miel",    unit:"caja", spc:6,  cost:130, list:400, tiers:TD,costSobre:22,listSobre:150,stockCajas:0,stockSobres:0,spcu:"piezas"},
-  {id:"rchv",name:"Royal Choco VIP",                    cat:"Miel",    unit:"caja", spc:12, cost:290, list:1250,tiers:TC,listSobre:200,stockCajas:0,stockSobres:0},
-  {id:"rhch",name:"Rhino Choco",                        cat:"Miel",    unit:"caja", spc:12, cost:290, list:1250,tiers:TC,listSobre:200,stockCajas:0,stockSobres:0},
-  {id:"ppch",name:"Pink Pussycat Choco",                cat:"Miel",    unit:"caja", spc:12, cost:290, list:1250,tiers:TC,listSobre:200,stockCajas:0,stockSobres:0},
+  {id:"rchv",name:"Royal Choco VIP",                    cat:"Miel",    unit:"caja", spc:12, cost:250, list:1250,tiers:TC,listSobre:200,stockCajas:0,stockSobres:0},
+  {id:"rhch",name:"Rhino Choco",                        cat:"Miel",    unit:"caja", spc:12, cost:250, list:1250,tiers:TC,listSobre:200,stockCajas:0,stockSobres:0},
+  {id:"ppch",name:"Pink Pussycat Choco",                cat:"Miel",    unit:"caja", spc:12, cost:250, list:1250,tiers:TC,listSobre:200,stockCajas:0,stockSobres:0},
   {id:"cond",name:"Condones + Lubricante",              cat:"SexShop", unit:"kit",  spc:1,  cost:0,   list:55,  tiers:[{m:1,p:55}],stockCajas:0,stockSobres:0},
   {id:"gel", name:"Gel de Masaje Sizzle Lips",          cat:"SexShop", unit:"pieza",spc:1,  cost:0,   list:645, tiers:[{m:1,p:645}],stockCajas:0,stockSobres:0},
   {id:"swn", name:"Swiss Navy Max Size",                cat:"SexShop", unit:"tubo", spc:1,  cost:0,   list:1680,tiers:[{m:1,p:1680}],stockCajas:0,stockSobres:0},
@@ -2740,6 +2740,9 @@ function Dashboard_App({user,onLogout}){
       const fix=new Set(["gom","gom_f","gom_m","rchv","rhch","ppch"]);
       // Productos que ya no existen. "sob" (sobre individual genérico): ahora cada sobre se vende por marca.
       p=p.filter(x=>x.id!=="gom"&&x.id!=="pp12"&&x.id!=="sob");
+      // Actualización de costos de caja que pidió Marcel (una sola vez por versión; después se respetan las ediciones)
+      const COSTOS_ACT={ver:"2026-10-07",c:{bh:160,pp24:160,rhv:160,hs:160,rchv:250,rhch:250,ppch:250,rh:100,rhp:157,vf:230}};
+      p=p.map(x=>COSTOS_ACT.c[x.id]!=null&&x.costVer!==COSTOS_ACT.ver?{...x,cost:COSTOS_ACT.c[x.id],costVer:COSTOS_ACT.ver}:x);
       // Chocolates: vienen en sobres (no piezas) y el sobre vale $200. Solo se cambia si seguía el default viejo de $150.
       const CHOCO_IDS=["rchv","rhch","ppch"];
       p=p.map(x=>{if(!CHOCO_IDS.includes(x.id))return x;const{spcu,...r}=x;return{...r,listSobre:(x.listSobre&&x.listSobre!==150)?x.listSobre:200};});

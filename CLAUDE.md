@@ -109,7 +109,8 @@ Antes de hacer push SIEMPRE correr `npm run build` y confirmar que compila.
 ## Reglas duras (bugs que ya nos pasaron)
 1. **No declarar variables duplicadas** (ej. `exForm`, `PAY_METHODS_LABEL`): rompen el build de Vercel.
 2. **Nunca definir componentes dentro de otros componentes**: causa pantalla en blanco. Todos los componentes van como funciones top-level.
-3. **La migración de productos solo pone costos default a productos NUEVOS** sin valor. Nunca sobreescribir costos que el usuario ya editó al cargar la página.
+3. **La migración de productos solo pone costos default a productos NUEVOS** sin valor. Nunca sobreescribir costos que el usuario ya editó al cargar la página. Excepción: cuando Marcel manda costos nuevos se usa `COSTOS_ACT` con `ver` (se aplica una sola vez por producto, marcado con `costVer`).
+   - Costos de caja al 2026-10-07: Black Horse, Royal Honey VIP, Hard Steel y Pink Pussycat 24 = $160 · chocolates (Royal Choco, Rhino Choco, Pink Pussycat Choco) = $250 · Royal Honey 12 = $100 · Platinum = $157 · Vitafer = $230. Pink Pussycat 12 NO se maneja.
 4. **Costo de un sobre = `sobreCost(p)` = costo de la caja ÷ sobres** (ya no se usa `costSobre` escrito a mano). Precio de venta del sobre = `listSobre`. Nunca usar el costo de la caja para un sobre.
 5. Queries a Supabase: usar `.maybeSingle()`, no `.single()` (ojo: `dbLoad` en `supabase.js` todavía usa `.single()`).
 6. Guardados con debounce de 800 ms (`setTimeout` / `clearTimeout`).
