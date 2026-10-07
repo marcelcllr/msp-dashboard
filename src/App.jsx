@@ -1690,7 +1690,7 @@ const DENOMS=[1000,500,200,100,50,20];
 // Efectivo que debería haber en la caja al cerrar un día
 // Solo cuenta lo que pasa por la caja: ventas/envíos/mixtos en efectivo, gastos marcados "de la caja"
 // y pagos a repartidores en efectivo. No cuenta gastos que pagó un socio ni utilidades extra (esas las recibe un socio).
-function efectivoEsperado(d,sales,expenses,extras){
+function efectivoEsperado(d,sales,expenses,extras,fondoInicial=FONDO_CAJA){
   const r=cuentaResumen("Efectivo",{start:d,end:d},sales,expenses,extras);
   const gastosCaja=expenses.filter(e=>e.date===d&&(e.pagadoCon||"Efectivo")==="Efectivo"&&e.deCaja).reduce((a,e)=>a+e.amount,0);
   const neto=r.ventasTotal+r.envCobrado+r.mixAmt-gastosCaja-r.repPagado;
@@ -1698,7 +1698,7 @@ function efectivoEsperado(d,sales,expenses,extras){
   const traen=sales.filter(s=>s.date===d&&s.envioContra&&!(s.envioDineroRecibido&&s.envioDineroFecha===d)).reduce((a,s)=>a+(s.envioDebe||0),0);
   // Contra entrega de días anteriores que el repartidor entregó hoy
   const llegaron=sales.filter(s=>s.date<d&&s.envioContra&&s.envioDineroRecibido&&s.envioDineroFecha===d).reduce((a,s)=>a+(s.envioDebe||0),0);
-  return FONDO_CAJA+neto-traen+llegaron;
+  return fondoInicial+neto-traen+llegaron;
 }
 // Todo lo que se cuenta en el cierre: productos (cajas + sobres, o piezas) y vasos de palomitas
 function contables(prods,popCfg){
@@ -1711,7 +1711,13 @@ const cierreDifs=c=>(c.inv||[]).map(r=>({...r,dC:r.contC-r.sisC,dS:r.contS-r.sis
 const cierreCuadra=c=>Math.abs(c.efectivoContado-c.efectivoEsperado)<1&&cierreDifs(c).length===0;
 const fechaLarga=ds=>new Date(ds+"T12:00:00").toLocaleDateString("es-MX",{weekday:"long",day:"numeric",month:"short"}).replace(/^\w/,x=>x.toUpperCase());
 
-function CierreDia({prods,setProds,sales,setSales,clients,expenses,extras,popCfg,setPopCfg,cierres,setCierres,stockMoves,setStockMoves,user,isAdmin}){
+// Con cuánto efectivo empezó la caja el día d: lo que quedó en el último cierre o el saldo inicial que se puso
+function cajaAlIniciar(d,{sales,expenses,extras,cierres,movs}){
+  const{movs:lib}=libroCuentas({sales,expenses,extras,cierres,movs,clients:[]});
+  const prev=lib.filter(x=>x.acc==="Caja"&&(x.date<d||(x.date===d&&x.tipo==="inicial")));
+  return prev.length?prev[prev.length-1].saldo:FONDO_CAJA;
+}
+function CierreDia({prods,setProds,sales,setSales,clients,expenses,extras,popCfg,setPopCfg,cierres,setCierres,stockMoves,setStockMoves,movs,user,isAdmin}){
   const[recIn,setRecIn]=useState({});
   const markTrans=(id,v)=>setSales(prev=>prev.map(x=>x.id===id?{...x,transConf:v,transConfPor:user?.name||"",transConfFecha:today()}:x));
   const hoy=today();
@@ -1736,7 +1742,8 @@ function CierreDia({prods,setProds,sales,setSales,clients,expenses,extras,popCfg
     const d=new Date();
     const inv=items.map(r=>({key:r.key,name:r.name,dual:r.dual,uC:r.uC,uS:r.uS,sisC:r.sisC,sisS:r.sisS,contC:+cnt[r.key+"C"]||0,contS:r.dual?(+cnt[r.key+"S"]||0):0,pC:r.pC,pS:r.pS,cC:r.cC,cS:r.cS}));
     setCierres(prev=>[...prev,{id:uid(),date:hoy,hora:String(d.getHours()).padStart(2,"0")+":"+String(d.getMinutes()).padStart(2,"0"),by:user?.name||"",
-      fondo:FONDO_CAJA,denoms:{...den},monedas:+monedas||0,efectivoContado:contado,efectivoEsperado:+efectivoEsperado(hoy,sales,expenses,extras).toFixed(2),
+      fondo:FONDO_CAJA,fondoInicial:cajaAlIniciar(hoy,{sales,expenses,extras,cierres,movs}),denoms:{...den},monedas:+monedas||0,efectivoContado:contado,
+      efectivoEsperado:+efectivoEsperado(hoy,sales,expenses,extras,cajaAlIniciar(hoy,{sales,expenses,extras,cierres,movs})).toFixed(2),
       entregar:contado-FONDO_CAJA,inv,nota:nota.trim(),revisado:false,ajustado:false}]);
     setConfirm(false);setErr("");
   };
@@ -2774,6 +2781,13 @@ function Dashboard_App({user,onLogout}){
             await save("msp-arranque",ARRANQUE_CERO);
           }
         }else console.error("Arranque en ceros: el respaldo no se pudo confirmar, no se limpió nada");
+      }
+      const cajaIni=await load("msp-caja-inicial",null);
+      if(cajaIni!==ARRANQUE_CERO){
+        if(!(mv||[]).some(m=>m.tipo==="inicial"&&m.a==="Caja"&&m.date>=ARRANQUE_CERO))
+          mv=[...(mv||[]),{id:uid(),tipo:"inicial",a:"Caja",date:ARRANQUE_CERO,monto:350,by:"Marcel"}];
+        const okMv=await save(SK.mv,mv);
+        if(okMv===true)await save("msp-caja-inicial",ARRANQUE_CERO);
       }
       setProds(p);setPkgs(pk);setClients(c);setSales(s);setExpenses(e);setStockMoves(sm);setExtras(ex);
       // Igual que con productos: el default de insumos solo entra si no hay costo capturado (0 o vacío)
