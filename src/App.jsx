@@ -2789,9 +2789,25 @@ function Dashboard_App({user,onLogout}){
         const okMv=await save(SK.mv,mv);
         if(okMv===true)await save("msp-caja-inicial",ARRANQUE_CERO);
       }
-      setProds(p);setPkgs(pk);setClients(c);setSales(s);setExpenses(e);setStockMoves(sm);setExtras(ex);
       // Igual que con productos: el default de insumos solo entra si no hay costo capturado (0 o vacío)
       const popM={};POP_SIZES.forEach(k=>{const st=(pop||{})[k]||{};popM[k]={...INIT_POP[k],...st,cost:(+st.cost>0)?+st.cost:INIT_POP[k].cost};});
+      // ── INVENTARIO INICIAL 7 OCT (una sola vez, marca en key "msp-inv-inicial") ──
+      // Conteo que mandó Marcel: se ponen las cantidades EXACTAS (no se suman) y queda un movimiento por producto.
+      const invIni=await load("msp-inv-inicial",null);
+      if(invIni!==ARRANQUE_CERO){
+        const INV={bh:[47,21],rhv:[11,26],hs:[1,31],pp24:[11,51],rh:[2,11],rhp:[20,9],rhh:[5,12],vf:[23,3],rchv:[1,0],rhch:[22,11],ppch:[11,12],gom_m:[11,0],gom_f:[20,0]};
+        const VASOS={s:34,m:44,l:44};
+        const nota="Inventario inicial 7 oct";
+        const movsInv=[];
+        p=p.map(x=>{const v=INV[x.id];if(!v)return x;
+          movsInv.push({id:uid(),date:ARRANQUE_CERO,pid:x.id,type:"ajuste",cajas:v[0]-(x.stockCajas||0),sobres:v[1]-(x.stockSobres||0),note:nota+" (quedó en "+v[0]+" cajas · "+v[1]+" sueltos)",by:"Marcel"});
+          return{...x,stockCajas:v[0],stockSobres:v[1]};});
+        POP_SIZES.forEach(k=>{movsInv.push({id:uid(),date:ARRANQUE_CERO,pid:"pop_"+k,type:"ajuste",cajas:VASOS[k]-(+popM[k].stock||0),sobres:0,note:nota+" (quedó en "+VASOS[k]+" vasos)",by:"Marcel"});popM[k]={...popM[k],stock:VASOS[k]};});
+        sm=[...(sm||[]),...movsInv];
+        const oks=await Promise.all([save(SK.p,p),save(SK.sm,sm),save(SK.pop,popM)]);
+        if(oks.every(o=>o===true))await save("msp-inv-inicial",ARRANQUE_CERO);
+      }
+      setProds(p);setPkgs(pk);setClients(c);setSales(s);setExpenses(e);setStockMoves(sm);setExtras(ex);
       setPopCfg(popM);
       // Fijos: guardado como {v,items}. Si viene de una versión anterior, se agregan los fijos nuevos
       // por default que falten (sin tocar montos que ya editaron). Después se respetan tal cual.
