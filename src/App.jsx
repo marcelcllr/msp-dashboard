@@ -2427,7 +2427,15 @@ function Envios({sales,setSales,clients,isAdmin,user}){
     repartidor:(s,v)=>upd(s.id,v==="no"?{envioPagado:false,envioPagadoCon:"",envioPagadoFecha:""}:{envioPagado:true,envioPagadoCon:v,envioPagadoFecha:s.envioPagadoFecha||today()}),
     dinero:(s,v)=>upd(s.id,v==="si"?{envioDineroRecibido:true,envioDineroHora:s.envioDineroHora||horaAhora(),envioDineroFecha:s.envioDineroFecha||today(),...(contraTransfer(s)?{transConf:"si",transConfPor:user?.name||"",transConfFecha:today()}:{})}
       :{envioDineroRecibido:false,envioDineroHora:"",envioDineroFecha:"",...(contraTransfer(s)?{transConf:undefined,transConfPor:"",transConfFecha:""}:{})}),
-    via:(s,v)=>upd(s.id,{payMethod:v,envioPagadoCon:v,envioDineroRecibido:false,envioDineroHora:"",envioDineroFecha:"",transConf:undefined,transConfPor:"",transConfFecha:""}),
+    cobro:(s,v)=>{const[t,m]=v.split("|");
+      // La comisión de la terminal va dentro del costo: se quita la vieja y se pone la nueva
+      const com=t==="d"&&m==="Terminal MP"?+((s.total+(s.envio||0))*TERMINAL_FEE).toFixed(2):0;
+      const base={payMethod:m,comision:com,cost:+((s.cost||0)-(s.comision||0)+com).toFixed(2),mixEfectivo:0,mixTransferencia:0,mixCuenta:"",
+        envioDineroRecibido:false,envioDineroHora:"",envioDineroFecha:"",transConf:undefined,transConfPor:"",transConfFecha:""};
+      if(t==="c")upd(s.id,{...base,envioContra:true,envioDebe:+(s.total+(s.envio||0)-(s.costoEnvio||0)).toFixed(2),
+        envioPagado:true,envioPagadoCon:m,envioPagadoFecha:s.date});
+      else upd(s.id,{...base,envioContra:false,envioDebe:0,
+        ...(s.envioContra?{envioPagado:false,envioPagadoCon:"",envioPagadoFecha:""}:{})});},
   };
   const porRepDebe={};debe.forEach(s=>{const k=s.repartidor||"Sin nombre";(porRepDebe[k]=porRepDebe[k]||[]).push(s);});
   const recibir=ids=>{const set=new Set(ids);const h=horaAhora();setSales(prev=>prev.map(s=>set.has(s.id)?{...s,envioDineroRecibido:true,envioDineroHora:h,envioDineroFecha:today(),envioDineroPor:user?.name||"",
@@ -2571,8 +2579,16 @@ function Envios({sales,setSales,clients,isAdmin,user}){
                         <option value="no">⏳ No ha pagado</option><option value="si">💰 Ya pagó</option></select></F>}
                       {!s.envioContra&&<F label={"¿Ya se le pagó al repartidor? ("+$m(s.costoEnvio||0)+")"}><select value={s.envioPagado?(s.envioPagadoCon||"Efectivo"):"no"} onChange={e=>corregir.repartidor(s,e.target.value)}>
                         <option value="no">⏳ No</option>{CUENTAS.map(c=><option key={c} value={c}>Sí, con {CUENTA_LABEL[c]}</option>)}</select></F>}
-                      {s.envioContra&&<F label="¿Cómo te da el dinero el repartidor?"><select value={contraTransfer(s)?s.payMethod:"Efectivo"} onChange={e=>corregir.via(s,e.target.value)}>
-                        <option value="Efectivo">💵 Lo trae en efectivo</option>{CONTRA_CUENTAS.map(c=><option key={c} value={c}>📱 Lo transfiere a {CUENTA_LABEL[c]}</option>)}</select></F>}
+                      <F label="¿Cómo pagó el cliente?"><select value={(s.envioContra?"c|":"d|")+(s.envioContra&&!contraTransfer(s)?"Efectivo":s.payMethod)} onChange={e=>corregir.cobro(s,e.target.value)}>
+                        <optgroup label="Nos pagó directo">
+                          {!s.envioContra&&!TRANS_METHODS.includes(s.payMethod)&&<option value={"d|"+s.payMethod}>{PAY_METHODS_LABEL[s.payMethod]||s.payMethod}</option>}
+                          {TRANS_METHODS.map(m=><option key={m} value={"d|"+m}>{PAY_METHODS_LABEL[m]}</option>)}
+                        </optgroup>
+                        <optgroup label="💵 Efectivo al repartidor">
+                          <option value="c|Efectivo">💵 Lo trae en efectivo</option>
+                          {CONTRA_CUENTAS.map(c=><option key={c} value={"c|"+c}>📱 Lo transfiere a {CUENTA_LABEL[c]}</option>)}
+                        </optgroup>
+                      </select></F>
                       {s.envioContra&&<F label={(contraTransfer(s)?"¿El repartidor ya transfirió? (":"¿El repartidor ya entregó el dinero? (")+$m(s.envioDebe||0)+")"}><select value={contraListo(s)?"si":"no"} onChange={e=>corregir.dinero(s,e.target.value)}>
                         <option value="no">⏳ No</option><option value="si">✓ Sí</option></select></F>}
                     </div>
