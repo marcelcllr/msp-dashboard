@@ -767,7 +767,7 @@ function VentaRow({name,sub,dual,unitLabel,unit,setUnit,qty,otherQty,otherLabel,
 }
 
 // ── FORMULARIO DE ENVÍO (dentro de Nueva venta) ───────────────────────────────
-function EnvioForm({conEnvio,setConEnvio,envKm,setEnvKm,envCostoOver,setEnvCostoOver,envPct,setEnvPct,envOtro,setEnvOtro,envRep,setEnvRep,envDir,setEnvDir,envPagado,setEnvPagado,envPagadoCon,setEnvPagadoCon,envCobro,setEnvCobro,setPayMethod,productos,isAdmin,repartidores}){
+function EnvioForm({conEnvio,setConEnvio,envKm,setEnvKm,envCostoOver,setEnvCostoOver,envPct,setEnvPct,envOtro,setEnvOtro,envRep,setEnvRep,envDir,setEnvDir,envPagado,setEnvPagado,envPagadoCon,setEnvPagadoCon,envCobro,setEnvCobro,envVia,setEnvVia,setPayMethod,productos,isAdmin,repartidores}){
   const ev=envioCalc(envKm,envCostoOver,envPct,envOtro);
   const cobraRep=productos+ev.cliente;           // lo que el repartidor le cobra al cliente
   const teEntrega=cobraRep-ev.costo;              // lo que el repartidor te regresa
@@ -823,8 +823,20 @@ function EnvioForm({conEnvio,setConEnvio,envKm,setEnvKm,envCostoOver,setEnvCosto
             <div style={{padding:"10px 12px",borderRadius:8,background:"rgba(26,140,90,0.06)",border:"1px solid rgba(26,140,90,0.25)",fontSize:13,display:"flex",flexDirection:"column",gap:3}}>
               <span>💵 El repartidor le cobra al cliente: <strong>{$m(cobraRep)}</strong></span>
               <span>🛵 Se queda con su envío: <strong style={{color:T.cost}}>−{$m(ev.costo)}</strong></span>
-              <span style={{fontSize:14}}>🤝 Te tiene que entregar: <strong style={{color:T.profit}}>{$m(teEntrega)}</strong></span>
+              {envVia==="Efectivo"
+                ?<span style={{fontSize:14}}>🤝 Te tiene que traer en efectivo: <strong style={{color:T.profit}}>{$m(teEntrega)}</strong></span>
+                :<span style={{fontSize:14}}>📱 Te tiene que transferir: <strong style={{color:T.profit}}>{$m(teEntrega)}</strong> a {CUENTA_LABEL[envVia]}</span>}
               {teEntrega<0&&<span style={{color:T.expense,fontSize:12}}>⚠ El envío cuesta más que lo que cobra: tú le debes {$m(-teEntrega)}</span>}
+              <p style={{margin:"6px 0 4px",fontSize:11,fontWeight:600,color:T.textSub}}>¿CÓMO TE DA EL DINERO EL REPARTIDOR?</p>
+              <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:6}}>
+                <button onClick={()=>setEnvVia("Efectivo")} style={pill(envVia==="Efectivo",T.profit)}>💵 Lo trae en efectivo</button>
+                <button onClick={()=>{if(envVia==="Efectivo")setEnvVia("SPIN Marcel");}} style={pill(envVia!=="Efectivo",T.client)}>📱 Te lo transfiere</button>
+              </div>
+              {envVia!=="Efectivo"&&(
+                <select value={envVia} onChange={e=>setEnvVia(e.target.value)} style={{marginTop:6}}>
+                  {CONTRA_CUENTAS.map(c=><option key={c} value={c}>A {CUENTA_LABEL[c]}</option>)}
+                </select>
+              )}
             </div>
           ):(
           <div>
@@ -877,6 +889,7 @@ function NuevaVenta({prods,setProds,pkgs,clients,setClients,sales,setSales,user,
   const[envPagado,setEnvPagado]=useState("no");
   const[envPagadoCon,setEnvPagadoCon]=useState("Efectivo");
   const[envCobro,setEnvCobro]=useState("transfer");
+  const[envVia,setEnvVia]=useState("Efectivo");
   const[note,setNote]=useState("");
   const[transRef,setTransRef]=useState("");
   const[err,setErr]=useState("");
@@ -961,15 +974,17 @@ function NuevaVenta({prods,setProds,pkgs,clients,setClients,sales,setSales,user,
     // El pago mixto tiene que sumar exactamente lo que se cobra
     if(payMethod==="Mixto"){const suma=(+mixEfectivo||0)+(+mixTransferencia||0);const debe=total+ev.cliente;
       if(Math.abs(suma-debe)>0.5){setErr("El pago mixto suma "+$m(suma)+" pero hay que cobrar "+$m(debe));return;}}
-    // Comisión de la terminal (sobre productos + envío que pagó el cliente)
-    const comision=+(terminalAmt(payMethod,total+ev.cliente,mixCuenta,mixTransferencia)*TERMINAL_FEE).toFixed(2);
-    // Contra entrega: el repartidor cobra en efectivo, se queda con su envío (queda pagado ese mismo día, en efectivo)
-    // y nos debe entregar el resto hasta que se marque "ya entregó el dinero"
+    // Contra entrega: el repartidor cobra en efectivo y se queda con su envío (queda pagado ese mismo día).
+    // El resto nos lo trae en efectivo (payMethod "Efectivo") o nos lo transfiere a una cuenta (payMethod = esa cuenta)
+    // y queda pendiente hasta que se marque "ya entregó / ya transfirió"
     const contra=conEnvio&&envCobro==="contra";
+    const pm=contra?envVia:payMethod;
+    // Comisión de la terminal (sobre productos + envío que pagó el cliente)
+    const comision=+(terminalAmt(pm,total+ev.cliente,mixCuenta,mixTransferencia)*TERMINAL_FEE).toFixed(2);
     const envioFields=conEnvio?{conEnvio:true,envio:ev.cliente,costoEnvio:ev.costo,envioNeto:ev.absorbe,envioKm:+envKm||0,envioPct:envPct,
       envioContra:contra,envioDebe:contra?+(total+ev.cliente-ev.costo).toFixed(2):0,envioDineroRecibido:false,envioDineroHora:"",
       repartidor:envRep.trim(),envioDir:envDir.trim(),envioStatus:"pendiente",envioSalio:"",envioEntregado:"",
-      envioPagado:contra||envPagado==="si",envioPagadoCon:contra?"Efectivo":(envPagado==="si"?envPagadoCon:""),envioPagadoFecha:(contra||envPagado==="si")?date:""}
+      envioPagado:contra||envPagado==="si",envioPagadoCon:contra?pm:(envPagado==="si"?envPagadoCon:""),envioPagadoFecha:(contra||envPagado==="si")?date:""}
       :{conEnvio:false,envio:0,costoEnvio:0,envioNeto:0};
     // Cortesías: cada sobre regalado cuesta lo que nos cuesta (caja ÷ sobres) y se descuenta de sobres sueltos
     const regaloItems=Object.entries(regalos).filter(([,q])=>q>0).map(([pid,q])=>{const p=prods.find(x=>x.id===pid);return{pid,qty:q,costo:+(p?sobreCost(p):0).toFixed(2)};});
@@ -982,7 +997,7 @@ function NuevaVenta({prods,setProds,pkgs,clients,setClients,sales,setSales,user,
     [...new Set(stockItems.map(it=>it.pid))].forEach(pid=>{const p=prods.find(x=>x.id===pid);if(!p)return;const its=stockItems.filter(it=>it.pid===pid);
       const qS=its.filter(it=>it.su==="sobre").reduce((a,it)=>a+(+it.qty||0),0);const qC=its.filter(it=>it.su!=="sobre").reduce((a,it)=>a+(+it.qty||0),0);
       if(qC>(p.stockCajas||0)||qS>(p.stockSobres||0))sinStock.push(p.name);});
-    const sale={sinStock,id:uid(),date,clientId,pkgId:pkgFirst,total,cost:cost+comision+ev.absorbe+regaloCosto,comision,regalos:regaloItems,regaloCosto,desc,items,note,payMethod,
+    const sale={sinStock,id:uid(),date,clientId,pkgId:pkgFirst,total,cost:cost+comision+ev.absorbe+regaloCosto,comision,regalos:regaloItems,regaloCosto,desc,items,note,payMethod:pm,
       mixEfectivo:payMethod==="Mixto"?+mixEfectivo||0:0,
       mixTransferencia:payMethod==="Mixto"?+mixTransferencia||0:0,
       mixCuenta:payMethod==="Mixto"?mixCuenta:"",
@@ -997,7 +1012,7 @@ function NuevaVenta({prods,setProds,pkgs,clients,setClients,sales,setSales,user,
       return {...prod,stockCajas:Math.max(0,(prod.stockCajas||0)-qC),stockSobres:Math.max(0,(prod.stockSobres||0)-qS)};
     }));
     setErr("");setStep(1);setClientId("");setCart({});setOver({});setUnitView({});setEditKey(null);
-    setRegalos({});setConEnvio(false);setEnvKm("");setEnvCostoOver("");setEnvPct("100");setEnvOtro("");setEnvRep("");setEnvDir("");setEnvPagado("no");setEnvCobro("transfer");setNote("");
+    setRegalos({});setConEnvio(false);setEnvKm("");setEnvCostoOver("");setEnvPct("100");setEnvOtro("");setEnvRep("");setEnvDir("");setEnvPagado("no");setEnvCobro("transfer");setEnvVia("Efectivo");setNote("");
     setPayMethod("Efectivo");setMixEfectivo("");setMixTransferencia("");setMixCuenta("SPIN Marcel");setTransRef("");
     setOkMsg("✓ Venta de "+$m(total+ev.cliente)+" registrada"+(conEnvio?" · envío pendiente en 🛵 Envíos":"")+(sinStock.length?" · ⚠ en el sistema no había suficiente de: "+sinStock.join(", "):""));
     setTimeout(()=>setOkMsg(""),4000);
@@ -1114,12 +1129,12 @@ function NuevaVenta({prods,setProds,pkgs,clients,setClients,sales,setSales,user,
           <RegalosForm regalos={regalos} setRegalos={setRegalos} prods={prods} isAdmin={isAdmin}/>
 
           {/* ENVÍO */}
-          <EnvioForm {...{conEnvio,setConEnvio,envKm,setEnvKm,envCostoOver,setEnvCostoOver,envPct,setEnvPct,envOtro,setEnvOtro,envRep,setEnvRep,envDir,setEnvDir,envPagado,setEnvPagado,envPagadoCon,setEnvPagadoCon,envCobro,setEnvCobro,setPayMethod,isAdmin}} productos={subtotal} repartidores={[...new Set(sales.map(s=>s.repartidor).filter(Boolean))]}/>
+          <EnvioForm {...{conEnvio,setConEnvio,envKm,setEnvKm,envCostoOver,setEnvCostoOver,envPct,setEnvPct,envOtro,setEnvOtro,envRep,setEnvRep,envDir,setEnvDir,envPagado,setEnvPagado,envPagadoCon,setEnvPagadoCon,envCobro,setEnvCobro,envVia,setEnvVia,setPayMethod,isAdmin}} productos={subtotal} repartidores={[...new Set(sales.map(s=>s.repartidor).filter(Boolean))]}/>
 
           {/* PAGO */}
           <div style={{borderTop:`1px solid ${T.goldBorder}`,paddingTop:12,marginTop:4,display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(140px,1fr))",gap:12}}>
             {conEnvio&&envCobro==="contra"?(
-              <F label="¿Cómo pagó?"><div style={{padding:"10px 12px",borderRadius:8,background:PAY_CLR.Efectivo.bg,color:PAY_CLR.Efectivo.c,fontWeight:600,fontSize:13}}>💵 Efectivo contra entrega</div></F>
+              <F label="¿Cómo pagó?"><div style={{padding:"10px 12px",borderRadius:8,background:PAY_CLR.Efectivo.bg,color:PAY_CLR.Efectivo.c,fontWeight:600,fontSize:13}}>{envVia==="Efectivo"?"💵 Efectivo contra entrega":"💵 Contra entrega · te transfiere a "+CUENTA_LABEL[envVia]}</div></F>
             ):(
             <F label="¿Cómo pagó?">
               <select value={payMethod} onChange={e=>setPayMethod(e.target.value)}>
@@ -1696,9 +1711,9 @@ function efectivoEsperado(d,sales,expenses,extras,fondoInicial=FONDO_CAJA){
   const gastosCaja=expenses.filter(e=>e.date===d&&(e.pagadoCon||"Efectivo")==="Efectivo"&&e.deCaja).reduce((a,e)=>a+e.amount,0);
   const neto=r.ventasTotal+r.envCobrado+r.mixAmt-gastosCaja-r.repPagado;
   // Contra entrega de hoy que el repartidor todavía no entrega hoy
-  const traen=sales.filter(s=>s.date===d&&s.envioContra&&!(s.envioDineroRecibido&&s.envioDineroFecha===d)).reduce((a,s)=>a+(s.envioDebe||0),0);
+  const traen=sales.filter(s=>s.date===d&&s.envioContra&&!contraTransfer(s)&&!(s.envioDineroRecibido&&s.envioDineroFecha===d)).reduce((a,s)=>a+(s.envioDebe||0),0);
   // Contra entrega de días anteriores que el repartidor entregó hoy
-  const llegaron=sales.filter(s=>s.date<d&&s.envioContra&&s.envioDineroRecibido&&s.envioDineroFecha===d).reduce((a,s)=>a+(s.envioDebe||0),0);
+  const llegaron=sales.filter(s=>s.date<d&&s.envioContra&&!contraTransfer(s)&&s.envioDineroRecibido&&s.envioDineroFecha===d).reduce((a,s)=>a+(s.envioDebe||0),0);
   return fondoInicial+neto-traen+llegaron;
 }
 // Todo lo que se cuenta en el cierre: productos (cajas + sobres, o piezas) y vasos de palomitas
@@ -1912,8 +1927,13 @@ const TRANS_METHODS=["SPIN Marcel","SPIN Gustavo","Transferencia MP","Terminal M
 // Parte de una venta que llegó por transferencia o terminal (null si fue todo en efectivo)
 function transDe(s){
   if(s.payMethod==="Mixto")return s.mixCuenta&&s.mixCuenta!=="Efectivo"&&(s.mixTransferencia||0)>0?{metodo:s.mixCuenta,acc:accDe(s.mixCuenta),monto:s.mixTransferencia}:null;
-  return TRANS_METHODS.includes(s.payMethod)?{metodo:s.payMethod,acc:accDe(s.payMethod),monto:s.total+(s.envio||0)}:null;
+  return TRANS_METHODS.includes(s.payMethod)?{metodo:s.payMethod,acc:accDe(s.payMethod),monto:s.envioContra?(s.envioDebe||0):s.total+(s.envio||0)}:null;
 }
+// Contra entrega: el repartidor nos transfiere (en vez de traernos el efectivo)
+const CONTRA_CUENTAS=["SPIN Marcel","SPIN Gustavo","Transferencia MP"];
+function contraTransfer(s){return !!s.envioContra&&s.payMethod!=="Efectivo";}
+// El repartidor ya nos dio el dinero (lo trajo, o la transferencia ya se confirmó en Caja)
+function contraListo(s){return !!s.envioDineroRecibido||(contraTransfer(s)&&s.transConf==="si");}
 const transDelDia=(sales,d)=>sales.filter(s=>s.date===d&&transDe(s));
 // Estado completo de un cierre para los socios: efectivo, inventario, transferencias y lo que recibió el socio
 function estadoCierre(c,sales){
@@ -1935,7 +1955,7 @@ function TransRow({s,clients,onMark}){
     <div style={{display:"flex",alignItems:"center",gap:8,padding:"7px 0",borderTop:`0.5px solid ${T.border}`}}>
       <div style={{flex:1,minWidth:0}}>
         <p style={{margin:0,fontSize:13,color:T.text,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{cl?.name||(s.tipo==="palomitas"?"Palomitas":"Venta")}{s.transRef?" · "+s.transRef:""}</p>
-        <p style={{margin:0,fontSize:11,color:T.textMuted}}>{t.metodo}{s.hora?" · "+s.hora:""} · <strong style={{color:T.text}}>{$m(t.monto)}</strong></p>
+        <p style={{margin:0,fontSize:11,color:T.textMuted}}>{t.metodo}{s.envioContra?" · 🛵 te lo transfiere "+(s.repartidor||"el repartidor"):""}{s.hora?" · "+s.hora:""} · <strong style={{color:T.text}}>{$m(t.monto)}</strong></p>
       </div>
       {s.transConf==="si"?<Chip label="✓ Llegó" bg="rgba(26,140,90,0.12)" color={T.profit}/>
         :<div style={{display:"flex",gap:4,alignItems:"center"}}>
@@ -2096,6 +2116,10 @@ function libroCuentas({sales,expenses,extras,cierres,movs,clients}){
   const L=[];const add=(date,acc,monto,desc,tipo,extra)=>{if(acc&&monto)L.push({date,acc,monto:+(+monto).toFixed(2),desc,tipo,ord:tipo==="inicial"?0:tipo==="cierre"?9:1,...extra});};
   const nom=s=>(clients||[]).find(c=>c.id===s.clientId)?.name||(s.tipo==="palomitas"?"Palomitas":"Venta");
   sales.filter(s=>s.date>=INICIO_OPERACION).forEach(s=>{
+    if(s.envioContra){const d="Contra entrega · "+nom(s)+(s.repartidor?" (🛵 "+s.repartidor+")":"");
+      if(contraTransfer(s))add(s.date,accDe(s.payMethod),s.envioDebe||0,d,"venta");
+      else if(s.envioDineroRecibido)add(s.envioDineroFecha||s.date,"Caja",s.envioDebe||0,d,"venta");
+      return;}
     if(s.payMethod==="Mixto"){add(s.date,"Caja",s.mixEfectivo||0,"Venta · "+nom(s),"venta");add(s.date,accDe(s.mixCuenta),s.mixTransferencia||0,"Venta · "+nom(s),"venta");}
     else add(s.date,accDe(s.payMethod),s.total+(s.envio||0),"Venta · "+nom(s),"venta");
     if(s.comision>0)add(s.date,"Mercado Pago",-s.comision,"Comisión terminal · "+nom(s),"comision");
@@ -2146,7 +2170,7 @@ function Cuentas({sales,expenses,extras,cierres,movs,setMovs,clients,user}){
   const[ini,setIni]=useState({monto:"",date:hoy});
   const[confirmDel,setConfirmDel]=useState(null);
   const total=ACCS.reduce((a,k)=>a+bal[k],0);
-  const traen=sales.filter(s=>s.date>=INICIO_OPERACION&&s.envioContra&&!s.envioDineroRecibido).reduce((a,s)=>a+(s.envioDebe||0),0);
+  const traen=sales.filter(s=>s.date>=INICIO_OPERACION&&s.envioContra&&!contraTransfer(s)&&!s.envioDineroRecibido).reduce((a,s)=>a+(s.envioDebe||0),0);
   const nuevo=t=>{setAccion(accion===t?null:t);setErr("");setF({date:hoy,monto:"",nota:"",de:"SPIN Marcel",a:"Mercado Pago",socio:"Marcel"});};
   const guardar=()=>{
     if(!(+f.monto>0)){setErr("Escribe el monto");return;}
@@ -2389,7 +2413,7 @@ function Envios({sales,setSales,clients,isAdmin,user}){
   const envAll=sales.filter(s=>s.conEnvio);
   const env=envAll.filter(s=>s.date>=range.start&&s.date<=range.end).sort((a,b)=>b.date.localeCompare(a.date));
   const pend=envAll.filter(s=>!s.envioPagado);
-  const debe=envAll.filter(s=>s.envioContra&&!s.envioDineroRecibido);
+  const debe=envAll.filter(s=>s.envioContra&&!contraListo(s));
   // Entregados que el cliente todavía no paga (pago por transferencia/terminal sin confirmar)
   const diasDesde=ds=>Math.max(0,Math.round((new Date(today()+"T12:00:00")-new Date(ds+"T12:00:00"))/86400000));
   const sinPagar=envAll.filter(s=>s.date>=INICIO_OPERACION&&!s.envioContra&&transDe(s)&&s.transConf!=="si"&&s.envioStatus==="entregado")
@@ -2401,10 +2425,13 @@ function Envios({sales,setSales,clients,isAdmin,user}){
       :{envioStatus:"entregado",envioSalio:s.envioSalio||horaAhora(),envioEntregado:s.envioEntregado||horaAhora(),envioEntregadoFecha:s.envioEntregadoFecha||today()}),
     cliente:(s,v)=>upd(s.id,v==="si"?{transConf:"si",transConfPor:user?.name||"",transConfFecha:today()}:{transConf:undefined,transConfPor:"",transConfFecha:""}),
     repartidor:(s,v)=>upd(s.id,v==="no"?{envioPagado:false,envioPagadoCon:"",envioPagadoFecha:""}:{envioPagado:true,envioPagadoCon:v,envioPagadoFecha:s.envioPagadoFecha||today()}),
-    dinero:(s,v)=>upd(s.id,v==="si"?{envioDineroRecibido:true,envioDineroHora:s.envioDineroHora||horaAhora(),envioDineroFecha:s.envioDineroFecha||today()}:{envioDineroRecibido:false,envioDineroHora:"",envioDineroFecha:""}),
+    dinero:(s,v)=>upd(s.id,v==="si"?{envioDineroRecibido:true,envioDineroHora:s.envioDineroHora||horaAhora(),envioDineroFecha:s.envioDineroFecha||today(),...(contraTransfer(s)?{transConf:"si",transConfPor:user?.name||"",transConfFecha:today()}:{})}
+      :{envioDineroRecibido:false,envioDineroHora:"",envioDineroFecha:"",...(contraTransfer(s)?{transConf:undefined,transConfPor:"",transConfFecha:""}:{})}),
+    via:(s,v)=>upd(s.id,{payMethod:v,envioPagadoCon:v,envioDineroRecibido:false,envioDineroHora:"",envioDineroFecha:"",transConf:undefined,transConfPor:"",transConfFecha:""}),
   };
   const porRepDebe={};debe.forEach(s=>{const k=s.repartidor||"Sin nombre";(porRepDebe[k]=porRepDebe[k]||[]).push(s);});
-  const recibir=ids=>{const set=new Set(ids);const h=horaAhora();setSales(prev=>prev.map(s=>set.has(s.id)?{...s,envioDineroRecibido:true,envioDineroHora:h,envioDineroFecha:today(),envioDineroPor:user?.name||""}:s));};
+  const recibir=ids=>{const set=new Set(ids);const h=horaAhora();setSales(prev=>prev.map(s=>set.has(s.id)?{...s,envioDineroRecibido:true,envioDineroHora:h,envioDineroFecha:today(),envioDineroPor:user?.name||"",
+    ...(contraTransfer(s)?{transConf:"si",transConfPor:user?.name||"",transConfFecha:today()}:{})}:s));};
   const upd=(id,patch)=>setSales(prev=>prev.map(s=>s.id===id?{...s,...patch}:s));
   const pagar=(ids,con)=>{const set=new Set(ids);setSales(prev=>prev.map(s=>set.has(s.id)?{...s,envioPagado:true,envioPagadoCon:con,envioPagadoFecha:today(),envioPagadoPor:user?.name||""}:s));};
   const porRep={};pend.forEach(s=>{const k=s.repartidor||"Sin nombre";(porRep[k]=porRep[k]||[]).push(s);});
@@ -2441,7 +2468,18 @@ function Envios({sales,setSales,clients,isAdmin,user}){
                   <div><p style={{margin:0,fontWeight:700,fontSize:14}}>🛵 {rep}</p><p style={{margin:0,fontSize:11,color:T.textMuted}}>{arr.length} pedido{arr.length!==1?"s":""} contra entrega</p></div>
                   <span style={{fontWeight:700,fontSize:16,color:T.profit}}>{$m(sum(arr,"envioDebe"))}</span>
                 </div>
-                <GoldBtn onClick={()=>recibir(arr.map(s=>s.id))} style={{marginTop:8,width:"100%",minHeight:44,background:T.profit}}>✓ Ya me entregó {$m(sum(arr,"envioDebe"))}</GoldBtn>
+                {["Efectivo",...CONTRA_CUENTAS].map(via=>{const g=arr.filter(s=>(contraTransfer(s)?s.payMethod:"Efectivo")===via);if(!g.length)return null;const m=sum(g,"envioDebe");
+                  return via==="Efectivo"
+                    ?<div key={via} style={{marginTop:8}}>
+                      <p style={{margin:"0 0 4px",fontSize:12,color:T.textSub}}>💵 Te tiene que traer en efectivo: <strong style={{color:T.text}}>{$m(m)}</strong></p>
+                      <GoldBtn onClick={()=>recibir(g.map(s=>s.id))} style={{width:"100%",minHeight:44,background:T.profit}}>✓ Ya me entregó {$m(m)}</GoldBtn>
+                    </div>
+                    :<div key={via} style={{marginTop:8}}>
+                      <p style={{margin:"0 0 4px",fontSize:12,color:T.textSub}}>📱 Te tiene que transferir <strong style={{color:T.text}}>{$m(m)}</strong> a {CUENTA_LABEL[via]}</p>
+                      {isAdmin
+                        ?<GoldBtn onClick={()=>recibir(g.map(s=>s.id))} style={{width:"100%",minHeight:44,background:T.client}}>✓ Ya me transfirió {$m(m)}</GoldBtn>
+                        :<p style={{margin:0,fontSize:11,color:T.textMuted}}>Un socio lo confirma cuando le llegue.</p>}
+                    </div>;})}
               </div>
             ))}
           </div>
@@ -2513,14 +2551,16 @@ function Envios({sales,setSales,clients,isAdmin,user}){
                     {s.envioSalio&&<span>Salió {s.envioSalio} </span>}{s.envioEntregado&&<span>· Entregado {s.envioEntregado} </span>}
                     <span>· {s.envioContra?"💵 Contra entrega (se cobró su envío)":s.envioPagado?"✓ Repartidor pagado"+(s.envioPagadoCon?" ("+s.envioPagadoCon+")":""):"⏳ Falta pagar al repartidor"}</span>
                     {!s.envioContra&&transDe(s)&&<div style={{marginTop:2,color:s.transConf==="si"?T.profit:"#B86010",fontWeight:600}}>{s.transConf==="si"?"💰 El cliente ya pagó "+$m(transDe(s).monto):"⏳ El cliente no ha pagado "+$m(transDe(s).monto)+" ("+transDe(s).metodo+")"}</div>}
-                    {s.envioContra&&<div style={{marginTop:2,color:s.envioDineroRecibido?T.profit:T.expense,fontWeight:600}}>{s.envioDineroRecibido?"✓ Entregó "+$m(s.envioDebe||0)+" a las "+s.envioDineroHora:"⏳ Te debe entregar "+$m(s.envioDebe||0)}</div>}
+                    {s.envioContra&&<div style={{marginTop:2,color:contraListo(s)?T.profit:T.expense,fontWeight:600}}>{contraTransfer(s)
+                      ?(contraListo(s)?"✓ Transfirió "+$m(s.envioDebe||0)+" a "+CUENTA_LABEL[s.payMethod]:"⏳ Te debe transferir "+$m(s.envioDebe||0)+" a "+CUENTA_LABEL[s.payMethod])
+                      :(contraListo(s)?"✓ Entregó "+$m(s.envioDebe||0)+" a las "+s.envioDineroHora:"⏳ Te debe traer "+$m(s.envioDebe||0)+" en efectivo")}</div>}
                   </div>
                   <div style={{display:"flex",gap:6,marginTop:8}}>
                     {(s.envioStatus||"pendiente")==="pendiente"&&<GoldBtn onClick={()=>upd(s.id,{envioStatus:"salio",envioSalio:horaAhora()})} style={{flex:1,minHeight:40,background:T.client}}>🛵 Ya salió</GoldBtn>}
                     {s.envioStatus==="salio"&&<GoldBtn onClick={()=>upd(s.id,{envioStatus:"entregado",envioEntregado:horaAhora(),envioEntregadoFecha:today()})} style={{flex:1,minHeight:40,background:T.profit}}>✓ Entregado</GoldBtn>}
                     {!s.envioPagado&&<OutBtn onClick={()=>pagar([s.id],"Efectivo")} style={{flex:1,minHeight:40}}>💵 Pagarle en efectivo</OutBtn>}
                     {isAdmin&&!s.envioContra&&transDe(s)&&s.transConf!=="si"&&<OutBtn onClick={()=>marcarPagado(s.id)} style={{flex:1,minHeight:40,color:T.profit,borderColor:"rgba(26,140,90,0.4)"}}>💰 Pagado</OutBtn>}
-                    {s.envioContra&&!s.envioDineroRecibido&&<OutBtn onClick={()=>recibir([s.id])} style={{flex:1,minHeight:40,color:T.profit,borderColor:"rgba(26,140,90,0.4)"}}>✓ Ya entregó el dinero</OutBtn>}
+                    {s.envioContra&&!contraListo(s)&&(isAdmin||!contraTransfer(s))&&<OutBtn onClick={()=>recibir([s.id])} style={{flex:1,minHeight:40,color:T.profit,borderColor:"rgba(26,140,90,0.4)"}}>{contraTransfer(s)?"✓ Ya transfirió":"✓ Ya entregó el dinero"}</OutBtn>}
                     {isAdmin&&<OutBtn onClick={()=>setEditId(editId===s.id?null:s.id)} style={{minHeight:40,padding:"6px 10px"}} aria-label="Editar envío">{editId===s.id?"Cerrar":"✏️ Editar"}</OutBtn>}
                   </div>
                   {isAdmin&&editId===s.id&&(
@@ -2531,7 +2571,9 @@ function Envios({sales,setSales,clients,isAdmin,user}){
                         <option value="no">⏳ No ha pagado</option><option value="si">💰 Ya pagó</option></select></F>}
                       {!s.envioContra&&<F label={"¿Ya se le pagó al repartidor? ("+$m(s.costoEnvio||0)+")"}><select value={s.envioPagado?(s.envioPagadoCon||"Efectivo"):"no"} onChange={e=>corregir.repartidor(s,e.target.value)}>
                         <option value="no">⏳ No</option>{CUENTAS.map(c=><option key={c} value={c}>Sí, con {CUENTA_LABEL[c]}</option>)}</select></F>}
-                      {s.envioContra&&<F label={"¿El repartidor ya entregó el dinero? ("+$m(s.envioDebe||0)+")"}><select value={s.envioDineroRecibido?"si":"no"} onChange={e=>corregir.dinero(s,e.target.value)}>
+                      {s.envioContra&&<F label="¿Cómo te da el dinero el repartidor?"><select value={contraTransfer(s)?s.payMethod:"Efectivo"} onChange={e=>corregir.via(s,e.target.value)}>
+                        <option value="Efectivo">💵 Lo trae en efectivo</option>{CONTRA_CUENTAS.map(c=><option key={c} value={c}>📱 Lo transfiere a {CUENTA_LABEL[c]}</option>)}</select></F>}
+                      {s.envioContra&&<F label={(contraTransfer(s)?"¿El repartidor ya transfirió? (":"¿El repartidor ya entregó el dinero? (")+$m(s.envioDebe||0)+")"}><select value={contraListo(s)?"si":"no"} onChange={e=>corregir.dinero(s,e.target.value)}>
                         <option value="no">⏳ No</option><option value="si">✓ Sí</option></select></F>}
                     </div>
                   )}
