@@ -1404,7 +1404,8 @@ function IngresosExtra({extras,setExtras,user}){
 
 // ── GASTOS ────────────────────────────────────────────────────────────────────
 function Gastos({expenses,setExpenses,user,isAdmin,fixed,setFixed,extras,setExtras}){
-  const cats=isAdmin?EXP_CATS:EXP_CATS.filter(c=>!FIXED_CATS.includes(c));
+  // El empleado no registra fijos ni importación (compras grandes de mercancía: solo socios)
+  const cats=isAdmin?EXP_CATS:EXP_CATS.filter(c=>!FIXED_CATS.includes(c)&&c!=="Importación");
   // deCaja: el efectivo salió de la caja del local (cuenta en el Cierre del día). Si lo pagó un socio, no.
   const blank={date:today(),cat:isAdmin?"Importación":"Insumos palomitas",amount:"",desc:"",pagadoCon:"Efectivo",deCaja:!isAdmin};
   const[form,setForm]=useState(blank);

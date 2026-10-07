@@ -24,7 +24,7 @@ Contexto para Claude Code. Léelo antes de tocar cualquier cosa.
 - Menú empleado: Vender · Palomitas · Envíos · Inventario · Caja · Más (Gastos, Clientes). No ve Inicio, Catálogo (costos) ni Reparto.
 - **Caja** = `CierreDia` (todos) + `Cuentas` (solo socios). **Catálogo** = `Productos` + `Paquetes`.
 - Staff NO ve cantidades de inventario del sistema (para que el conteo del Cierre sea a ciegas): en Inventario solo tiene "Registrar entrada" y "Abrir caja". Tampoco puede cambiar la fecha de ventas ni de gastos.
-- Dentro de las pantallas, staff NO ve utilidad/margen/costos, no puede borrar ventas, gastos, movimientos ni clientes, no pone precios especiales, no ve ni registra gastos fijos (`FIXED_CATS`), solo ve sus propios gastos y las ventas de hoy.
+- Dentro de las pantallas, staff NO ve utilidad/margen/costos, no puede borrar ventas, gastos, movimientos ni clientes, no pone precios especiales, no ve ni registra gastos fijos (`FIXED_CATS`) ni la categoría Importación, solo ve sus propios gastos y las ventas de hoy.
 - Todo registro nuevo guarda `by` (quién lo hizo). Las ventas guardan `bajoPrecio` si se cobró debajo del precio de lista/cliente.
 - OJO: es control de pantalla, no seguridad real. La llave de Supabase es pública y las contraseñas `VITE_*` van dentro del JS. Seguridad real = Supabase Auth + RLS (pendiente).
 - Menú inferior fijo (`BottomNav`); lo que no cabe va en "Más". `NAV_MAIN` define qué va fijo por rol.
