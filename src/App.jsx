@@ -2808,6 +2808,18 @@ function Dashboard_App({user,onLogout}){
         const oks=await Promise.all([save(SK.p,p),save(SK.sm,sm),save(SK.pop,popM)]);
         if(oks.every(o=>o===true))await save("msp-inv-inicial",ARRANQUE_CERO);
       }
+      // Ventas del 7 oct hechas antes de arrancar (1 caja Vitafer y 2 palomitas chicas): el conteo ya no las traía.
+      // Se regresan al inventario una sola vez porque Marcel las va a registrar en la app y la app las descuenta.
+      const ajV=await load("msp-ajuste-ventas-0710",null);
+      if(ajV!=="ok"){
+        p=p.map(x=>x.id==="vf"?{...x,stockCajas:(x.stockCajas||0)+1}:x);
+        popM.s={...popM.s,stock:(+popM.s.stock||0)+2};
+        const nota="Se regresa: venta del 7 oct hecha antes de arrancar (se registra en la app)";
+        sm=[...(sm||[]),{id:uid(),date:ARRANQUE_CERO,pid:"vf",type:"ajuste",cajas:1,sobres:0,note:nota,by:"Marcel"},
+          {id:uid(),date:ARRANQUE_CERO,pid:"pop_s",type:"ajuste",cajas:2,sobres:0,note:nota,by:"Marcel"}];
+        const oks2=await Promise.all([save(SK.p,p),save(SK.sm,sm),save(SK.pop,popM)]);
+        if(oks2.every(o=>o===true))await save("msp-ajuste-ventas-0710","ok");
+      }
       setProds(p);setPkgs(pk);setClients(c);setSales(s);setExpenses(e);setStockMoves(sm);setExtras(ex);
       setPopCfg(popM);
       // Fijos: guardado como {v,items}. Si viene de una versión anterior, se agregan los fijos nuevos
