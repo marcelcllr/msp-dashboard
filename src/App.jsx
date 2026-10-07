@@ -20,13 +20,14 @@ async function dbLoad(key, def) {
 
 async function dbSave(key, value) {
   // Solo en pruebas locales: con VITE_NO_SAVE=1 en .env.local no se escribe nada en Supabase
-  if (import.meta.env.DEV && import.meta.env.VITE_NO_SAVE === "1") return;
+  if (import.meta.env.DEV && import.meta.env.VITE_NO_SAVE === "1") return "simulado";
   try {
     const { error } = await _supabase.from("msp_store")
       .upsert({ key, value: JSON.stringify(value), updated_at: new Date().toISOString() },
                { onConflict: "key" });
-    if (error) console.error("dbSave error:", key, error.message);
-  } catch(e) { console.error("dbSave catch:", key, e); }
+    if (error) { console.error("dbSave error:", key, error.message); return false; }
+    return true;
+  } catch(e) { console.error("dbSave catch:", key, e); return false; }
 }
 
 // ── LOGIN ─────────────────────────────────────────────────────────────────────
@@ -98,7 +99,8 @@ const today = () => { const d=new Date(); return new Date(d.getTime()-d.getTimez
 // cortesías e inventario, así al cambiar el costo de la caja se actualiza solo.
 const sobreCost=p=>p?((p.spc||1)>1?(p.cost||0)/(p.spc||1):(p.cost||0)):0;
 // Fecha en que empezamos a usar la app con números reales. Inicio, Corte y Reparto no cuentan nada antes.
-const INICIO_OPERACION = "2026-10-01";
+// (era 2026-10-01; el 7 de octubre arrancamos formalmente en ceros, ver ARRANQUE_CERO)
+const INICIO_OPERACION = "2026-10-07";
 
 // ── TIERS ─────────────────────────────────────────────────────────────────────
 const TA=[{m:1,p:1199},{m:3,p:699},{m:5,p:650},{m:10,p:530},{m:20,p:500},{m:50,p:470},{m:100,p:450}];
@@ -2747,6 +2749,32 @@ function Dashboard_App({user,onLogout}){
       const CHOCO_IDS=["rchv","rhch","ppch"];
       p=p.map(x=>{if(!CHOCO_IDS.includes(x.id))return x;const{spcu,...r}=x;return{...r,listSobre:(x.listSobre&&x.listSobre!==150)?x.listSobre:200};});
       p=p.map(x=>fix.has(x.id)?{...x,cat:"Miel"}:x);
+      // ── ARRANQUE EN CEROS (una sola vez) ──
+      // Marcel pidió empezar formalmente el 7 de oct sin ventas, clientes, gastos ni movimientos anteriores.
+      // No se borra para siempre: primero se guarda todo en "msp-archivo-2026-10-07" y SOLO si el respaldo se
+      // leyó de vuelta completo se limpian las listas. Productos, costos, inventario, paquetes y fijos se quedan.
+      const ARRANQUE_CERO="2026-10-07";
+      const arranque=await load("msp-arranque",null);
+      if(arranque!==ARRANQUE_CERO){
+        const archKey="msp-archivo-"+ARRANQUE_CERO;
+        const arch={fecha:new Date().toISOString(),sales:s||[],clients:c||[],expenses:e||[],extras:ex||[],stockMoves:sm||[],cierres:ci||[],movs:mv||[],conteos:cs||[]};
+        const ok=await save(archKey,arch);
+        let respaldoBien=ok==="simulado";
+        if(ok===true){const back=await load(archKey,null);
+          respaldoBien=!!back&&(back.sales||[]).length===arch.sales.length&&(back.clients||[]).length===arch.clients.length&&(back.expenses||[]).length===arch.expenses.length;}
+        if(respaldoBien){
+          s=[];c=[];e=[];ex=[];sm=[];ci=[];cs=[];
+          // Saldos iniciales que mandó Marcel el 7 de oct
+          mv=[{id:uid(),tipo:"inicial",a:"Mercado Pago",date:ARRANQUE_CERO,monto:8387.82,by:"Marcel"},
+              {id:uid(),tipo:"inicial",a:"SPIN Marcel",date:ARRANQUE_CERO,monto:11518.61,by:"Marcel"},
+              {id:uid(),tipo:"inicial",a:"SPIN Gustavo",date:ARRANQUE_CERO,monto:15521.67,by:"Marcel"}];
+          // Se guardan ya mismo (no esperar al debounce) y al final la marca para que no se repita
+          if(ok===true){
+            await Promise.all([save(SK.s,s),save(SK.c,c),save(SK.e,e),save(SK.ex,ex),save(SK.sm,sm),save(SK.ci,ci),save(SK.cs,cs),save(SK.mv,mv)]);
+            await save("msp-arranque",ARRANQUE_CERO);
+          }
+        }else console.error("Arranque en ceros: el respaldo no se pudo confirmar, no se limpió nada");
+      }
       setProds(p);setPkgs(pk);setClients(c);setSales(s);setExpenses(e);setStockMoves(sm);setExtras(ex);
       // Igual que con productos: el default de insumos solo entra si no hay costo capturado (0 o vacío)
       const popM={};POP_SIZES.forEach(k=>{const st=(pop||{})[k]||{};popM[k]={...INIT_POP[k],...st,cost:(+st.cost>0)?+st.cost:INIT_POP[k].cost};});
