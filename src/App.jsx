@@ -2381,6 +2381,7 @@ function Reparto({sales,expenses,extras=[],movs=[]}){
 const horaAhora=()=>{const d=new Date();return String(d.getHours()).padStart(2,"0")+":"+String(d.getMinutes()).padStart(2,"0");};
 function Envios({sales,setSales,clients,isAdmin,user}){
   const[period,setPeriod]=useState("dia");
+  const[editId,setEditId]=useState(null);
   const[refDate,setRefDate]=useState(today());
   const[payCon,setPayCon]=useState({});
   const cuentasPago=isAdmin?CUENTAS:["Efectivo"];
@@ -2394,6 +2395,14 @@ function Envios({sales,setSales,clients,isAdmin,user}){
   const sinPagar=envAll.filter(s=>s.date>=INICIO_OPERACION&&!s.envioContra&&transDe(s)&&s.transConf!=="si"&&s.envioStatus==="entregado")
     .sort((a,b)=>(a.envioEntregadoFecha||a.date).localeCompare(b.envioEntregadoFecha||b.date));
   const marcarPagado=id=>setSales(prev=>prev.map(x=>x.id===id?{...x,transConf:"si",transConfPor:user?.name||"",transConfFecha:today()}:x));
+  const corregir={
+    estado:(s,v)=>upd(s.id,v==="pendiente"?{envioStatus:"pendiente",envioSalio:"",envioEntregado:"",envioEntregadoFecha:""}
+      :v==="salio"?{envioStatus:"salio",envioSalio:s.envioSalio||horaAhora(),envioEntregado:"",envioEntregadoFecha:""}
+      :{envioStatus:"entregado",envioSalio:s.envioSalio||horaAhora(),envioEntregado:s.envioEntregado||horaAhora(),envioEntregadoFecha:s.envioEntregadoFecha||today()}),
+    cliente:(s,v)=>upd(s.id,v==="si"?{transConf:"si",transConfPor:user?.name||"",transConfFecha:today()}:{transConf:undefined,transConfPor:"",transConfFecha:""}),
+    repartidor:(s,v)=>upd(s.id,v==="no"?{envioPagado:false,envioPagadoCon:"",envioPagadoFecha:""}:{envioPagado:true,envioPagadoCon:v,envioPagadoFecha:s.envioPagadoFecha||today()}),
+    dinero:(s,v)=>upd(s.id,v==="si"?{envioDineroRecibido:true,envioDineroHora:s.envioDineroHora||horaAhora(),envioDineroFecha:s.envioDineroFecha||today()}:{envioDineroRecibido:false,envioDineroHora:"",envioDineroFecha:""}),
+  };
   const porRepDebe={};debe.forEach(s=>{const k=s.repartidor||"Sin nombre";(porRepDebe[k]=porRepDebe[k]||[]).push(s);});
   const recibir=ids=>{const set=new Set(ids);const h=horaAhora();setSales(prev=>prev.map(s=>set.has(s.id)?{...s,envioDineroRecibido:true,envioDineroHora:h,envioDineroFecha:today(),envioDineroPor:user?.name||""}:s));};
   const upd=(id,patch)=>setSales(prev=>prev.map(s=>s.id===id?{...s,...patch}:s));
@@ -2512,7 +2521,20 @@ function Envios({sales,setSales,clients,isAdmin,user}){
                     {!s.envioPagado&&<OutBtn onClick={()=>pagar([s.id],"Efectivo")} style={{flex:1,minHeight:40}}>💵 Pagarle en efectivo</OutBtn>}
                     {isAdmin&&!s.envioContra&&transDe(s)&&s.transConf!=="si"&&<OutBtn onClick={()=>marcarPagado(s.id)} style={{flex:1,minHeight:40,color:T.profit,borderColor:"rgba(26,140,90,0.4)"}}>💰 Pagado</OutBtn>}
                     {s.envioContra&&!s.envioDineroRecibido&&<OutBtn onClick={()=>recibir([s.id])} style={{flex:1,minHeight:40,color:T.profit,borderColor:"rgba(26,140,90,0.4)"}}>✓ Ya entregó el dinero</OutBtn>}
+                    {isAdmin&&<OutBtn onClick={()=>setEditId(editId===s.id?null:s.id)} style={{minHeight:40,padding:"6px 10px"}} aria-label="Editar envío">{editId===s.id?"Cerrar":"✏️ Editar"}</OutBtn>}
                   </div>
+                  {isAdmin&&editId===s.id&&(
+                    <div style={{marginTop:8,padding:10,borderRadius:10,background:T.bgAlt,border:`0.5px solid ${T.goldBorder}`,display:"grid",gridTemplateColumns:"1fr",gap:8}}>
+                      <F label="Estado del pedido"><select value={s.envioStatus||"pendiente"} onChange={e=>corregir.estado(s,e.target.value)}>
+                        <option value="pendiente">⏳ Por salir</option><option value="salio">🛵 En camino</option><option value="entregado">✓ Entregado</option></select></F>
+                      {!s.envioContra&&transDe(s)&&<F label={"¿El cliente ya pagó? ("+$m(transDe(s).monto)+" por "+transDe(s).metodo+")"}><select value={s.transConf==="si"?"si":"no"} onChange={e=>corregir.cliente(s,e.target.value)}>
+                        <option value="no">⏳ No ha pagado</option><option value="si">💰 Ya pagó</option></select></F>}
+                      {!s.envioContra&&<F label={"¿Ya se le pagó al repartidor? ("+$m(s.costoEnvio||0)+")"}><select value={s.envioPagado?(s.envioPagadoCon||"Efectivo"):"no"} onChange={e=>corregir.repartidor(s,e.target.value)}>
+                        <option value="no">⏳ No</option>{CUENTAS.map(c=><option key={c} value={c}>Sí, con {CUENTA_LABEL[c]}</option>)}</select></F>}
+                      {s.envioContra&&<F label={"¿El repartidor ya entregó el dinero? ("+$m(s.envioDebe||0)+")"}><select value={s.envioDineroRecibido?"si":"no"} onChange={e=>corregir.dinero(s,e.target.value)}>
+                        <option value="no">⏳ No</option><option value="si">✓ Sí</option></select></F>}
+                    </div>
+                  )}
                 </div>
               );
             })}
