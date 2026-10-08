@@ -2942,6 +2942,48 @@ function Dashboard_App({user,onLogout}){
         const oks2=await Promise.all([save(SK.p,p),save(SK.sm,sm),save(SK.pop,popM)]);
         if(oks2.every(o=>o===true))await save("msp-ajuste-ventas-0710","ok");
       }
+      // ── CORRECCIÓN DEL 7 OCT (una sola vez, marca en key "msp-correccion-0710") ──
+      // Lo que explicó Marcel el 8 oct:
+      // 1) Faltó registrar la venta a Jairo (mayoreo, en local): 1 caja Black Horse, 1 Vitafer y 1 Royal Honey VIP a $500 c/u,
+      //    por transferencia a SPIN Gustavo (pendiente). El "Ajustar inventario" del cierre ya había quitado la Black Horse y la
+      //    Vitafer como faltante, así que no se vuelven a descontar (queda un movimiento de corrección en el historial).
+      // 2) La Vitafer de Fercho fue contra entrega: Fercho se quedó su envío ($270) y transfiere el resto a SPIN Gustavo.
+      // 3) Conteo real del 8 oct: Royal Honey VIP 11 cajas; Royal Honey for Her 5 cajas · 12 sobres (el conteo del cierre estuvo mal).
+      // El cierre del 7 se corrige con esto y se recalcula el efectivo que debía haber.
+      const corr=await load("msp-correccion-0710",null);
+      if(corr!=="ok"){
+        const D="2026-10-07",NOTA="Corrección 7 oct";
+        c=Array.isArray(c)?c:[];s=Array.isArray(s)?s:[];ci=Array.isArray(ci)?ci:[];sm=Array.isArray(sm)?sm:[];
+        let jairo=c.find(x=>(x.name||"").trim().toLowerCase()==="jairo");
+        if(!jairo){jairo={id:uid(),name:"Jairo",type:"Mayorista",phone:"",notes:"",prices:{},pkgPrices:{}};c=[...c,jairo];}
+        if(!s.some(x=>x.clientId===jairo.id&&x.date===D)){
+          const its=["bh","vf","rhv"].map(id=>{const x=p.find(q=>q.id===id);return{pid:id,qty:1,su:"caja",price:500,std:x?clientPrice(jairo,id,x.tiers,1):500};});
+          const desc=its.map(it=>"1× "+((p.find(q=>q.id===it.pid)||{}).name||it.pid).replace(/\s*\(.*\)/,"")).join(", ");
+          const cost=its.reduce((a,it)=>a+((p.find(q=>q.id===it.pid)||{}).cost||0),0);
+          s=[...s,{sinStock:[],id:uid(),date:D,clientId:jairo.id,pkgId:null,total:1500,cost,comision:0,regalos:[],regaloCosto:0,desc,items:its,
+            note:"Registrada el 8 oct (faltó registrarla el día 7)",payMethod:"SPIN Gustavo",mixEfectivo:0,mixTransferencia:0,mixCuenta:"",
+            conEnvio:false,envio:0,costoEnvio:0,envioNeto:0,transRef:"",by:"Marcel",hora:"",bajoPrecio:its.some(it=>it.price<it.std)}];
+        }
+        s=s.map(x=>x.date===D&&x.conEnvio&&!x.envioContra&&/fercho/i.test(x.repartidor||"")&&x.payMethod==="SPIN Gustavo"
+          ?{...x,envioContra:true,envioDebe:+(x.total+(x.envio||0)-(x.costoEnvio||0)).toFixed(2),envioPagado:true,envioPagadoCon:"SPIN Gustavo",envioPagadoFecha:D,
+            envioDineroRecibido:false,envioDineroHora:"",envioDineroFecha:"",transConf:undefined,transConfPor:"",transConfFecha:""}:x);
+        if(!sm.some(m=>(m.note||"").startsWith(NOTA))){
+          const mv2=[];
+          ["bh","vf"].forEach(id=>mv2.push({id:uid(),date:D,pid:id,type:"ajuste",cajas:1,sobres:0,note:NOTA+": el faltante del cierre era la venta a Jairo (se registró después)",by:"Marcel"}));
+          const FINAL={rhv:[11,null],rhh:[5,12]};
+          p=p.map(x=>{const v=FINAL[x.id];if(!v)return x;
+            const antes=[(x.stockCajas||0)-(x.id==="rhv"?1:0),x.stockSobres||0];const nS=v[1]==null?antes[1]:v[1];
+            mv2.push({id:uid(),date:D,pid:x.id,type:"ajuste",cajas:v[0]-antes[0],sobres:nS-antes[1],note:NOTA+": conteo real (quedó en "+v[0]+" cajas · "+nS+" sueltos)",by:"Marcel"});
+            return{...x,stockCajas:v[0],stockSobres:nS};});
+          sm=[...sm,...mv2];
+        }
+        ci=ci.map(x=>{if(x.date!==D||x.corregido)return x;
+          const inv=(x.inv||[]).map(r=>r.key==="bh"||r.key==="vf"?{...r,sisC:r.sisC-1}:r.key==="rhh"?{...r,contC:5,contS:12}:r);
+          return{...x,inv,efectivoEsperado:+efectivoEsperado(D,s,e||[],ex||[],x.fondoInicial??FONDO_CAJA).toFixed(2),corregido:true,
+            nota:((x.nota||"")+(x.nota?" · ":"")+"Corregido el 8 oct: venta a Jairo registrada después, contra entrega de Fercho y conteo de For Her").trim()};});
+        const oks3=await Promise.all([save(SK.c,c),save(SK.s,s),save(SK.p,p),save(SK.sm,sm),save(SK.ci,ci)]);
+        if(oks3.every(o=>o===true))await save("msp-correccion-0710","ok");
+      }
       setProds(p);setPkgs(pk);setClients(c);setSales(s);setExpenses(e);setStockMoves(sm);setExtras(ex);
       setPopCfg(popM);
       // Fijos: guardado como {v,items}. Si viene de una versión anterior, se agregan los fijos nuevos
