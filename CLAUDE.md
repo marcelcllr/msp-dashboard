@@ -16,7 +16,7 @@ Contexto para Claude Code. Léelo antes de tocar cualquier cosa.
 - Base de datos: Supabase, proyecto `frsvrgojdttnajxdakxv`, tabla `msp_store` (key/value, value = JSON string).
 - Deploy: Vercel (msp-dashboard-kappa.vercel.app), auto-deploy al hacer push a `main`.
 - Repo: github.com/marcelcllr/msp-dashboard
-- Variables en Vercel: `VITE_APP_PASSWORD` (respaldo para Marcel/Gustavo), `VITE_PWD_MARCEL`, `VITE_PWD_GUSTAVO`, `VITE_PWD_EMPLEADO`, `VITE_EMPLEADO_NOMBRE` (opcional).
+- Variables en Vercel: `VITE_APP_PASSWORD` (respaldo para Marcel/Gustavo), `VITE_PWD_MARCEL`, `VITE_PWD_GUSTAVO`, `VITE_PWD_EMPLEADO`, `VITE_EMPLEADO_NOMBRE` (opcional). Vercel ya no deja guardar `VITE_` como Secret, así que el empleado usa `MSP_PWD_EMPLEADO` y `MSP_EMPLEADO_NOMBRE` (tipo Secret; `envPrefix` en vite.config.js incluye `MSP_`; tienen prioridad sobre las `VITE_`). Ojo: igual quedan dentro del JS.
 
 ## Usuarios y permisos
 - `USERS` en App.jsx: Marcel y Gustavo = `admin`, empleado = `staff`. Sesión en `sessionStorage` (`msp_user`).

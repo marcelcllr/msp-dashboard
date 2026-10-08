@@ -34,11 +34,11 @@ async function dbSave(key, value) {
 const APP_PWD = import.meta.env.VITE_APP_PASSWORD || "msp2024";
 
 // Cada quien entra con su contraseña. Si no existen las variables nuevas en Vercel,
-// Marcel y Gustavo siguen entrando con VITE_APP_PASSWORD. El empleado necesita VITE_PWD_EMPLEADO.
+// Marcel y Gustavo siguen entrando con VITE_APP_PASSWORD. El empleado necesita MSP_PWD_EMPLEADO (o VITE_PWD_EMPLEADO).
 const USERS=[
   {id:"marcel",  name:"Marcel",  role:"admin", pwd:import.meta.env.VITE_PWD_MARCEL  ||APP_PWD},
   {id:"gustavo", name:"Gustavo", role:"admin", pwd:import.meta.env.VITE_PWD_GUSTAVO ||APP_PWD},
-  {id:"empleado",name:import.meta.env.VITE_EMPLEADO_NOMBRE||"Empleado",role:"staff",pwd:import.meta.env.VITE_PWD_EMPLEADO||""},
+  {id:"empleado",name:import.meta.env.MSP_EMPLEADO_NOMBRE||import.meta.env.VITE_EMPLEADO_NOMBRE||"Empleado",role:"staff",pwd:import.meta.env.MSP_PWD_EMPLEADO||import.meta.env.VITE_PWD_EMPLEADO||""},
 ];
 
 function LoginScreen({ onLogin }) {
