@@ -767,11 +767,12 @@ function VentaRow({name,sub,dual,unitLabel,unit,setUnit,qty,otherQty,otherLabel,
 }
 
 // ── FORMULARIO DE ENVÍO (dentro de Nueva venta) ───────────────────────────────
+// Botón de opción (prendido / apagado) de los formularios de envío
+const pill=(on,c)=>({border:`2px solid ${on?c:T.border}`,background:on?c+"18":"transparent",color:on?c:T.textSub,fontWeight:on?700:500,fontSize:12,minHeight:42,padding:"6px 4px",borderRadius:10});
 function EnvioForm({conEnvio,setConEnvio,envKm,setEnvKm,envCostoOver,setEnvCostoOver,envPct,setEnvPct,envOtro,setEnvOtro,envRep,setEnvRep,envDir,setEnvDir,envPagado,setEnvPagado,envPagadoCon,setEnvPagadoCon,envCobro,setEnvCobro,envVia,setEnvVia,setPayMethod,productos,isAdmin,repartidores}){
   const ev=envioCalc(envKm,envCostoOver,envPct,envOtro);
   const cobraRep=productos+ev.cliente;           // lo que el repartidor le cobra al cliente
   const teEntrega=cobraRep-ev.costo;              // lo que el repartidor te regresa
-  const pill=(on,c)=>({border:`2px solid ${on?c:T.border}`,background:on?c+"18":"transparent",color:on?c:T.textSub,fontWeight:on?700:500,fontSize:12,minHeight:42,padding:"6px 4px",borderRadius:10});
   return(
     <div style={{borderTop:`1px solid ${T.goldBorder}`,paddingTop:12,marginTop:4,marginBottom:12}}>
       <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:6}}>
@@ -2575,20 +2576,36 @@ function Envios({sales,setSales,clients,isAdmin,user}){
                     <div style={{marginTop:8,padding:10,borderRadius:10,background:T.bgAlt,border:`0.5px solid ${T.goldBorder}`,display:"grid",gridTemplateColumns:"1fr",gap:8}}>
                       <F label="Estado del pedido"><select value={s.envioStatus||"pendiente"} onChange={e=>corregir.estado(s,e.target.value)}>
                         <option value="pendiente">⏳ Por salir</option><option value="salio">🛵 En camino</option><option value="entregado">✓ Entregado</option></select></F>
+                      <div>
+                        <p style={{margin:"0 0 6px",fontSize:11,fontWeight:600,color:T.textSub}}>¿CÓMO PAGÓ EL CLIENTE?</p>
+                        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:6}}>
+                          <button onClick={()=>s.envioContra&&corregir.cobro(s,"d|"+(contraTransfer(s)?s.payMethod:"SPIN Marcel"))} style={pill(!s.envioContra,T.client)}>📱 Nos pagó directo</button>
+                          <button onClick={()=>!s.envioContra&&corregir.cobro(s,"c|"+(CONTRA_CUENTAS.includes(s.payMethod)?s.payMethod:"Efectivo"))} style={pill(!!s.envioContra,T.profit)}>💵 Efectivo al repartidor</button>
+                        </div>
+                        {!s.envioContra&&(
+                          <select value={s.payMethod} onChange={e=>corregir.cobro(s,"d|"+e.target.value)} style={{marginTop:6}}>
+                            {!TRANS_METHODS.includes(s.payMethod)&&<option value={s.payMethod}>{PAY_METHODS_LABEL[s.payMethod]||s.payMethod}</option>}
+                            {TRANS_METHODS.map(m=><option key={m} value={m}>Nos pagó a {PAY_METHODS_LABEL[m]}</option>)}
+                          </select>
+                        )}
+                        {s.envioContra&&(<>
+                          <p style={{margin:"8px 0 6px",fontSize:11,fontWeight:600,color:T.textSub}}>¿CÓMO TE DA EL DINERO EL REPARTIDOR?</p>
+                          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:6}}>
+                            <button onClick={()=>contraTransfer(s)&&corregir.cobro(s,"c|Efectivo")} style={pill(!contraTransfer(s),T.profit)}>💵 Lo trae en efectivo</button>
+                            <button onClick={()=>!contraTransfer(s)&&corregir.cobro(s,"c|SPIN Marcel")} style={pill(contraTransfer(s),T.client)}>📱 Te lo transfiere</button>
+                          </div>
+                          {contraTransfer(s)&&(
+                            <select value={s.payMethod} onChange={e=>corregir.cobro(s,"c|"+e.target.value)} style={{marginTop:6}}>
+                              {CONTRA_CUENTAS.map(c=><option key={c} value={c}>A {CUENTA_LABEL[c]}</option>)}
+                            </select>
+                          )}
+                          <p style={{margin:"6px 0 0",fontSize:12,color:T.textSub}}>Cobró {$m(s.total+(s.envio||0))} · se quedó su envío −{$m(s.costoEnvio||0)} · {contraTransfer(s)?"te transfiere":"te trae"} <strong style={{color:T.profit}}>{$m(s.envioDebe||0)}</strong></p>
+                        </>)}
+                      </div>
                       {!s.envioContra&&transDe(s)&&<F label={"¿El cliente ya pagó? ("+$m(transDe(s).monto)+" por "+transDe(s).metodo+")"}><select value={s.transConf==="si"?"si":"no"} onChange={e=>corregir.cliente(s,e.target.value)}>
                         <option value="no">⏳ No ha pagado</option><option value="si">💰 Ya pagó</option></select></F>}
                       {!s.envioContra&&<F label={"¿Ya se le pagó al repartidor? ("+$m(s.costoEnvio||0)+")"}><select value={s.envioPagado?(s.envioPagadoCon||"Efectivo"):"no"} onChange={e=>corregir.repartidor(s,e.target.value)}>
                         <option value="no">⏳ No</option>{CUENTAS.map(c=><option key={c} value={c}>Sí, con {CUENTA_LABEL[c]}</option>)}</select></F>}
-                      <F label="¿Cómo pagó el cliente?"><select value={(s.envioContra?"c|":"d|")+(s.envioContra&&!contraTransfer(s)?"Efectivo":s.payMethod)} onChange={e=>corregir.cobro(s,e.target.value)}>
-                        <optgroup label="Nos pagó directo">
-                          {!s.envioContra&&!TRANS_METHODS.includes(s.payMethod)&&<option value={"d|"+s.payMethod}>{PAY_METHODS_LABEL[s.payMethod]||s.payMethod}</option>}
-                          {TRANS_METHODS.map(m=><option key={m} value={"d|"+m}>{PAY_METHODS_LABEL[m]}</option>)}
-                        </optgroup>
-                        <optgroup label="💵 Efectivo al repartidor">
-                          <option value="c|Efectivo">💵 Lo trae en efectivo</option>
-                          {CONTRA_CUENTAS.map(c=><option key={c} value={"c|"+c}>📱 Lo transfiere a {CUENTA_LABEL[c]}</option>)}
-                        </optgroup>
-                      </select></F>
                       {s.envioContra&&<F label={(contraTransfer(s)?"¿El repartidor ya transfirió? (":"¿El repartidor ya entregó el dinero? (")+$m(s.envioDebe||0)+")"}><select value={contraListo(s)?"si":"no"} onChange={e=>corregir.dinero(s,e.target.value)}>
                         <option value="no">⏳ No</option><option value="si">✓ Sí</option></select></F>}
                     </div>
