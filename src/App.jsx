@@ -287,9 +287,15 @@ function pkgCost(pkg,prods){return pkg.items.reduce((s,it)=>{const p=prods.find(
 function pkgDesc(pkg,prods){return pkg.items.map(it=>{const p=prods.find(x=>x.id===it.pid);return it.qty+"× "+(p?p.name:it.pid);}).join(" · ");}
 
 // ── DASHBOARD ─────────────────────────────────────────────────────────────────
-function Dashboard({sales,expenses,extras=[],fixed,goTab,cierres=[]}){
+function Dashboard({sales,expenses,extras=[],fixed,goTab,cierres=[],stockMoves=[],prods=[],popCfg={}}){
   const now      = new Date();
   const todayStr = today();
+  // Ediciones a mano del inventario (últimos 3 días)
+  const ediciones=stockMoves.filter(m=>esEdicion(m)&&m.date>=addDays(todayStr,-2)).sort(ordMov).slice(0,6);
+  const edNombre=m=>{if((m.pid||"").startsWith("pop_"))return"Vasos "+(popCfg?.[m.pid.slice(4)]?.name||"");const p=prods.find(x=>x.id===m.pid);return p?p.name.replace(/\s*\(.*\)/,""):m.pid;};
+  const edCant=m=>{const sg=n=>(n>0?"+":"−")+Math.abs(n);const pop=(m.pid||"").startsWith("pop_");const p=prods.find(x=>x.id===m.pid);
+    return[m.cajas?sg(m.cajas)+(pop?" vasos":p&&(p.spc||1)===1?" pz":" cj"):"",m.sobres?sg(m.sobres)+" s":""].filter(Boolean).join(" · ");};
+  const edMotivo=m=>(m.note||"").replace(/^Corregido a mano: /,"").replace(/ \(quedó en.*\)$/,"");
   const curMonth = todayStr.slice(0,7);
   const curYear  = todayStr.slice(0,4);
 
@@ -334,6 +340,19 @@ function Dashboard({sales,expenses,extras=[],fixed,goTab,cierres=[]}){
             {faltaCierreAyer&&<p style={{margin:0,fontSize:13,fontWeight:700,color:T.expense}}>No se hizo el cierre de ayer</p>}
             {porRevisar.length>0&&<p style={{margin:0,fontSize:13,fontWeight:700,color:T.expense}}>{porRevisar.length} cierre{porRevisar.length>1?"s":""} por revisar</p>}
             {transPend.length>0&&<p style={{margin:0,fontSize:13,fontWeight:700,color:T.expense}}>{transPend.length} transferencia{transPend.length>1?"s":""} sin confirmar · {$m(transPend.reduce((a,s)=>a+transDe(s).monto,0))}</p>}
+          </div>
+          <i className="ti ti-chevron-right" style={{fontSize:18,color:T.textMuted}}/>
+        </button>
+      )}
+
+      {ediciones.length>0&&(
+        <button onClick={()=>goTab&&goTab("inv")} style={{textAlign:"left",background:"rgba(112,56,208,0.06)",border:"1px solid rgba(112,56,208,0.3)",borderRadius:12,padding:"12px 14px",display:"flex",alignItems:"center",gap:10}}>
+          <i className="ti ti-pencil" style={{fontSize:22,color:T.pkg}}/>
+          <div style={{flex:1,minWidth:0}}>
+            <p style={{margin:0,fontSize:13,fontWeight:700,color:T.pkg}}>Ediciones al inventario (últimos 3 días)</p>
+            {ediciones.map(m=>{const d=diaRel(m.date);return(
+              <p key={m.id} style={{margin:"3px 0 0",fontSize:12,color:T.textSub}}>{d[0].toUpperCase()+d.slice(1)}{m.hora?" "+m.hora:""} · <strong style={{color:T.text}}>{m.by||"—"}</strong> · {edNombre(m)} <strong style={{color:T.text}}>{edCant(m)}</strong>{edMotivo(m)?" · "+edMotivo(m):""}</p>
+            );})}
           </div>
           <i className="ti ti-chevron-right" style={{fontSize:18,color:T.textMuted}}/>
         </button>
@@ -1526,6 +1545,13 @@ function Gastos({expenses,setExpenses,user,isAdmin,fixed,setFixed,extras,setExtr
 // Cantidad nueva escrita en la tabla ("" = no se cambia)
 const numIn=(v,cur)=>v===""||v==null?cur:Math.max(0,Math.round(+v||0));
 const cellIn={width:64,textAlign:"center",fontWeight:700,padding:"6px 4px"};
+// Movimiento hecho con "✏️ Editar" (los primeros se reconocen por la nota)
+const esEdicion=m=>!!m&&(!!m.manual||(m.note||"").startsWith("Corregido a mano"));
+const diaRel=ds=>ds===today()?"hoy":ds===addDays(today(),-1)?"ayer":"el "+fechaCorta(ds);
+const ordMov=(a,b)=>(b.date+(b.hora||"")).localeCompare(a.date+(a.hora||""));
+// Última edición a mano de un producto (pid) o de un vaso ("pop_s"…)
+const ultimaEdicion=(moves,pid)=>(moves||[]).filter(m=>m.pid===pid&&esEdicion(m)).sort(ordMov)[0];
+function EditadoTag({m}){if(!m)return null;return <p style={{margin:"2px 0 0",fontSize:10,fontWeight:600,color:T.pkg}}>✏️ Editado {diaRel(m.date)}{m.hora?" a las "+m.hora:""} por {m.by||"—"}</p>;}
 // Pie de la edición: motivo obligatorio (queda en el historial) + guardar / cancelar
 function EditarPie({nota,setNota,err,onSave,onCancel}){
   return(
@@ -1584,7 +1610,7 @@ function Inventario({prods,setProds,sales,stockMoves,setStockMoves,user,isAdmin,
     const next=prods.map(p=>{const r=cambios[p.id];if(!r)return p;
       const c=numIn(r.c,p.stockCajas||0),sS=numIn(r.s,p.stockSobres||0);
       const dC=c-(p.stockCajas||0),dS=sS-(p.stockSobres||0);if(!dC&&!dS)return p;
-      moves.push({id:uid(),date:today(),pid:p.id,type:"ajuste",cajas:dC,sobres:dS,note:"Corregido a mano: "+motivo+" (quedó en "+c+((p.spc||1)>1?" cajas · "+sS+" sueltos":" "+(p.unit||"pz"))+")",by});
+      moves.push({id:uid(),date:today(),hora:horaAhora(),manual:true,pid:p.id,type:"ajuste",cajas:dC,sobres:dS,note:"Corregido a mano: "+motivo+" (quedó en "+c+((p.spc||1)>1?" cajas · "+sS+" sueltos":" "+(p.unit||"pz"))+")",by});
       return{...p,stockCajas:c,stockSobres:sS};});
     if(moves.length){setProds(next);setStockMoves(prev=>[...prev,...moves]);}
     return moves.length;
@@ -1659,7 +1685,7 @@ function Inventario({prods,setProds,sales,stockMoves,setStockMoves,user,isAdmin,
                   const soldS=sales.reduce((s,sl)=>s+(sl.items||[]).filter(i=>i.pid===p.id&&i.su==="sobre").reduce((a,i)=>a+(+i.qty||0),0),0);
                   return(
                     <tr key={p.id} style={{background:idx%2===0?T.bg:T.bgRow,borderBottom:`0.5px solid ${T.border}`}}>
-                      <td style={{padding:"8px 10px",fontWeight:600,color:T.text}}>{p.name.replace(/\s*\(.*\)/,"")}</td>
+                      <td style={{padding:"8px 10px",fontWeight:600,color:T.text}}>{p.name.replace(/\s*\(.*\)/,"")}<EditadoTag m={ultimaEdicion(stockMoves,p.id)}/></td>
                       <td style={{padding:"8px 10px",fontSize:16,fontWeight:700,color:cajas<=0?T.expense:cajas<=2?"#E88020":T.profit}}>{edM
                         ?<input type="number" min="0" inputMode="numeric" value={edM[p.id]?.c??""} onChange={e=>setEdM({...edM,[p.id]:{...edM[p.id],c:e.target.value}})} style={cellIn} aria-label={"Cajas de "+p.name}/>:cajas}</td>
                       <td style={{padding:"8px 10px",fontSize:16,fontWeight:700,color:sobres>0?T.client:T.textMuted}}>{edM
@@ -1673,7 +1699,7 @@ function Inventario({prods,setProds,sales,stockMoves,setStockMoves,user,isAdmin,
           </div>
           {edM&&<EditarPie nota={edNota} setNota={setEdNota} err={edErr} onSave={guardarMieles} onCancel={()=>setEdM(null)}/>}
         </Card>
-        <OtrosTable prods={prods} sales={sales} ajustar={ajustarManual}/>
+        <OtrosTable prods={prods} sales={sales} ajustar={ajustarManual} stockMoves={stockMoves}/>
         <VasosCard popCfg={popCfg} setPopCfg={setPopCfg} stockMoves={stockMoves} setStockMoves={setStockMoves} user={user}/>
       </>}
 
@@ -1684,17 +1710,17 @@ function Inventario({prods,setProds,sales,stockMoves,setStockMoves,user,isAdmin,
           <table style={{width:"100%",fontSize:12,borderCollapse:"collapse"}}>
             <TH cols={["Fecha","Tipo","Producto","Cantidad","Nota","Registró",""]}/>
             <tbody>
-              {[...stockMoves].sort((a,b)=>b.date.localeCompare(a.date)).slice(0,60).map((m,i)=>{
+              {[...stockMoves].sort(ordMov).slice(0,60).map((m,i)=>{
                 const prod=prods.find(p=>p.id===m.pid);
-                const isE=m.type==="entrada",isA=m.type==="apertura",isAj=m.type==="ajuste",isD=m.type==="devolucion";
+                const isE=m.type==="entrada",isA=m.type==="apertura",isAj=m.type==="ajuste",isD=m.type==="devolucion",isEd=esEdicion(m);
                 const isPop=(m.pid||"").startsWith("pop_");const popK=isPop?m.pid.slice(4):"";
                 const cant=isE?[m.cajas?"+"+m.cajas+(isPop?" vasos":(prod&&(prod.spc||1)===1?" pz":" cj")):"",m.sobres?"+"+m.sobres+" s":""].filter(Boolean).join(" · ")
                   :isA?"−"+m.cajas+" cj → +"+m.sobres+" s"
                   :isAj?[m.cajas?(m.cajas>0?"+":"")+m.cajas:"",m.sobres?(m.sobres>0?"+":"")+m.sobres+" s":""].filter(Boolean).join(" · "):"";
                 return(
                   <tr key={m.id} style={{background:i%2===0?T.bg:T.bgRow,borderBottom:`0.5px solid ${T.border}`}}>
-                    <td style={{padding:"7px 10px",color:T.textSub,whiteSpace:"nowrap"}}>{m.date}</td>
-                    <td style={{padding:"7px 10px"}}><Chip label={isE?"Entrada":isA?"Caja abierta":isAj?"Ajuste de conteo":isD?"Venta borrada":"Otro"} bg={isE?"rgba(26,140,90,0.1)":isA?"rgba(40,96,176,0.1)":T.goldBg} color={isE?T.profit:isA?T.client:T.gold}/></td>
+                    <td style={{padding:"7px 10px",color:T.textSub,whiteSpace:"nowrap"}}>{m.date}{m.hora?" · "+m.hora:""}</td>
+                    <td style={{padding:"7px 10px"}}><Chip label={isEd?"✏️ Editado a mano":isE?"Entrada":isA?"Caja abierta":isAj?"Ajuste de conteo":isD?"Venta borrada":"Otro"} bg={isEd?"rgba(112,56,208,0.1)":isE?"rgba(26,140,90,0.1)":isA?"rgba(40,96,176,0.1)":T.goldBg} color={isEd?T.pkg:isE?T.profit:isA?T.client:T.gold}/></td>
                     <td style={{padding:"7px 10px",fontWeight:500}}>{isPop?"Vasos "+(popCfg?.[popK]?.name||popK):isD?"—":(prod?.name.replace(/\s*\(.*\)/,"")||m.pid)}</td>
                     <td style={{padding:"7px 10px",color:isE?T.profit:T.client,fontWeight:600,whiteSpace:"nowrap"}}>{cant}</td>
                     <td style={{padding:"7px 10px",color:T.textSub,fontSize:11}}>{m.note}</td>
@@ -2105,7 +2131,7 @@ function VasosCard({popCfg,setPopCfg,stockMoves,setStockMoves,user}){
     if(!nota.trim()){setErr("Escribe por qué lo corriges");return;}
     const moves=[];const n={...popCfg};
     POP_SIZES.forEach(k=>{const cur=+popCfg[k].stock||0;const q=numIn(ed[k],cur);if(q===cur)return;
-      n[k]={...n[k],stock:q};moves.push({id:uid(),date:today(),pid:"pop_"+k,type:"ajuste",cajas:q-cur,sobres:0,note:"Corregido a mano: "+nota.trim()+" (quedó en "+q+" vasos)",by:user?.name||""});});
+      n[k]={...n[k],stock:q};moves.push({id:uid(),date:today(),hora:horaAhora(),manual:true,pid:"pop_"+k,type:"ajuste",cajas:q-cur,sobres:0,note:"Corregido a mano: "+nota.trim()+" (quedó en "+q+" vasos)",by:user?.name||""});});
     if(!moves.length){setErr("No cambiaste ninguna cantidad");return;}
     setPopCfg(n);setStockMoves([...stockMoves,...moves]);setEd(null);
   };
@@ -2123,6 +2149,7 @@ function VasosCard({popCfg,setPopCfg,stockMoves,setStockMoves,user}){
         {POP_SIZES.map(k=>{const st=+popCfg[k].stock||0;return(
           <div key={k} style={{padding:10,borderRadius:10,background:T.bgAlt,border:`0.5px solid ${T.border}`,textAlign:"center"}}>
             <p style={{margin:0,fontSize:12,fontWeight:600}}>{popCfg[k].name}</p>
+            <EditadoTag m={ultimaEdicion(stockMoves,"pop_"+k)}/>
             {ed
               ?<input type="number" min="0" inputMode="numeric" value={ed[k]??""} onChange={e=>setEd({...ed,[k]:e.target.value})} style={{...cellIn,width:"100%",marginTop:6}} aria-label={"Vasos "+popCfg[k].name}/>
               :<><p style={{margin:"2px 0 8px",fontSize:22,fontWeight:700,color:st<=0?T.expense:st<=20?"#E88020":T.profit}}>{st}</p>
@@ -2136,7 +2163,7 @@ function VasosCard({popCfg,setPopCfg,stockMoves,setStockMoves,user}){
   );
 }
 
-function OtrosTable({prods,sales,ajustar}){
+function OtrosTable({prods,sales,ajustar,stockMoves}){
   const otros=prods.filter(p=>(p.spc||1)===1&&p.id!=="sob");
   const[ed,setEd]=useState(null);
   const[nota,setNota]=useState("");
@@ -2155,7 +2182,7 @@ function OtrosTable({prods,sales,ajustar}){
           <tbody>
             {otros.map((p,i)=>{const st=p.stockCajas||0;const sold=sales.reduce((s,sl)=>s+(sl.items||[]).filter(it=>it.pid===p.id).reduce((a,it)=>a+(+it.qty||0),0),0);return(
               <tr key={p.id} style={{background:i%2===0?T.bg:T.bgRow,borderBottom:`0.5px solid ${T.border}`}}>
-                <td style={{padding:"8px 10px",fontWeight:600}}>{p.name}</td>
+                <td style={{padding:"8px 10px",fontWeight:600}}>{p.name}<EditadoTag m={ultimaEdicion(stockMoves,p.id)}/></td>
                 <td style={{padding:"8px 10px",fontWeight:700,color:st<=0?T.expense:st<=2?"#E88020":T.profit}}>{ed
                   ?<input type="number" min="0" inputMode="numeric" value={ed[p.id]?.c??""} onChange={e=>setEd({...ed,[p.id]:{c:e.target.value}})} style={cellIn} aria-label={"Piezas de "+p.name}/>
                   :<>{st} <span style={{fontWeight:400,color:T.textMuted,fontSize:11}}>{p.unit}</span></>}</td>
