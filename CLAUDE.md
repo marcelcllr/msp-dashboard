@@ -66,7 +66,7 @@ Contexto para Claude Code. Léelo antes de tocar cualquier cosa.
 ## Otras pantallas
 - Inicio: utilidad neta del mes (ventas − costo − gastos + ingresos extra, igual que Reparto), vendido, gastos, utilidad del año y gráfica de utilidad neta por mes.
 - Reparto: semanal + gráfica por día + resumen mensual (la gráfica mensual vive en Inicio).
-- Inventario: una sola forma de registrar mercancía (`guardarEntrada`, movimientos `entrada` con `cajas` y `sobres`), abrir cajas, tablas de stock (solo socios) e historial. Ya no hay conteo físico aquí (va en el Cierre) ni botón de resetear.
+- Inventario: una sola forma de registrar mercancía (`guardarEntrada`, movimientos `entrada` con `cajas` y `sobres`), abrir cajas, tablas de stock (solo socios) e historial. Socios: botón "✏️ Editar" en Mieles, Productos por pieza y Vasos para poner la cantidad real a mano; pide motivo obligatorio y deja un `ajuste` "Corregido a mano: <motivo>" (`ajustarManual`, `EditarPie`). El empleado no lo ve. Ya no hay conteo físico aquí (va en el Cierre) ni botón de resetear.
 - Gastos: fijos, **Ingresos extra** (`IngresosExtra`, antes "Utilidad extra" del Corte; se guardan en `extras` con `via`), registrar gasto, gráfica por categoría (incluye categorías viejas) e historial.
 - Vender: historial en tarjetas por día (socios eligen la fecha). Ventas nuevas guardan `hora`.
 - Formas de pago: Efectivo, SPIN Marcel, SPIN Gustavo, Transferencia MP, Terminal MP, Mixto. "Tercero" se quitó (solo se muestra en ventas viejas).

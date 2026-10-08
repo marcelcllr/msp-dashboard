@@ -1522,6 +1522,24 @@ function Gastos({expenses,setExpenses,user,isAdmin,fixed,setFixed,extras,setExtr
 }
 
 // ── INVENTARIO ────────────────────────────────────────────────────────────────
+// ── INVENTARIO: corrección a mano (solo socios) ──
+// Cantidad nueva escrita en la tabla ("" = no se cambia)
+const numIn=(v,cur)=>v===""||v==null?cur:Math.max(0,Math.round(+v||0));
+const cellIn={width:64,textAlign:"center",fontWeight:700,padding:"6px 4px"};
+// Pie de la edición: motivo obligatorio (queda en el historial) + guardar / cancelar
+function EditarPie({nota,setNota,err,onSave,onCancel}){
+  return(
+    <div style={{marginTop:10,display:"flex",flexDirection:"column",gap:8}}>
+      <F label="¿Por qué lo corriges?"><input value={nota} onChange={e=>setNota(e.target.value)} placeholder="Ej. venta de ayer que no se registró"/></F>
+      <div style={{display:"flex",gap:8}}>
+        <GoldBtn onClick={onSave} style={{flex:1,minHeight:44}}>✓ Guardar cambios</GoldBtn>
+        <OutBtn onClick={onCancel} style={{minHeight:44}}>Cancelar</OutBtn>
+      </div>
+      <ErrMsg msg={err}/>
+    </div>
+  );
+}
+
 function Inventario({prods,setProds,sales,stockMoves,setStockMoves,user,isAdmin,popCfg,setPopCfg}){
   const by=user?.name||"";
   const[abrirForm,setAbrirForm]=useState({pid:"",cajas:1});
@@ -1559,6 +1577,28 @@ function Inventario({prods,setProds,sales,stockMoves,setStockMoves,user,isAdmin,
     setOkMsg("✓ Se registraron "+moves.length+" producto"+(moves.length>1?"s":""));setTimeout(()=>setOkMsg(""),3000);
   };
   const hayEntrada=Object.values(cajasIn).some(v=>+v>0)||Object.values(sueltosIn).some(v=>+v>0);
+
+  // Socios: corregir cantidades a mano ({pid:{c,s}} con lo que hay de verdad). Queda un "ajuste" con el motivo
+  const ajustarManual=(cambios,motivo)=>{
+    const moves=[];
+    const next=prods.map(p=>{const r=cambios[p.id];if(!r)return p;
+      const c=numIn(r.c,p.stockCajas||0),sS=numIn(r.s,p.stockSobres||0);
+      const dC=c-(p.stockCajas||0),dS=sS-(p.stockSobres||0);if(!dC&&!dS)return p;
+      moves.push({id:uid(),date:today(),pid:p.id,type:"ajuste",cajas:dC,sobres:dS,note:"Corregido a mano: "+motivo+" (quedó en "+c+((p.spc||1)>1?" cajas · "+sS+" sueltos":" "+(p.unit||"pz"))+")",by});
+      return{...p,stockCajas:c,stockSobres:sS};});
+    if(moves.length){setProds(next);setStockMoves(prev=>[...prev,...moves]);}
+    return moves.length;
+  };
+  const[edM,setEdM]=useState(null);
+  const[edNota,setEdNota]=useState("");
+  const[edErr,setEdErr]=useState("");
+  const editarMieles=()=>{setEdM(Object.fromEntries(mielProds.map(p=>[p.id,{c:String(p.stockCajas||0),s:String(p.stockSobres||0)}])));setEdNota("");setEdErr("");};
+  const guardarMieles=()=>{
+    if(!edNota.trim()){setEdErr("Escribe por qué lo corriges");return;}
+    const n=ajustarManual(edM,edNota.trim());
+    if(!n){setEdErr("No cambiaste ninguna cantidad");return;}
+    setEdM(null);setOkMsg("✓ Inventario corregido ("+n+" producto"+(n>1?"s":"")+")");setTimeout(()=>setOkMsg(""),3000);window.scrollTo(0,0);
+  };
   const inp=(val,set,id,ph)=><input type="number" min="0" inputMode="numeric" value={val[id]||""} onChange={e=>set({...val,[id]:e.target.value})} placeholder={ph} style={{textAlign:"center",fontWeight:700}}/>;
 
   return(
@@ -1608,7 +1648,7 @@ function Inventario({prods,setProds,sales,stockMoves,setStockMoves,user,isAdmin,
 
       {isAdmin&&<>
         <Card>
-          <STitle>Mieles, gomitas y chocolates</STitle>
+          <STitle right={!edM&&<OutBtn onClick={editarMieles} style={{minHeight:36}}>✏️ Editar</OutBtn>}>Mieles, gomitas y chocolates</STitle>
           <div style={{overflowX:"auto"}}>
             <table style={{width:"100%",borderCollapse:"collapse",fontSize:12}}>
               <TH cols={["Producto","Cajas","Sueltos","Vendido"]}/>
@@ -1620,8 +1660,10 @@ function Inventario({prods,setProds,sales,stockMoves,setStockMoves,user,isAdmin,
                   return(
                     <tr key={p.id} style={{background:idx%2===0?T.bg:T.bgRow,borderBottom:`0.5px solid ${T.border}`}}>
                       <td style={{padding:"8px 10px",fontWeight:600,color:T.text}}>{p.name.replace(/\s*\(.*\)/,"")}</td>
-                      <td style={{padding:"8px 10px",fontSize:16,fontWeight:700,color:cajas<=0?T.expense:cajas<=2?"#E88020":T.profit}}>{cajas}</td>
-                      <td style={{padding:"8px 10px",fontSize:16,fontWeight:700,color:sobres>0?T.client:T.textMuted}}>{sobres||"—"}</td>
+                      <td style={{padding:"8px 10px",fontSize:16,fontWeight:700,color:cajas<=0?T.expense:cajas<=2?"#E88020":T.profit}}>{edM
+                        ?<input type="number" min="0" inputMode="numeric" value={edM[p.id]?.c??""} onChange={e=>setEdM({...edM,[p.id]:{...edM[p.id],c:e.target.value}})} style={cellIn} aria-label={"Cajas de "+p.name}/>:cajas}</td>
+                      <td style={{padding:"8px 10px",fontSize:16,fontWeight:700,color:sobres>0?T.client:T.textMuted}}>{edM
+                        ?<input type="number" min="0" inputMode="numeric" value={edM[p.id]?.s??""} onChange={e=>setEdM({...edM,[p.id]:{...edM[p.id],s:e.target.value}})} style={cellIn} aria-label={"Sueltos de "+p.name}/>:sobres||"—"}</td>
                       <td style={{padding:"8px 10px",fontSize:11,color:T.textSub}}>{soldC||soldS?[soldC&&soldC+" cj",soldS&&soldS+" s"].filter(Boolean).join(" · "):"—"}</td>
                     </tr>
                   );
@@ -1629,8 +1671,9 @@ function Inventario({prods,setProds,sales,stockMoves,setStockMoves,user,isAdmin,
               </tbody>
             </table>
           </div>
+          {edM&&<EditarPie nota={edNota} setNota={setEdNota} err={edErr} onSave={guardarMieles} onCancel={()=>setEdM(null)}/>}
         </Card>
-        <OtrosTable prods={prods} sales={sales}/>
+        <OtrosTable prods={prods} sales={sales} ajustar={ajustarManual}/>
         <VasosCard popCfg={popCfg} setPopCfg={setPopCfg} stockMoves={stockMoves} setStockMoves={setStockMoves} user={user}/>
       </>}
 
@@ -2055,6 +2098,17 @@ function ConteoSorpresa({prods,setProds,popCfg,setPopCfg,setStockMoves,conteos,s
 // ── INVENTARIO: vasos de palomitas y productos por pieza (solo socios) ────────
 function VasosCard({popCfg,setPopCfg,stockMoves,setStockMoves,user}){
   const[add,setAdd]=useState({});
+  const[ed,setEd]=useState(null);
+  const[nota,setNota]=useState("");
+  const[err,setErr]=useState("");
+  const guardarEd=()=>{
+    if(!nota.trim()){setErr("Escribe por qué lo corriges");return;}
+    const moves=[];const n={...popCfg};
+    POP_SIZES.forEach(k=>{const cur=+popCfg[k].stock||0;const q=numIn(ed[k],cur);if(q===cur)return;
+      n[k]={...n[k],stock:q};moves.push({id:uid(),date:today(),pid:"pop_"+k,type:"ajuste",cajas:q-cur,sobres:0,note:"Corregido a mano: "+nota.trim()+" (quedó en "+q+" vasos)",by:user?.name||""});});
+    if(!moves.length){setErr("No cambiaste ninguna cantidad");return;}
+    setPopCfg(n);setStockMoves([...stockMoves,...moves]);setEd(null);
+  };
   const guardar=()=>{
     const moves=[];
     const n={...popCfg};
@@ -2064,26 +2118,37 @@ function VasosCard({popCfg,setPopCfg,stockMoves,setStockMoves,user}){
   };
   return(
     <Card>
-      <STitle>🍿 Vasos de palomitas</STitle>
+      <STitle right={!ed&&<OutBtn onClick={()=>{setEd(Object.fromEntries(POP_SIZES.map(k=>[k,String(+popCfg[k].stock||0)])));setNota("");setErr("");}} style={{minHeight:36}}>✏️ Editar</OutBtn>}>🍿 Vasos de palomitas</STitle>
       <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:8}}>
         {POP_SIZES.map(k=>{const st=+popCfg[k].stock||0;return(
           <div key={k} style={{padding:10,borderRadius:10,background:T.bgAlt,border:`0.5px solid ${T.border}`,textAlign:"center"}}>
             <p style={{margin:0,fontSize:12,fontWeight:600}}>{popCfg[k].name}</p>
-            <p style={{margin:"2px 0 8px",fontSize:22,fontWeight:700,color:st<=0?T.expense:st<=20?"#E88020":T.profit}}>{st}</p>
-            <input type="number" min="0" value={add[k]??""} onChange={e=>setAdd({...add,[k]:e.target.value})} placeholder="+ vasos" style={{textAlign:"center"}}/>
+            {ed
+              ?<input type="number" min="0" inputMode="numeric" value={ed[k]??""} onChange={e=>setEd({...ed,[k]:e.target.value})} style={{...cellIn,width:"100%",marginTop:6}} aria-label={"Vasos "+popCfg[k].name}/>
+              :<><p style={{margin:"2px 0 8px",fontSize:22,fontWeight:700,color:st<=0?T.expense:st<=20?"#E88020":T.profit}}>{st}</p>
+            <input type="number" min="0" value={add[k]??""} onChange={e=>setAdd({...add,[k]:e.target.value})} placeholder="+ vasos" style={{textAlign:"center"}}/></>}
           </div>
         );})}
       </div>
-      <GoldBtn onClick={guardar} style={{marginTop:10}}>+ Agregar vasos</GoldBtn>
+      {ed?<EditarPie nota={nota} setNota={setNota} err={err} onSave={guardarEd} onCancel={()=>setEd(null)}/>
+        :<GoldBtn onClick={guardar} style={{marginTop:10}}>+ Agregar vasos</GoldBtn>}
     </Card>
   );
 }
 
-function OtrosTable({prods,sales}){
+function OtrosTable({prods,sales,ajustar}){
   const otros=prods.filter(p=>(p.spc||1)===1&&p.id!=="sob");
+  const[ed,setEd]=useState(null);
+  const[nota,setNota]=useState("");
+  const[err,setErr]=useState("");
+  const guardar=()=>{
+    if(!nota.trim()){setErr("Escribe por qué lo corriges");return;}
+    if(!ajustar(ed,nota.trim())){setErr("No cambiaste ninguna cantidad");return;}
+    setEd(null);
+  };
   return(
     <Card>
-      <STitle>Productos por pieza (Sex Shop y otros)</STitle>
+      <STitle right={!ed&&ajustar&&<OutBtn onClick={()=>{setEd(Object.fromEntries(otros.map(p=>[p.id,{c:String(p.stockCajas||0)}])));setNota("");setErr("");}} style={{minHeight:36}}>✏️ Editar</OutBtn>}>Productos por pieza (Sex Shop y otros)</STitle>
       <div style={{overflowX:"auto"}}>
         <table style={{width:"100%",borderCollapse:"collapse",fontSize:12}}>
           <TH cols={["Producto","En sistema","Vendido"]}/>
@@ -2091,13 +2156,16 @@ function OtrosTable({prods,sales}){
             {otros.map((p,i)=>{const st=p.stockCajas||0;const sold=sales.reduce((s,sl)=>s+(sl.items||[]).filter(it=>it.pid===p.id).reduce((a,it)=>a+(+it.qty||0),0),0);return(
               <tr key={p.id} style={{background:i%2===0?T.bg:T.bgRow,borderBottom:`0.5px solid ${T.border}`}}>
                 <td style={{padding:"8px 10px",fontWeight:600}}>{p.name}</td>
-                <td style={{padding:"8px 10px",fontWeight:700,color:st<=0?T.expense:st<=2?"#E88020":T.profit}}>{st} <span style={{fontWeight:400,color:T.textMuted,fontSize:11}}>{p.unit}</span></td>
+                <td style={{padding:"8px 10px",fontWeight:700,color:st<=0?T.expense:st<=2?"#E88020":T.profit}}>{ed
+                  ?<input type="number" min="0" inputMode="numeric" value={ed[p.id]?.c??""} onChange={e=>setEd({...ed,[p.id]:{c:e.target.value}})} style={cellIn} aria-label={"Piezas de "+p.name}/>
+                  :<>{st} <span style={{fontWeight:400,color:T.textMuted,fontSize:11}}>{p.unit}</span></>}</td>
                 <td style={{padding:"8px 10px",color:T.textSub}}>{sold||"—"}</td>
               </tr>
             );})}
           </tbody>
         </table>
       </div>
+      {ed&&<EditarPie nota={nota} setNota={setNota} err={err} onSave={guardar} onCancel={()=>setEd(null)}/>}
     </Card>
   );
 }
