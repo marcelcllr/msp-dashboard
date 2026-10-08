@@ -115,6 +115,7 @@ function pkgPrice(cl,pkgId,std){if(cl?.pkgPrices?.[pkgId]!=null)return+cl.pkgPri
 const COSTS={"bh":225,"rhv":220,"hs":235,"rh":125,"rhp":170,"pp24":220,"vf":340,"sob":10,"gom":130,"rchv":290,"rhch":290};
 const INIT_PRODS=[
   {id:"bh",  name:"Black Horse (24 sobres)",           cat:"Miel",    unit:"caja", spc:24, cost:160, list:1199,tiers:TA,costSobre:9,listSobre:150,stockCajas:0,stockSobres:0},
+  {id:"bb",  name:"Black Bull (24 sobres)",            cat:"Miel",    unit:"caja", spc:24, cost:0,   list:1200,tiers:[{m:1,p:1200},...TA.slice(1)],costSobre:0,listSobre:150,stockCajas:0,stockSobres:0},
   {id:"rhv", name:"Royal Honey VIP (24 sobres)",        cat:"Miel",    unit:"caja", spc:24, cost:160, list:1199,tiers:TA,costSobre:9,listSobre:150,stockCajas:0,stockSobres:0},
   {id:"hs",  name:"Hard Steel (24 sobres)",             cat:"Miel",    unit:"caja", spc:24, cost:160, list:1199,tiers:TA,costSobre:10,listSobre:150,stockCajas:0,stockSobres:0},
   {id:"rh",  name:"Royal Honey (12 sobres)",            cat:"Miel",    unit:"caja", spc:12, cost:100, list:999, tiers:TB,costSobre:10,listSobre:150,stockCajas:0,stockSobres:0},
@@ -2957,7 +2958,7 @@ function Dashboard_App({user,onLogout}){
       let[p,pk,c,s,e,sm,ex,pop,fx,ci,mv,cs]=await Promise.all([load(SK.p,INIT_PRODS),load(SK.pk,INIT_PKGS),load(SK.c,[]),load(SK.s,[]),load(SK.e,[]),load(SK.sm,[]),load(SK.ex,[]),load(SK.pop,INIT_POP),load(SK.fx,INIT_FIXED),load(SK.ci,[]),load(SK.mv,[]),load(SK.cs,[])]);
       // Merge new products
       const ids=new Set(p.map(x=>x.id));
-      INIT_PRODS.forEach(ip=>{if(!ids.has(ip.id))p.push(ip);});
+      INIT_PRODS.forEach((ip,i)=>{if(ids.has(ip.id))return;const at=i>0?p.findIndex(x=>x.id===INIT_PRODS[i-1].id):-1;if(at>=0)p.splice(at+1,0,ip);else p.push(ip);});
       // Apply latest names/structure but RESPECT user-edited costs
       // Only set cost if the product doesn't have one yet (new products)
       p=p.map(x=>{const ip=INIT_PRODS.find(i=>i.id===x.id);if(!ip)return x;return{...x,name:ip.name,spc:ip.spc,tiers:ip.tiers,spcu:x.spcu||ip.spcu,cost:(x.cost!=null&&x.cost>0)?x.cost:ip.cost};});
@@ -3036,6 +3037,15 @@ function Dashboard_App({user,onLogout}){
           {id:uid(),date:ARRANQUE_CERO,pid:"pop_s",type:"ajuste",cajas:2,sobres:0,note:nota,by:"Marcel"}];
         const oks2=await Promise.all([save(SK.p,p),save(SK.sm,sm),save(SK.pop,popM)]);
         if(oks2.every(o=>o===true))await save("msp-ajuste-ventas-0710","ok");
+      }
+      // ── BLACK BULL: stock inicial 8 oct (una sola vez, marca en key "msp-bb-inicial"): 20 cajas, 0 sueltos ──
+      const bbIni=await load("msp-bb-inicial",null);
+      if(bbIni!=="ok"&&p.some(x=>x.id==="bb")){
+        sm=Array.isArray(sm)?sm:[];
+        p=p.map(x=>x.id==="bb"?{...x,stockCajas:20,stockSobres:0}:x);
+        sm=[...sm,{id:uid(),date:"2026-10-08",pid:"bb",type:"entrada",cajas:20,sobres:0,note:"Stock inicial Black Bull (marca nueva)",by:"Marcel"}];
+        const oksBB=await Promise.all([save(SK.p,p),save(SK.sm,sm)]);
+        if(oksBB.every(o=>o===true))await save("msp-bb-inicial","ok");
       }
       // ── CORRECCIÓN DEL 7 OCT (una sola vez, marca en key "msp-correccion-0710") ──
       // Lo que explicó Marcel el 8 oct:
