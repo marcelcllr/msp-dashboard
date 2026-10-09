@@ -288,7 +288,62 @@ function pkgCost(pkg,prods){return pkg.items.reduce((s,it)=>{const p=prods.find(
 function pkgDesc(pkg,prods){return pkg.items.map(it=>{const p=prods.find(x=>x.id===it.pid);return it.qty+"× "+(p?p.name:it.pid);}).join(" · ");}
 
 // ── DASHBOARD ─────────────────────────────────────────────────────────────────
-function Dashboard({sales,expenses,extras=[],fixed,goTab,cierres=[],stockMoves=[],prods=[],popCfg={}}){
+// ── INICIO: resumen de pedidos (lo que te deben, por entregar, repartidores) ──
+function PedidosResumen({sales,setSales,clients,user,goTab}){
+  const[open,setOpen]=useState(null);
+  const[per,setPer]=useState("hoy");
+  const hoy=today(),by=user?.name||"";
+  const nom=s=>(clients||[]).find(c=>c.id===s.clientId)?.name||(s.tipo==="palomitas"?"Palomitas":"Cliente");
+  const dias=ds=>Math.max(0,Math.round((new Date(hoy+"T12:00:00")-new Date(ds+"T12:00:00"))/86400000));
+  const hace=ds=>{const d=dias(ds);return d===0?"hoy":d===1?"ayer":"hace "+d+" días";};
+  const upd=(id,patch)=>setSales(prev=>prev.map(x=>x.id===id?{...x,...patch}:x));
+  const conf={transConf:"si",transConfPor:by,transConfFecha:hoy};
+  const desde=per==="hoy"?hoy:per==="semana"?addDays(hoy,-6):hoy.slice(0,7)+"-01";
+  const rep=s=>"🛵 "+(s.repartidor||"Sin nombre");
+  const G=[
+    {k:"deben",t:"⏳ Clientes que te deben",c:T.expense,l:sales.filter(s=>!s.envioContra&&transDe(s)&&s.transConf!=="si"),
+      monto:s=>transDe(s).monto,det:s=>transDe(s).metodo+(s.conEnvio?" · "+(s.envioStatus==="entregado"?"ya entregado":"sin entregar"):""),
+      btn:s=>({l:"💰 Ya pagó",f:()=>upd(s.id,conf)})},
+    {k:"rep",t:"💵 Repartidores te deben",c:T.expense,l:sales.filter(s=>s.envioContra&&!contraListo(s)),
+      monto:s=>s.envioDebe||0,det:s=>rep(s)+" · "+(contraTransfer(s)?"te transfiere a "+CUENTA_LABEL[s.payMethod]:"te trae efectivo"),
+      btn:s=>({l:contraTransfer(s)?"✓ Ya transfirió":"✓ Ya entregó",f:()=>upd(s.id,{envioDineroRecibido:true,envioDineroHora:horaAhora(),envioDineroFecha:hoy,envioDineroPor:by,...(contraTransfer(s)?conf:{})})})},
+    {k:"entregar",t:"🛵 Por entregar",c:"#B86010",l:sales.filter(s=>s.conEnvio&&s.envioStatus!=="entregado"),
+      monto:s=>s.total+(s.envio||0),det:s=>rep(s)+" · "+(s.envioStatus==="salio"?"en camino":"por salir"),
+      btn:s=>({l:"✓ Entregado",f:()=>upd(s.id,{envioStatus:"entregado",envioSalio:s.envioSalio||horaAhora(),envioEntregado:horaAhora(),envioEntregadoFecha:hoy})})},
+    {k:"pagarRep",t:"🛵 Le debes a repartidores",c:"#B86010",l:sales.filter(s=>s.conEnvio&&!s.envioPagado),
+      monto:s=>s.costoEnvio||0,det:s=>rep(s)+" · "+(s.envioKm||0)+" km",btn:()=>({l:"Pagar ›",f:()=>goTab&&goTab("envios")})},
+    {k:"listos",t:"✓ Entregados y cobrados",c:T.profit,ok:true,l:sales.filter(s=>s.conEnvio&&ventaConfirmada(s)&&fechaConfirmada(s)>=desde),
+      monto:s=>s.total+(s.envio||0),det:s=>rep(s)+" · "+(s.envioContra?"contra entrega":s.payMethod)},
+  ];
+  return(
+    <Card>
+      <STitle right={<div style={{display:"flex",gap:4}}>{[["hoy","Hoy"],["semana","Semana"],["mes","Mes"]].map(([v,l])=><button key={v} onClick={()=>setPer(v)} style={{fontSize:11,minHeight:30,padding:"2px 10px",borderRadius:20,border:`1px solid ${per===v?T.gold:T.border}`,background:per===v?T.goldBg:"transparent",color:per===v?T.goldText:T.textSub,fontWeight:per===v?700:500}}>{l}</button>)}</div>}>📦 Pedidos</STitle>
+      <div style={{display:"flex",flexDirection:"column",gap:6}}>
+        {G.map(g=>{const tot=g.l.reduce((a,x)=>a+g.monto(x),0);const viejos=!g.ok&&g.l.some(x=>dias(x.date)>=1);const ab=open===g.k&&g.l.length>0;
+          return(
+            <div key={g.k} style={{borderRadius:10,border:`1px solid ${viejos?"rgba(192,64,64,0.45)":T.border}`,background:viejos?"rgba(192,64,64,0.05)":T.bgRow,overflow:"hidden"}}>
+              <button onClick={()=>setOpen(ab?null:g.k)} style={{width:"100%",border:"none",borderRadius:0,background:"transparent",display:"flex",alignItems:"center",gap:8,padding:"10px 12px",minHeight:46,textAlign:"left"}}>
+                <span style={{flex:1,fontSize:13,fontWeight:600,color:T.text}}>{g.t}{g.ok?" · "+(per==="hoy"?"hoy":per==="semana"?"7 días":"mes"):""}</span>
+                <span style={{fontSize:13,fontWeight:700,color:!g.l.length?T.textMuted:g.ok?T.profit:viejos?T.expense:g.c}}>{g.l.length}{g.l.length?" · "+$m(tot):""}</span>
+                {g.l.length>0&&<i className={"ti ti-chevron-"+(ab?"up":"down")} style={{fontSize:16,color:T.textMuted}}/>}
+              </button>
+              {ab&&<div style={{padding:"0 12px 8px"}}>
+                {[...g.l].sort((a,b)=>a.date.localeCompare(b.date)).map(x=>{const old=!g.ok&&dias(x.date)>=1;const b=g.btn&&g.btn(x);return(
+                  <div key={x.id} style={{display:"flex",alignItems:"center",gap:8,padding:"8px 0",borderTop:`0.5px solid ${T.border}`}}>
+                    <div style={{flex:1,minWidth:0}}>
+                      <p style={{margin:0,fontSize:13,fontWeight:700,color:T.text}}>{nom(x)} · {$m(g.monto(x))}</p>
+                      <p style={{margin:0,fontSize:11,color:old?T.expense:T.textMuted,fontWeight:old?700:400}}>{g.det(x)} · {hace(g.ok?fechaConfirmada(x):x.date)}</p>
+                    </div>
+                    {b&&<button onClick={b.f} style={{fontSize:12,minHeight:36,padding:"2px 10px",color:T.profit,borderColor:"rgba(26,140,90,0.4)",whiteSpace:"nowrap"}}>{b.l}</button>}
+                  </div>);})}
+              </div>}
+            </div>);})}
+      </div>
+    </Card>
+  );
+}
+
+function Dashboard({sales,allSales=[],setSales,clients=[],user,expenses,extras=[],fixed,goTab,cierres=[],stockMoves=[],prods=[],popCfg={}}){
   const now      = new Date();
   const todayStr = today();
   // Ediciones a mano del inventario (últimos 3 días)
@@ -328,8 +383,11 @@ function Dashboard({sales,expenses,extras=[],fixed,goTab,cierres=[],stockMoves=[
   const pendFijos=fixedPending(fixed,expenses,todayStr);
   const ayer=(()=>{const d=new Date(todayStr+"T12:00:00");d.setDate(d.getDate()-1);return ymd(d);})();
   const faltaCierreAyer=ayer>=INICIO_OPERACION&&!cierres.some(c=>c.date===ayer);
-  const porRevisar=cierres.filter(c=>c.date>=INICIO_OPERACION&&!c.revisado&&estadoCierre(c,sales)!=="ok");
-  const transPend=sales.filter(s=>s.date<todayStr&&transDe(s)&&s.transConf!=="si");
+  const porRevisar=cierres.filter(c=>c.date>=INICIO_OPERACION&&!c.revisado&&estadoCierre(c,allSales)!=="ok");
+  const transPend=allSales.filter(s=>s.date<todayStr&&transDe(s)&&s.transConf!=="si");
+  // Ventas que todavía no cuentan (sin entregar o sin cobrar)
+  const sinConfirmar=allSales.filter(s=>!ventaConfirmada(s));
+  const sinConfirmarTot=sinConfirmar.reduce((a,s)=>a+s.total+(s.envio||0),0);
 
   return(
     <div style={{display:"flex",flexDirection:"column",gap:"1.25rem"}}>
@@ -345,6 +403,8 @@ function Dashboard({sales,expenses,extras=[],fixed,goTab,cierres=[],stockMoves=[
           <i className="ti ti-chevron-right" style={{fontSize:18,color:T.textMuted}}/>
         </button>
       )}
+
+      {setSales&&<PedidosResumen sales={allSales} setSales={setSales} clients={clients} user={user} goTab={goTab}/>}
 
       {ediciones.length>0&&(
         <button onClick={()=>goTab&&goTab("inv")} style={{textAlign:"left",background:"rgba(112,56,208,0.06)",border:"1px solid rgba(112,56,208,0.3)",borderRadius:12,padding:"12px 14px",display:"flex",alignItems:"center",gap:10}}>
@@ -375,6 +435,7 @@ function Dashboard({sales,expenses,extras=[],fixed,goTab,cierres=[],stockMoves=[
         <p style={{margin:"0 0 6px",fontSize:11,fontWeight:600,color:mesData.net>=0?T.profit:T.expense,textTransform:"uppercase",letterSpacing:"0.08em"}}>Utilidad neta · {nomMes}</p>
         <p style={{margin:"0 0 2px",fontSize:30,fontWeight:700,color:mesData.net>=0?T.profit:T.expense}}>{$m(mesData.net)}</p>
         <p style={{margin:0,fontSize:12,color:T.textMuted}}>Ya descontado costo, gastos y fijos</p>
+        {sinConfirmar.length>0&&<p style={{margin:"4px 0 0",fontSize:12,fontWeight:600,color:"#B86010"}}>⏳ Todavía no cuenta: {$m(sinConfirmarTot)} de {sinConfirmar.length} venta{sinConfirmar.length!==1?"s":""} sin entregar o sin cobrar</p>}
       </div>
       <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:8}}>
         {[["Vendido",$m(mesData.rev),mesData.count+" venta"+(mesData.count!==1?"s":""),T.revenue],["Gastos",$m(gastosMes),nomMes,T.expense],["Utilidad del año",$m(anioData.net),"desde el arranque",T.client]].map(([l,v,sub,c])=>(
@@ -1234,9 +1295,10 @@ function NuevaVenta({prods,setProds,pkgs,clients,setClients,sales,setSales,user,
         {(()=>{
           const dia=sales.filter(s=>s.date===(isAdmin?histDate:today())).sort((a,b)=>(b.hora||"").localeCompare(a.hora||""));
           if(dia.length===0)return <Empty icon="ti-shopping-cart" text="Sin ventas este día"/>;
-          const tot=dia.reduce((a,s)=>a+s.total+(s.envio||0),0),ut=dia.reduce((a,s)=>a+s.total-s.cost,0);
+          const tot=dia.reduce((a,s)=>a+s.total+(s.envio||0),0),ut=dia.filter(ventaConfirmada).reduce((a,s)=>a+s.total-s.cost,0);
+          const pendDia=dia.filter(s=>!ventaConfirmada(s)),pendTot=pendDia.reduce((a,s)=>a+s.total+(s.envio||0),0);
           return(<>
-            <p style={{margin:"0 0 8px",fontSize:12,color:T.textSub}}>{dia.length} venta{dia.length!==1?"s":""} · <strong style={{color:T.revenue}}>{$m(tot)}</strong>{isAdmin&&<> · utilidad <strong style={{color:ut>=0?T.profit:T.expense}}>{$m(ut)}</strong></>}</p>
+            <p style={{margin:"0 0 8px",fontSize:12,color:T.textSub}}>{dia.length} venta{dia.length!==1?"s":""} · <strong style={{color:T.revenue}}>{$m(tot)}</strong>{isAdmin&&<> · utilidad cobrada <strong style={{color:ut>=0?T.profit:T.expense}}>{$m(ut)}</strong></>}{pendTot>0&&<> · <strong style={{color:"#B86010"}}>⏳ {$m(pendTot)} por cobrar</strong></>}</p>
             <div style={{display:"flex",flexDirection:"column",gap:8}}>
               {dia.map(s=>{
                 const c=clients.find(x=>x.id===s.clientId);const u=s.total-s.cost;const pc=PAY_CLR[s.payMethod]||{};
@@ -1255,6 +1317,7 @@ function NuevaVenta({prods,setProds,pkgs,clients,setClients,sales,setSales,user,
                     <div style={{display:"flex",alignItems:"center",gap:6,flexWrap:"wrap",marginTop:6}}>
                       {s.payMethod&&<Chip label={s.payMethod} bg={pc.bg} color={pc.c}/>}
                       {s.conEnvio&&<Chip label={"🛵 envío "+$m(s.envio||0)} bg="rgba(40,96,176,0.1)" color={T.client}/>}
+                      {!ventaConfirmada(s)&&<Chip label={s.conEnvio&&s.envioStatus!=="entregado"?"⏳ sin entregar":"⏳ por cobrar"} bg="rgba(232,128,32,0.14)" color="#B86010"/>}
                       {isAdmin&&s.bajoPrecio&&<Chip label="⚠ bajo precio lista" bg="rgba(232,128,32,0.12)" color="#B86010"/>}
                       {isAdmin&&(s.sinStock||[]).length>0&&<Chip label="⚠ sin stock en sistema" bg="rgba(192,64,64,0.1)" color={T.expense}/>}
                       <span style={{fontSize:11,color:T.textMuted,marginLeft:"auto"}}>{[s.hora,s.by].filter(Boolean).join(" · ")}</span>
@@ -2005,6 +2068,20 @@ const CONTRA_CUENTAS=["SPIN Marcel","SPIN Gustavo","Transferencia MP"];
 function contraTransfer(s){return !!s.envioContra&&s.payMethod!=="Efectivo";}
 // El repartidor ya nos dio el dinero (lo trajo, o la transferencia ya se confirmó en Caja)
 function contraListo(s){return !!s.envioDineroRecibido||(contraTransfer(s)&&s.transConf==="si");}
+// Una venta cuenta en ventas, utilidad y reparto hasta que está entregada y cobrada
+function ventaConfirmada(s){
+  if(s.conEnvio&&s.envioStatus!=="entregado")return false;
+  if(s.envioContra)return contraListo(s);
+  return !transDe(s)||s.transConf==="si";
+}
+// Día en que quedó entregada y cobrada (ese día cuenta en los reportes)
+function fechaConfirmada(s){
+  let d=s.date;const mx=x=>{if(x&&x>d)d=x;};
+  if(s.conEnvio)mx(s.envioEntregadoFecha);
+  if(s.envioContra){mx(s.envioDineroFecha);if(contraTransfer(s))mx(s.transConfFecha);}
+  else if(transDe(s))mx(s.transConfFecha);
+  return d;
+}
 const transDelDia=(sales,d)=>sales.filter(s=>s.date===d&&transDe(s));
 // Estado completo de un cierre para los socios: efectivo, inventario, transferencias y lo que recibió el socio
 function estadoCierre(c,sales){
@@ -3151,7 +3228,8 @@ function Dashboard_App({user,onLogout}){
   );
 
   // Solo lectura para reportes: lo anterior al arranque se conserva guardado pero no se cuenta
-  const repSales=sales.filter(s=>s.date>=INICIO_OPERACION);
+  // Reportes (Inicio, Reparto): solo ventas entregadas y cobradas, contadas el día en que se confirmaron
+  const repSales=sales.filter(s=>s.date>=INICIO_OPERACION&&ventaConfirmada(s)).map(s=>{const d=fechaConfirmada(s);return d===s.date?s:{...s,date:d};});
   const repExpenses=expenses.filter(e=>e.date>=INICIO_OPERACION);
   const repExtras=extras.filter(x=>x.date>=INICIO_OPERACION);
   const props={prods,setProds,pkgs,setPkgs,clients,setClients,sales,setSales,expenses,setExpenses,stockMoves,setStockMoves,extras,setExtras,user,isAdmin,fixed,setFixed,goTab:setTab,popCfg,setPopCfg,cierres,setCierres,movs,setMovs,cerrados:cierres.map(c=>c.date)};
@@ -3181,7 +3259,7 @@ function Dashboard_App({user,onLogout}){
           </div>
         </div>
       </div>
-      {cur.k==="dash"  && <Dashboard  {...props} sales={repSales} expenses={repExpenses} extras={repExtras}/>}
+      {cur.k==="dash"  && <Dashboard  {...props} sales={repSales} allSales={sales.filter(s=>s.date>=INICIO_OPERACION)} expenses={repExpenses} extras={repExtras}/>}
       {cur.k==="catalogo" && can("catalogo") && <div style={{display:"flex",flexDirection:"column",gap:"1.25rem"}}><Productos {...props}/><Paquetes {...props}/></div>}
       {cur.k==="cli"   && <Clientes   {...props}/>}
       {cur.k==="venta" && <NuevaVenta {...props}/>}
