@@ -3047,6 +3047,16 @@ function Dashboard_App({user,onLogout}){
         const oksBB=await Promise.all([save(SK.p,p),save(SK.sm,sm)]);
         if(oksBB.every(o=>o===true))await save("msp-bb-inicial","ok");
       }
+      // ── EFECTIVO SOCIOS: saldo inicial 8 oct (una sola vez, marca en key "msp-socios-inicial") ──
+      // Efectivo que tenían Marcel y Gustavo entre los dos ($30,810), sin contar lo del día (eso sigue en la Caja).
+      const sociosIni=await load("msp-socios-inicial",null);
+      if(sociosIni!=="ok"){
+        mv=Array.isArray(mv)?mv:[];
+        if(!mv.some(m=>m.tipo==="inicial"&&m.a==="Efectivo socios"&&m.date>="2026-10-08"))
+          mv=[...mv,{id:uid(),tipo:"inicial",a:"Efectivo socios",date:"2026-10-08",monto:30810,by:"Marcel"}];
+        const okSoc=await save(SK.mv,mv);
+        if(okSoc===true)await save("msp-socios-inicial","ok");
+      }
       // ── CORRECCIÓN DEL 7 OCT (una sola vez, marca en key "msp-correccion-0710") ──
       // Lo que explicó Marcel el 8 oct:
       // 1) Faltó registrar la venta a Jairo (mayoreo, en local): 1 caja Black Horse, 1 Vitafer y 1 Royal Honey VIP a $500 c/u,
