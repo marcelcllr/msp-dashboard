@@ -2213,13 +2213,16 @@ function libroCuentas({sales,expenses,extras,cierres,movs,clients}){
   const L=[];const add=(date,acc,monto,desc,tipo,extra)=>{if(acc&&monto)L.push({date,acc,monto:+(+monto).toFixed(2),desc,tipo,ord:tipo==="inicial"?0:tipo==="cierre"?9:1,...extra});};
   const nom=s=>(clients||[]).find(c=>c.id===s.clientId)?.name||(s.tipo==="palomitas"?"Palomitas":"Venta");
   sales.filter(s=>s.date>=INICIO_OPERACION).forEach(s=>{
+    // Transferencias y terminal: entran a la cuenta hasta que se confirma que llegaron, con la fecha en que se confirmó
+    const llego=s.transConf==="si",fLlego=s.transConfFecha&&s.transConfFecha>s.date?s.transConfFecha:s.date;
     if(s.envioContra){const d="Contra entrega · "+nom(s)+(s.repartidor?" (🛵 "+s.repartidor+")":"");
-      if(contraTransfer(s))add(s.date,accDe(s.payMethod),s.envioDebe||0,d,"venta");
+      if(contraTransfer(s)){if(llego)add(fLlego,accDe(s.payMethod),s.envioDebe||0,d,"venta");}
       else if(s.envioDineroRecibido)add(s.envioDineroFecha||s.date,"Caja",s.envioDebe||0,d,"venta");
       return;}
-    if(s.payMethod==="Mixto"){add(s.date,"Caja",s.mixEfectivo||0,"Venta · "+nom(s),"venta");add(s.date,accDe(s.mixCuenta),s.mixTransferencia||0,"Venta · "+nom(s),"venta");}
+    if(s.payMethod==="Mixto"){add(s.date,"Caja",s.mixEfectivo||0,"Venta · "+nom(s),"venta");if(llego)add(fLlego,accDe(s.mixCuenta),s.mixTransferencia||0,"Venta · "+nom(s),"venta");}
+    else if(TRANS_METHODS.includes(s.payMethod)){if(llego)add(fLlego,accDe(s.payMethod),s.total+(s.envio||0),"Venta · "+nom(s),"venta");}
     else add(s.date,accDe(s.payMethod),s.total+(s.envio||0),"Venta · "+nom(s),"venta");
-    if(s.comision>0)add(s.date,"Mercado Pago",-s.comision,"Comisión terminal · "+nom(s),"comision");
+    if(s.comision>0&&llego)add(fLlego,"Mercado Pago",-s.comision,"Comisión terminal · "+nom(s),"comision");
     if(s.envioPagado&&s.costoEnvio>0&&(s.envioPagadoFecha||s.date)>=INICIO_OPERACION)add(s.envioPagadoFecha||s.date,accDe(s.envioPagadoCon),-s.costoEnvio,"Repartidor · "+(s.repartidor||nom(s)),"repartidor");
   });
   expenses.filter(e=>e.date>=INICIO_OPERACION).forEach(e=>add(e.date,accGasto(e),-e.amount,(e.fixedId?"Fijo · ":"Gasto · ")+(e.desc||e.cat),"gasto"));
@@ -2268,6 +2271,10 @@ function Cuentas({sales,expenses,extras,cierres,movs,setMovs,clients,user}){
   const[confirmDel,setConfirmDel]=useState(null);
   const total=ACCS.reduce((a,k)=>a+bal[k],0);
   const traen=sales.filter(s=>s.date>=INICIO_OPERACION&&s.envioContra&&!contraTransfer(s)&&!s.envioDineroRecibido).reduce((a,s)=>a+(s.envioDebe||0),0);
+  const porCobrar={};
+  sales.filter(s=>s.date>=INICIO_OPERACION&&transDe(s)&&s.transConf!=="si").forEach(s=>{const t=transDe(s);const x=porCobrar[t.acc]||(porCobrar[t.acc]={monto:0,n:0});
+    x.monto+=t.monto-(t.metodo==="Terminal MP"?(s.comision||0):0);x.n++;});
+  const totalPorCobrar=Object.values(porCobrar).reduce((a,x)=>a+x.monto,0);
   const nuevo=t=>{setAccion(accion===t?null:t);setErr("");setF({date:hoy,monto:"",nota:"",de:"SPIN Marcel",a:"Mercado Pago",socio:"Marcel"});};
   const guardar=()=>{
     if(!(+f.monto>0)){setErr("Escribe el monto");return;}
@@ -2283,7 +2290,8 @@ function Cuentas({sales,expenses,extras,cierres,movs,setMovs,clients,user}){
   const accSel=(k,label)=><F label={label}><select value={f[k]} onChange={sel(k)}>{ACCS.map(a=><option key={a} value={a}>{ACC_INFO[a].i} {a}</option>)}</select></F>;
   return(
     <Card>
-      <STitle right={<span style={{fontWeight:700,fontSize:16,color:total>=0?T.profit:T.expense}}>{$m(total)}</span>}>Cuentas</STitle>
+      <STitle right={<span style={{textAlign:"right"}}><span style={{display:"block",fontWeight:700,fontSize:16,color:total>=0?T.profit:T.expense}}>{$m(total)}</span>
+        {totalPorCobrar>0&&<span style={{display:"block",fontSize:11,fontWeight:600,color:"#B86010"}}>+ {$m(totalPorCobrar)} por cobrar</span>}</span>}>Cuentas</STitle>
       <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:6,marginBottom:12}}>
         {[["traspaso","🔄 Traspaso"],["retiro","🧑 Retiro socio"],["aportacion","➕ Aportación"]].map(([t,l])=>(
           <button key={t} onClick={()=>nuevo(t)} style={{fontSize:12,minHeight:42,padding:"4px",borderRadius:10,borderColor:accion===t?T.gold:T.goldBorder,background:accion===t?T.goldBg:"transparent",fontWeight:600}}>{l}</button>
@@ -2321,6 +2329,7 @@ function Cuentas({sales,expenses,extras,cierres,movs,setMovs,clients,user}){
                 <span style={{fontSize:17,fontWeight:700,color:bal[acc]>=0?T.text:T.expense}}>{$m(bal[acc])}</span>
               </button>
               {acc==="Caja"&&traen>0&&<p style={{margin:"0 14px 8px",fontSize:11,color:T.expense}}>Además, {$m(traen)} los traen los repartidores</p>}
+              {porCobrar[acc]?.monto>0&&<p style={{margin:"0 14px 8px",fontSize:11,fontWeight:600,color:"#B86010"}}>⏳ Por cobrar: {$m(porCobrar[acc].monto)} · {porCobrar[acc].n} venta{porCobrar[acc].n!==1?"s":""} sin confirmar (entra cuando toques "Llegó")</p>}
               {abierto&&(
                 <div style={{padding:"10px 12px",borderTop:`0.5px solid ${T.goldBorder}`}}>
                   <div style={{display:"flex",gap:4,marginBottom:8}}>
