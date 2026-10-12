@@ -38,6 +38,15 @@ Contexto para Claude Code. Léelo antes de tocar cualquier cosa.
 - Migración v4: a los fijos guardados se les puso su día (si no lo tenían) y la publicidad pasó a variable.
 - Luz, agua e internet los paga la plaza: no son gasto.
 
+## Sincronización entre celulares (IMPORTANTE)
+- Antes cada celular guardaba la lista COMPLETA de cada llave con lo que tenía en memoria: un celular con la app abierta desde antes borraba lo que registraban los otros (se perdieron ventas de Marcel, ajustes y confirmaciones de Gustavo entre el 9 y el 12 oct).
+- Ahora (`syncSave`/`syncRefresh`/`merge3` arriba de LOGIN): cada llave tiene una "base" (última versión acordada con el servidor). Al guardar se lee el servidor, se aplica solo lo que cambió aquí contra la base (por `id` en listas, por campo en objetos; `stockCajas`/`stockSobres`/`stock` se suman como diferencia) y se escribe con `dbSaveCAS` (solo si `updated_at` no cambió; si cambió, se repite; al final cae a `dbSave`).
+- Cada 20 s (y al volver a la app) `syncRefresh` consulta `updated_at` de las 12 llaves y trae solo las que cambiaron. `SYNC.ver` evita guardar una copia vieja después de que llegaron cambios de otros.
+- Al abrir, si alguna llave no carga (`dbLoadR` ok:false) la app NO arranca (pantalla "No se pudieron cargar los datos"), para no guardar defaults encima de los datos reales.
+- Si no se pudo guardar sale un aviso rojo y se reintenta en cada vuelta. Si se publica una versión nueva, al volver a la app se guarda lo pendiente y se recarga sola (banner "Hay una versión nueva").
+- Los ajustes de una sola vez al abrir usan `save` (escritura directa) y actualizan la base.
+- En NO_SAVE (local) no corre la actualización en vivo.
+
 ## Cuentas (`Cuentas` en la pestaña Caja, solo socios; manuales en key `msp-mv4`)
 - Cuentas: Caja (efectivo del local), Efectivo socios, SPIN Marcel, SPIN Gustavo, Mercado Pago (Transferencia MP + Terminal MP).
 - **El dinero por transferencia/terminal entra a la cuenta solo cuando se confirma** (`transConf:"si"`: "Llegó", "💰 Pagado" o "✓ Ya me transfirió"), con la fecha de confirmación (`transConfFecha`); la comisión de terminal también. Mientras tanto cada cuenta muestra "⏳ Por cobrar" (`porCobrar`). El efectivo del local entra al momento; el contra entrega en efectivo cuando el repartidor lo entrega. **Ventas y utilidad (Inicio, Reparto) solo cuentan ventas entregadas y cobradas** (`ventaConfirmada`: con envío necesita `envioStatus:"entregado"`; transferencia/terminal `transConf:"si"`; contra entrega `contraListo`), contadas el día en que se confirmaron (`fechaConfirmada`; `repSales` las trae con esa fecha). Inicio recibe `allSales` para alertas y muestra "⏳ Todavía no cuenta" + la tarjeta **📦 Pedidos** (`PedidosResumen`: clientes que te deben, repartidores te deben, por entregar, le debes a repartidores, entregados y cobrados por periodo; pendientes de días anteriores en rojo; botones Ya pagó / Ya entregó / Ya transfirió / Entregado). En Vender la lista del día marca "⏳ por cobrar / sin entregar" y la utilidad es solo la cobrada. El inventario se descuenta al vender.

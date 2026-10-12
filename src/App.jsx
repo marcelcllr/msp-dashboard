@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell } from "recharts";
 import { createClient } from "@supabase/supabase-js";
 
@@ -18,16 +18,121 @@ async function dbLoad(key, def) {
   } catch(e) { console.error("dbLoad catch:", key, e); return def; }
 }
 
-async function dbSave(key, value) {
+// Igual que dbLoad, pero dice si falló (ok:false) para no confundir "sin internet" con "no hay datos"
+async function dbLoadR(key) {
+  try {
+    const { data, error } = await _supabase
+      .from("msp_store").select("value,updated_at").eq("key", key).maybeSingle();
+    if (error) { console.error("dbLoad error:", key, error.message); return {ok:false}; }
+    if (!data) return {ok:true, value:undefined};
+    return {ok:true, value:JSON.parse(data.value), ts:data.updated_at};
+  } catch(e) { console.error("dbLoad catch:", key, e); return {ok:false}; }
+}
+
+const NO_SAVE = import.meta.env.DEV && import.meta.env.VITE_NO_SAVE === "1";
+async function dbSave(key, value, ts = new Date().toISOString()) {
   // Solo en pruebas locales: con VITE_NO_SAVE=1 en .env.local no se escribe nada en Supabase
-  if (import.meta.env.DEV && import.meta.env.VITE_NO_SAVE === "1") return "simulado";
+  if (NO_SAVE) return "simulado";
   try {
     const { error } = await _supabase.from("msp_store")
-      .upsert({ key, value: JSON.stringify(value), updated_at: new Date().toISOString() },
+      .upsert({ key, value: JSON.stringify(value), updated_at: ts },
                { onConflict: "key" });
     if (error) { console.error("dbSave error:", key, error.message); return false; }
     return true;
   } catch(e) { console.error("dbSave catch:", key, e); return false; }
+}
+
+// Guarda solo si nadie más guardó esa llave desde que la leímos (misma hora updated_at). Si alguien sí guardó: "conflicto"
+async function dbSaveCAS(key, value, prevTs, ts) {
+  if (NO_SAVE) return "simulado";
+  try {
+    const { data, error } = await _supabase.from("msp_store")
+      .update({ value: JSON.stringify(value), updated_at: ts }).eq("key", key).eq("updated_at", prevTs).select("key");
+    if (error) { console.error("dbSave error:", key, error.message); return false; }
+    return data && data.length > 0 ? true : "conflicto";
+  } catch(e) { console.error("dbSave catch:", key, e); return false; }
+}
+
+// ── SINCRONIZACIÓN ENTRE CELULARES ────────────────────────────────────────────
+// Antes cada celular guardaba la lista COMPLETA que tenía en memoria, así que un celular con la app
+// abierta desde antes borraba lo que habían registrado los otros. Ahora cada celular guarda solo lo que
+// cambió (contra la última versión que conoce, "base") encima de lo que hay en el servidor en ese momento,
+// y cada ~20 s trae los cambios de los demás. El stock se suma/resta en lugar de reemplazarse.
+const J=v=>JSON.stringify(v);
+const clone=v=>v===undefined?undefined:JSON.parse(J(v));
+const STOCK_F=new Set(["stockCajas","stockSobres","stock"]);
+const isObj=v=>!!v&&typeof v==="object"&&!Array.isArray(v);
+const conIds=a=>Array.isArray(a)&&a.every(x=>isObj(x)&&x.id!=null);
+// Junta tres versiones: b = la que conocía este celular, m = la de este celular, t = la del servidor
+function merge3(b,m,t){
+  if(J(m)===J(b))return t;                       // aquí no cambió nada: queda lo del servidor
+  if(t===undefined||J(t)===J(b))return m;        // en el servidor no cambió nada: queda lo de aquí
+  if(conIds(m)&&conIds(t)&&(b==null||conIds(b))){
+    const B=new Map((b||[]).map(x=>[x.id,x])),M=new Map(m.map(x=>[x.id,x])),T=new Set(t.map(x=>x.id));
+    const out=[];
+    t.forEach(x=>{
+      if(B.has(x.id)&&!M.has(x.id))return;       // lo borraron aquí
+      const mi=M.get(x.id);
+      out.push(mi?merge3(B.get(x.id),mi,x):x);   // cambiado aquí y/o allá, o nuevo del servidor
+    });
+    m.forEach(x=>{if(!T.has(x.id)&&!B.has(x.id))out.push(x);}); // nuevo de aquí
+    return out;
+  }
+  if(isObj(m)&&isObj(t)){
+    const bb=isObj(b)?b:{};const out={...t};
+    new Set([...Object.keys(m),...Object.keys(bb)]).forEach(k=>{
+      if(J(m[k])===J(bb[k]))return;              // este dato no cambió aquí
+      if(!(k in m)){delete out[k];return;}
+      if(STOCK_F.has(k)&&typeof m[k]==="number"&&typeof bb[k]==="number"&&typeof t[k]==="number")out[k]=+(t[k]+(m[k]-bb[k])).toFixed(4);
+      else out[k]=merge3(bb[k],m[k],t[k]);
+    });
+    return out;
+  }
+  return m;
+}
+// base = última versión acordada con el servidor · ver sube cada vez que llegan cambios de otros
+const SYNC={base:{},ts:{},ver:{},lock:{}};
+const lockKey=(k,fn)=>(SYNC.lock[k]=(SYNC.lock[k]||Promise.resolve()).catch(()=>{}).then(fn));
+const mismaHora=(a,b)=>!!a&&!!b&&Date.parse(a)===Date.parse(b);
+// Guarda los cambios de este celular. d = {key,set,to,from}
+function syncSave(d,local){
+  const ver=SYNC.ver[d.key]||0;
+  return lockKey(d.key,async()=>{
+    if((SYNC.ver[d.key]||0)!==ver)return "skip";           // llegaron cambios de otros: se vuelve a guardar con lo nuevo
+    const b=SYNC.base[d.key];
+    if(b!==undefined&&J(local)===J(b))return true;          // no hay nada nuevo
+    // Leer → juntar → guardar solo si nadie guardó en medio; si alguien sí, se repite (hasta 6 veces)
+    let merged,ts,ok="conflicto";
+    for(let i=0;i<6&&ok==="conflicto";i++){
+      const r=await dbLoadR(d.key);
+      if(!r.ok)return false;                                 // sin internet: no se escribe a ciegas
+      merged=r.value===undefined?local:merge3(b,local,r.value);
+      ts=new Date().toISOString();
+      ok=r.value===undefined||!r.ts?await dbSave(d.key,merged,ts):await dbSaveCAS(d.key,merged,r.ts,ts);
+      if(ok==="conflicto")await new Promise(res=>setTimeout(res,150+Math.random()*350));
+    }
+    if(ok==="conflicto")ok=await dbSave(d.key,merged,ts);   // por si acaso: nunca quedarse sin guardar
+    if(ok!==true&&ok!=="simulado")return false;
+    SYNC.ts[d.key]=ts;
+    if(J(merged)===J(local)){SYNC.base[d.key]=clone(local);return true;}
+    SYNC.base[d.key]=clone(merged);SYNC.ver[d.key]=ver+1;
+    d.set(cur=>{const c=d.to(cur);const nx=merge3(local,c,merged);return J(nx)===J(c)?cur:d.from(nx);});
+    return true;
+  });
+}
+// Trae lo que cambiaron los otros celulares (solo las llaves que cambiaron, por su hora)
+async function syncRefresh(defs){
+  const{data,error}=await _supabase.from("msp_store").select("key,updated_at").in("key",defs.map(d=>d.key));
+  if(error||!data)return false;
+  await Promise.all(data.filter(x=>!mismaHora(x.updated_at,SYNC.ts[x.key])).map(x=>{const d=defs.find(y=>y.key===x.key);if(!d)return null;
+    return lockKey(d.key,async()=>{
+      const r=await dbLoadR(d.key);if(!r.ok||r.value===undefined)return;
+      SYNC.ts[d.key]=r.ts;
+      const b=SYNC.base[d.key];if(J(r.value)===J(b))return;
+      SYNC.base[d.key]=clone(r.value);SYNC.ver[d.key]=(SYNC.ver[d.key]||0)+1;
+      d.set(cur=>{const c=d.to(cur);const nx=merge3(b,c,r.value);return J(nx)===J(c)?cur:d.from(nx);});
+    });}));
+  return true;
 }
 
 // ── LOGIN ─────────────────────────────────────────────────────────────────────
@@ -87,7 +192,8 @@ function LoginScreen({ onLogin }) {
 // ── STORAGE ──────────────────────────────────────────────────────────────────
 const SK = { p:"msp-p4",pk:"msp-pk4",c:"msp-c4",s:"msp-s4",e:"msp-e4",sm:"msp-sm4",ex:"msp-ex4",pop:"msp-pop4",fx:"msp-fx4",ci:"msp-ci4",mv:"msp-mv4",cs:"msp-cs4" };
 const load = dbLoad;
-const save = dbSave;
+// Solo para los ajustes de una sola vez al abrir: guarda directo y queda como la versión conocida
+const save = async (k,v) => { const ok = await dbSave(k,v); if (ok === true) SYNC.base[k] = clone(v); return ok; };
 
 // ── UTILS ─────────────────────────────────────────────────────────────────────
 const $m = n => "$"+Number(n).toLocaleString("es-MX",{minimumFractionDigits:2,maximumFractionDigits:2});
@@ -3038,10 +3144,33 @@ function Dashboard_App({user,onLogout}){
   const[conteos,setConteos]=useState([]);
   const[ready,setReady]=useState(false);
   const[leaving,setLeaving]=useState(false);
+  const[loadErr,setLoadErr]=useState(false);
+  const[syncErr,setSyncErr]=useState(false);
+  // Cómo se guarda cada llave (to/from: los fijos se guardan como {v,items})
+  const id_=v=>v;
+  const fxFrom=v=>Array.isArray(v)?v:(v&&Array.isArray(v.items)?v.items:[]);
+  const DEFS=[[SK.p,setProds],[SK.pk,setPkgs],[SK.c,setClients],[SK.s,setSales],[SK.e,setExpenses],[SK.sm,setStockMoves],[SK.ex,setExtras],
+    [SK.pop,setPopCfg],[SK.fx,setFixed,a=>({v:FIXED_VER,items:a}),fxFrom],[SK.ci,setCierres],[SK.mv,setMovs],[SK.cs,setConteos]]
+    .map(([key,set,to=id_,from=id_])=>({key,set,to,from}));
+  const defOf=k=>DEFS.find(d=>d.key===k);
+  const guardar=(k,v)=>syncSave(defOf(k),defOf(k).to(v)).then(ok=>{if(ok!=="skip")setSyncErr(!(ok===true||ok==="simulado"));return ok;});
+  // Lo último que hay en pantalla (para reintentar y para guardar al salir)
+  const latest=useRef({});
+  latest.current={[SK.p]:prods,[SK.pk]:pkgs,[SK.c]:clients,[SK.s]:sales,[SK.e]:expenses,[SK.sm]:stockMoves,[SK.ex]:extras,[SK.pop]:popCfg,[SK.fx]:fixed,[SK.ci]:cierres,[SK.mv]:movs,[SK.cs]:conteos};
+  const syncErrRef=useRef(false);syncErrRef.current=syncErr;
+  // Versión nueva publicada: se guarda lo pendiente y se recarga (los celulares con la versión vieja no deben seguir guardando)
+  const[nuevaVersion,setNuevaVersion]=useState(false);
+  const actualizarApp=async()=>{await Promise.all(DEFS.map(d=>guardar(d.key,latest.current[d.key])));window.location.reload();};
 
   useEffect(()=>{
     (async()=>{
-      let[p,pk,c,s,e,sm,ex,pop,fx,ci,mv,cs]=await Promise.all([load(SK.p,INIT_PRODS),load(SK.pk,INIT_PKGS),load(SK.c,[]),load(SK.s,[]),load(SK.e,[]),load(SK.sm,[]),load(SK.ex,[]),load(SK.pop,INIT_POP),load(SK.fx,INIT_FIXED),load(SK.ci,[]),load(SK.mv,[]),load(SK.cs,[])]);
+      const KL=[[SK.p,INIT_PRODS],[SK.pk,INIT_PKGS],[SK.c,[]],[SK.s,[]],[SK.e,[]],[SK.sm,[]],[SK.ex,[]],[SK.pop,INIT_POP],[SK.fx,INIT_FIXED],[SK.ci,[]],[SK.mv,[]],[SK.cs,[]]];
+      SYNC.base={};SYNC.ts={};SYNC.ver={};
+      let rs=await Promise.all(KL.map(([k])=>dbLoadR(k)));
+      if(rs.some(r=>!r.ok)){await new Promise(r=>setTimeout(r,1500));rs=await Promise.all(KL.map(([k])=>dbLoadR(k)));}
+      if(rs.some(r=>!r.ok)){setLoadErr(true);return;}
+      rs.forEach((r,i)=>{const k=KL[i][0];if(r.value!==undefined){SYNC.base[k]=clone(r.value);SYNC.ts[k]=r.ts;}});
+      let[p,pk,c,s,e,sm,ex,pop,fx,ci,mv,cs]=rs.map((r,i)=>r.value===undefined?clone(KL[i][1]):r.value);
       // Merge new products
       const ids=new Set(p.map(x=>x.id));
       INIT_PRODS.forEach((ip,i)=>{if(ids.has(ip.id))return;const at=i>0?p.findIndex(x=>x.id===INIT_PRODS[i-1].id):-1;if(at>=0)p.splice(at+1,0,ip);else p.push(ip);});
@@ -3207,18 +3336,47 @@ function Dashboard_App({user,onLogout}){
     })();
   },[]);
 
-    useEffect(()=>{if(ready){const t=setTimeout(()=>save(SK.p,prods),800);return()=>clearTimeout(t);}},[prods,ready]);
-  useEffect(()=>{if(ready){const t=setTimeout(()=>save(SK.pk,pkgs),800);return()=>clearTimeout(t);}},[pkgs,ready]);
-  useEffect(()=>{if(ready){const t=setTimeout(()=>save(SK.c,clients),800);return()=>clearTimeout(t);}},[clients,ready]);
-  useEffect(()=>{if(ready){const t=setTimeout(()=>save(SK.s,sales),800);return()=>clearTimeout(t);}},[sales,ready]);
-  useEffect(()=>{if(ready){const t=setTimeout(()=>save(SK.e,expenses),800);return()=>clearTimeout(t);}},[expenses,ready]);
-  useEffect(()=>{if(ready){const t=setTimeout(()=>save(SK.sm,stockMoves),800);return()=>clearTimeout(t);}},[stockMoves,ready]);
-  useEffect(()=>{if(ready){const t=setTimeout(()=>save(SK.ex,extras),800);return()=>clearTimeout(t);}},[extras,ready]);
-  useEffect(()=>{if(ready){const t=setTimeout(()=>save(SK.pop,popCfg),800);return()=>clearTimeout(t);}},[popCfg,ready]);
-  useEffect(()=>{if(ready){const t=setTimeout(()=>save(SK.fx,{v:FIXED_VER,items:fixed}),800);return()=>clearTimeout(t);}},[fixed,ready]);
-  useEffect(()=>{if(ready){const t=setTimeout(()=>save(SK.ci,cierres),800);return()=>clearTimeout(t);}},[cierres,ready]);
-  useEffect(()=>{if(ready){const t=setTimeout(()=>save(SK.mv,movs),800);return()=>clearTimeout(t);}},[movs,ready]);
-  useEffect(()=>{if(ready){const t=setTimeout(()=>save(SK.cs,conteos),800);return()=>clearTimeout(t);}},[conteos,ready]);
+  useEffect(()=>{if(ready){const t=setTimeout(()=>guardar(SK.p,prods),800);return()=>clearTimeout(t);}},[prods,ready]);
+  useEffect(()=>{if(ready){const t=setTimeout(()=>guardar(SK.pk,pkgs),800);return()=>clearTimeout(t);}},[pkgs,ready]);
+  useEffect(()=>{if(ready){const t=setTimeout(()=>guardar(SK.c,clients),800);return()=>clearTimeout(t);}},[clients,ready]);
+  useEffect(()=>{if(ready){const t=setTimeout(()=>guardar(SK.s,sales),800);return()=>clearTimeout(t);}},[sales,ready]);
+  useEffect(()=>{if(ready){const t=setTimeout(()=>guardar(SK.e,expenses),800);return()=>clearTimeout(t);}},[expenses,ready]);
+  useEffect(()=>{if(ready){const t=setTimeout(()=>guardar(SK.sm,stockMoves),800);return()=>clearTimeout(t);}},[stockMoves,ready]);
+  useEffect(()=>{if(ready){const t=setTimeout(()=>guardar(SK.ex,extras),800);return()=>clearTimeout(t);}},[extras,ready]);
+  useEffect(()=>{if(ready){const t=setTimeout(()=>guardar(SK.pop,popCfg),800);return()=>clearTimeout(t);}},[popCfg,ready]);
+  useEffect(()=>{if(ready){const t=setTimeout(()=>guardar(SK.fx,fixed),800);return()=>clearTimeout(t);}},[fixed,ready]);
+  useEffect(()=>{if(ready){const t=setTimeout(()=>guardar(SK.ci,cierres),800);return()=>clearTimeout(t);}},[cierres,ready]);
+  useEffect(()=>{if(ready){const t=setTimeout(()=>guardar(SK.mv,movs),800);return()=>clearTimeout(t);}},[movs,ready]);
+  useEffect(()=>{if(ready){const t=setTimeout(()=>guardar(SK.cs,conteos),800);return()=>clearTimeout(t);}},[conteos,ready]);
+  // En vivo: cada 20 s (y al volver a abrir la app) se traen los cambios de los otros celulares.
+  // Si algo no se pudo guardar (sin internet), primero se reintenta.
+  useEffect(()=>{
+    if(!ready||NO_SAVE)return;
+    let busy=false;
+    const tick=async()=>{
+      if(busy||document.visibilityState==="hidden")return;busy=true;
+      try{
+        if(syncErrRef.current)await Promise.all(DEFS.map(d=>guardar(d.key,latest.current[d.key])));
+        await syncRefresh(DEFS);
+      }finally{busy=false;}
+    };
+    const id=setInterval(tick,20000);
+    const miScript=(document.querySelector("script[src*=\"/assets/index-\"]")||{}).src||"";
+    const checkVer=async()=>{if(!miScript)return false;try{const h=await(await fetch("/?v="+Date.now(),{cache:"no-store"})).text();const m=h.match(/\/assets\/index-[\w-]+\.js/);if(m&&!miScript.includes(m[0])){setNuevaVersion(true);return true;}}catch{}return false;};
+    const idV=setInterval(checkVer,5*60000);
+    const vis=async()=>{if(document.visibilityState!=="visible")return;if(await checkVer())actualizarApp();else tick();};
+    document.addEventListener("visibilitychange",vis);window.addEventListener("focus",vis);
+    return()=>{clearInterval(id);clearInterval(idV);document.removeEventListener("visibilitychange",vis);window.removeEventListener("focus",vis);};
+  },[ready]);
+
+  if(loadErr)return(
+    <div style={{display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",padding:"3rem 1.5rem",gap:12,color:T.textSub,textAlign:"center"}}>
+      <Logo size={48}/>
+      <p style={{margin:0,fontSize:15,fontWeight:700,color:T.expense}}>No se pudieron cargar los datos</p>
+      <p style={{margin:0,fontSize:13}}>Revisa tu internet. Para no borrar nada, la app no abre hasta que carguen bien.</p>
+      <GoldBtn onClick={()=>window.location.reload()} style={{minHeight:46,padding:"0 24px",fontSize:14}}>Reintentar</GoldBtn>
+    </div>
+  );
 
   if(!ready)return(
     <div style={{display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",padding:"3rem",gap:12,color:T.textSub}}>
@@ -3239,12 +3397,14 @@ function Dashboard_App({user,onLogout}){
   const logout=async()=>{
     if(leaving)return;
     setLeaving(true);
-    await Promise.all([save(SK.p,prods),save(SK.pk,pkgs),save(SK.c,clients),save(SK.s,sales),save(SK.e,expenses),save(SK.sm,stockMoves),save(SK.ex,extras),save(SK.pop,popCfg),save(SK.fx,{v:FIXED_VER,items:fixed}),save(SK.ci,cierres),save(SK.mv,movs),save(SK.cs,conteos)]);
+    await Promise.all(DEFS.map(d=>guardar(d.key,latest.current[d.key])));
     onLogout();
   };
 
   return(
     <div style={{fontFamily:"-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif",background:T.bg,paddingBottom:"calc(84px + env(safe-area-inset-bottom))"}}>
+      {nuevaVersion&&<button onClick={actualizarApp} style={{position:"sticky",top:0,zIndex:51,width:"100%",background:T.client,color:"#fff",border:"none",fontSize:13,fontWeight:700,padding:"10px 12px",borderRadius:8,marginBottom:8}}>🔄 Hay una versión nueva de la app · toca para actualizar</button>}
+      {syncErr&&<div style={{position:"sticky",top:0,zIndex:50,background:"#C04040",color:"#fff",fontSize:12,fontWeight:600,padding:"8px 12px",borderRadius:8,marginBottom:8}}>⚠ No se pudo guardar el último cambio. Revisa tu internet: se vuelve a intentar solo. No cierres la app.</div>}
       <div style={{borderBottom:`2px solid ${T.goldBorder}`,marginBottom:"1rem"}}>
         <div style={{display:"flex",alignItems:"center",gap:10,padding:"10px 0 8px"}}>
           <Logo size={32}/>
